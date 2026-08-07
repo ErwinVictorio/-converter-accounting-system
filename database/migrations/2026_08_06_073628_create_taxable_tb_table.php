@@ -11,12 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('taxable_tb', function (Blueprint $table) {
+        Schema::create('record_db', function (Blueprint $table) {
             $table->id();
             $table->string('resgister_name');
             $table->string('supplier_name');
             $table->string('supplier_address');
-            $table->decimal('amount_of_gross_purchase');
+            $table->decimal('amount_of_gross_purchase', 10, 2);
+            $table->decimal('exempt_purchase', 10, 2);
+            $table->timestamps(); // <-- Siguraduhing narito ito
         });
     }
 

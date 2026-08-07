@@ -1,6 +1,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,8 +9,9 @@
 @layer base {
   .theme {
     --font-heading: var(--font-sans);
-    --font-sans: 'Inter Variable', sans-serif
+    --font-sans: 'Inter Variable', sans-serif;
   }
+
   :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
@@ -35,6 +37,8 @@
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
+
+    /* Shadcn Sidebar Layout Variables */
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
@@ -42,8 +46,14 @@
     --sidebar-accent: oklch(0.97 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0)
+    --sidebar-ring: oklch(0.708 0 0);
+
+    /* Dimensions na kailangan ng Shadcn Sidebar Layout para 'di mag-overlap */
+    --sidebar-width: 13rem;
+    --sidebar-width-mobile: 18rem;
+    --sidebar-width-icon: 3rem;
   }
+
   .dark {
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
@@ -75,15 +85,6 @@
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0)
-  }
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
+    --sidebar-ring: oklch(0.556 0 0);
   }
 }
