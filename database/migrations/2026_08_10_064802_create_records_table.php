@@ -21,6 +21,7 @@ return new class extends Migration
             $table->decimal('services', 10, 2);
             $table->decimal('others', 10, 2)->nullable();
             $table->decimal('total', 10, 2);
+            $table->date('date_uploaded'); 
             $table->timestamps();
         });
     }

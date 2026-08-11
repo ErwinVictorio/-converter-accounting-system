@@ -18,6 +18,13 @@ class VatInput extends Model
         'purchase_local',
         'services',
         'others',
-        'total'
+        'total',
+        'date_uploaded'
     ];
+
+    protected $casts = [
+         'date_uploaded' => 'date:m/d/Y'
+    ];
+
+ 
 }

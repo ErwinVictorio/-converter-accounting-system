@@ -1,14 +1,12 @@
 import React, { useEffect, useState, useRef } from "react";
-import { useForm, usePage, router, Link } from "@inertiajs/react";
+import { useForm, usePage, router } from "@inertiajs/react";
 import { toast } from "sonner";
 import { 
   UploadCloud, 
   FileSpreadsheet, 
   X, 
   Loader2, 
-  Search, 
-  ChevronLeft, 
-  ChevronRight 
+  Search 
 } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
@@ -150,16 +148,17 @@ function RecordEntry() {
   };
 
   return (
-    <section className="space-y-6 p-6">
+    // Inayos ang container padding at max-width upang maiwasan ang pumuputol na screen
+    <section className="space-y-6 w-full max-w-full overflow-hidden">
       {/* Excel Upload Card */}
       <Card className="w-full shadow-sm border rounded-xl overflow-hidden bg-white">
-        <CardHeader className="p-6 border-b bg-gray-50/50">
-          <CardTitle className="text-xl font-semibold text-gray-900">
+        <CardHeader className="p-4 sm:p-6 border-b bg-gray-50/50">
+          <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">
             Upload Excel File
           </CardTitle>
         </CardHeader>
 
-        <CardContent className="p-6">
+        <CardContent className="p-4 sm:p-6">
           <form id="record-upload-form" onSubmit={handleSubmit}>
             <input
               type="file"
@@ -174,7 +173,7 @@ function RecordEntry() {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center text-center transition-colors cursor-pointer ${
+                className={`border-2 border-dashed rounded-xl p-6 sm:p-10 flex flex-col items-center justify-center text-center transition-colors cursor-pointer ${
                   isDragging
                     ? "border-indigo-500 bg-indigo-50/50"
                     : "border-gray-200 hover:border-indigo-300 hover:bg-gray-50/50"
@@ -185,10 +184,10 @@ function RecordEntry() {
                   <UploadCloud className="w-6 h-6" />
                 </div>
 
-                <h4 className="text-lg font-bold text-gray-800 mb-1">
+                <h4 className="text-base sm:text-lg font-bold text-gray-800 mb-1">
                   Drag & drop to upload file
                 </h4>
-                <p className="text-sm text-gray-400 font-medium mb-6">
+                <p className="text-xs sm:text-sm text-gray-400 font-medium mb-6">
                   (XLS, XLSX, XLSM up to 500MB)
                 </p>
 
@@ -210,13 +209,13 @@ function RecordEntry() {
                 </Button>
               </div>
             ) : (
-              <div className="border rounded-xl p-6 bg-slate-50 flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="p-3 bg-emerald-100 text-emerald-700 rounded-lg">
+              <div className="border rounded-xl p-4 sm:p-6 bg-slate-50 flex items-center justify-between">
+                <div className="flex items-center space-x-4 min-w-0">
+                  <div className="p-3 bg-emerald-100 text-emerald-700 rounded-lg shrink-0">
                     <FileSpreadsheet className="w-8 h-8" />
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">
                       {data.excel_file.name}
                     </p>
                     <p className="text-xs text-gray-500">
@@ -229,7 +228,7 @@ function RecordEntry() {
                   type="button"
                   onClick={handleRemoveFile}
                   disabled={processing}
-                  className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                  className="text-gray-400 hover:text-red-500 transition-colors p-1 shrink-0"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -242,13 +241,13 @@ function RecordEntry() {
           </form>
         </CardContent>
 
-        <CardFooter className="flex justify-end gap-3 p-6 border-t bg-gray-50/50">
+        <CardFooter className="flex flex-col sm:flex-row justify-end gap-3 p-4 sm:p-6 border-t bg-gray-50/50">
           <Button
             type="button"
             variant="outline"
             onClick={handleRemoveFile}
             disabled={!data.excel_file || processing}
-            className="px-5"
+            className="w-full sm:w-auto px-5"
           >
             Clear File
           </Button>
@@ -256,7 +255,7 @@ function RecordEntry() {
             type="submit"
             form="record-upload-form"
             disabled={!data.excel_file || processing}
-            className="bg-slate-900 text-white hover:bg-slate-800 px-6 min-w-[120px]"
+            className="w-full sm:w-auto bg-slate-900 text-white hover:bg-slate-800 px-6 min-w-[120px]"
           >
             {processing ? (
               <>
@@ -272,8 +271,8 @@ function RecordEntry() {
 
       {/* Shadcn Data Table Section */}
       <Card className="w-full shadow-sm border rounded-xl overflow-hidden bg-white">
-        <CardHeader className="p-6 border-b flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-gray-50/50">
-          <CardTitle className="text-xl font-semibold text-gray-900">
+        <CardHeader className="p-4 sm:p-6 border-b flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-gray-50/50">
+          <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">
             VAT Input Records
           </CardTitle>
 
@@ -290,8 +289,9 @@ function RecordEntry() {
           </div>
         </CardHeader>
 
-        <CardContent className="p-0">
-          <Table>
+        {/* 1. DAGDAG: overflow-x-auto dito para pwedeng ma-scroll ang table horizontally nang hindi nasisira ang buong card */}
+        <CardContent className="p-0 overflow-x-auto">
+          <Table className="min-w-[800px]">
             <TableHeader>
               <TableRow className="bg-slate-50 hover:bg-slate-50">
                 <TableHead className="font-semibold text-slate-700">Supplier Name</TableHead>
@@ -308,8 +308,8 @@ function RecordEntry() {
               {vatInputs?.data?.length > 0 ? (
                 vatInputs.data.map((item) => (
                   <TableRow key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                    <TableCell className="font-medium text-slate-900">{item.supplier_name}</TableCell>
-                    <TableCell className="text-slate-600 font-mono text-xs">
+                    <TableCell className="font-medium text-slate-900 whitespace-nowrap">{item.supplier_name}</TableCell>
+                    <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
                       {item.tin_number || "—"}
                     </TableCell>
                     <TableCell>
@@ -324,19 +324,19 @@ function RecordEntry() {
                         {item.is_imported ? "Yes" : "No"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs text-slate-700">
+                    <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
                       {formatCurrency(item.purchase_imported)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs text-slate-700">
+                    <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
                       {formatCurrency(item.purchase_local)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs text-slate-700">
+                    <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
                       {formatCurrency(item.services)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs text-slate-700">
+                    <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
                       {formatCurrency(item.others)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs font-bold text-slate-900">
+                    <TableCell className="text-right font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
                       {formatCurrency(item.total)}
                     </TableCell>
                   </TableRow>
@@ -352,9 +352,7 @@ function RecordEntry() {
           </Table>
         </CardContent>
 
-
-      <DataTablePagination links={vatInputs.links}/>
-
+        <DataTablePagination links={vatInputs?.links}/>
       </Card>
     </section>
   );

@@ -15,6 +15,14 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         return 3;
     }
 
+    protected string $uploadDate;
+
+    // Tatanggapin nito ang date mula sa Controller (o magde-default sa kasalukuyang petsa)
+    public function __construct(?string $uploadDate = null)
+    {
+        $this->uploadDate = $uploadDate ?? now()->toDateString();
+    }
+
     public function onRow(Row $row)
     {
         $data = $row->toArray();
@@ -59,6 +67,7 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
                 'services'          => $newServices,
                 'others'            => $newOthers,
                 'total'             => $newTotal,
+                'date_uploaded'     => $this->uploadDate,
             ]);
         } else {
             // Gumawa ng bagong record kung wala pa
@@ -73,6 +82,7 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
                 'services'          => $services,
                 'others'            => $others,
                 'total'             => $total,
+                'date_uploaded'     => $this->uploadDate,
             ]);
         }
     }
