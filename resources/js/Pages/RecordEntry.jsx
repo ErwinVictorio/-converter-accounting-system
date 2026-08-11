@@ -1,11 +1,20 @@
-import React, { useEffect, useState } from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import React, { useEffect, useState, useRef } from "react";
+import { useForm, usePage, router, Link } from "@inertiajs/react";
 import { toast } from "sonner";
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { 
+  UploadCloud, 
+  FileSpreadsheet, 
+  X, 
+  Loader2, 
+  Search, 
+  ChevronLeft, 
+  ChevronRight 
+} from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
+import { Input } from "@/Components/ui/input";
+import { Badge } from "@/Components/ui/badge";
 import {
   Card,
   CardContent,
@@ -13,7 +22,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/Components/ui/card";
-import { Input } from "@/Components/ui/input";
 import {
   Table,
   TableBody,
@@ -22,179 +30,215 @@ import {
   TableHeader,
   TableRow,
 } from "@/Components/ui/table";
-import { recordFormSchema } from "@/lib/FormSchema";
-import { router, usePage } from "@inertiajs/react";
 import DataTablePagination from "@/Layouts/Pagination";
 
 function RecordEntry() {
-  const [records, setRecords] = useState([]);
-  const [editingId, setEditingId] = useState(null);
-  const { flash, recordList } = usePage().props
+  const { flash, vatInputs, filters } = usePage().props;
+  const [isDragging, setIsDragging] = useState(false);
+  const [searchTerm, setSearchTerm] = useState(filters?.search || "");
+  const fileInputRef = useRef(null);
 
-
-
-
+  // Inertia Form Setup para sa File Upload
+  const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
+    excel_file: null,
+  });
 
   useEffect(() => {
     if (flash?.success) {
-      toast.success(flash.success)
+      toast.success(flash.success);
     }
     if (flash?.error) {
-      toast.error(flash.error)
+      toast.error(flash.error);
     }
-  }, [flash])
+  }, [flash]);
 
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    formState: { errors },
-  } = useForm({
-    resolver: zodResolver(recordFormSchema),
-    defaultValues: {
-      registeredName: "",
-      supplierName: "",
-      supplierAddress: "",
-      grossPurchase: "",
-      exemptPurchase: "",
-    },
-  });
-
-  // CREATE OR UPDATE FUNCTION
-  function onSubmit(data) {
-    const formattedData = {
-      ...data,
-      grossPurchase: Number(data.grossPurchase).toFixed(2),
-      exemptPurchase: data.exemptPurchase
-        ? Number(data.exemptPurchase).toFixed(2)
-        : "0.00",
-    };
-
-    // create request for create Record
-
-    router.post('/create-record', formattedData, {
-
-      onSuccess: (e) => {
-        console.log(e)
-      },
-
-      onError: (err) => {
-        console.log(err, 'error')
+  // Handle Search Input with Debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm !== (filters?.search || "")) {
+        router.get(
+          "/records", 
+          { search: searchTerm },
+          { preserveState: true, replace: true }
+        );
       }
+    }, 300);
 
-    })
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
+  // Format monetary values
+  const formatCurrency = (val) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "decimal",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val || 0);
+  };
 
-  }
+  // Handle File Selection
+  const handleFileChange = (file) => {
+    if (!file) return;
 
-  console.log(recordList)
+    const validTypes = [
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel.sheet.macroEnabled.12",
+    ];
+    const isExcelExtension = /\.(xlsx|xls|xlsm)$/i.test(file.name);
 
+    if (!validTypes.includes(file.type) && !isExcelExtension) {
+      toast.error("Please upload a valid Excel file (.xls, .xlsx, .xlsm)");
+      return;
+    }
 
+    if (file.size > 500 * 1024 * 1024) {
+      toast.error("File size exceeds the 500MB limit.");
+      return;
+    }
+
+    clearErrors("excel_file");
+    setData("excel_file", file);
+  };
+
+  // Drag and Drop Handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileChange(e.dataTransfer.files[0]);
+    }
+  };
+
+  // Clear File
+  const handleRemoveFile = () => {
+    setData("excel_file", null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Submit Form to Backend
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    if (!data.excel_file) {
+      toast.error("Please select an Excel file to upload.");
+      return;
+    }
+
+    post("/vat-import", {
+      forceFormData: true,
+      onSuccess: () => {
+        reset("excel_file");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      },
+      onError: (err) => {
+        console.error("Upload error:", err);
+      },
+    });
+  };
 
   return (
     <section className="space-y-6 p-6">
-      {/* Form Card */}
+      {/* Excel Upload Card */}
       <Card className="w-full shadow-sm border rounded-xl overflow-hidden bg-white">
         <CardHeader className="p-6 border-b bg-gray-50/50">
           <CardTitle className="text-xl font-semibold text-gray-900">
-            {editingId ? "Edit Record Entry" : "Record Entry Form"}
+            Upload Excel File
           </CardTitle>
         </CardHeader>
 
         <CardContent className="p-6">
-          <form id="record-entry-form" onSubmit={handleSubmit(onSubmit)}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Registered Name */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Registered Name
-                </label>
-                <Input
-                  {...register("registeredName")}
-                  placeholder="Enter registered name"
-                  className="w-full"
-                />
-                {errors.registeredName && (
-                  <p className="text-xs text-red-500">
-                    {errors.registeredName.message}
-                  </p>
-                )}
-              </div>
+          <form id="record-upload-form" onSubmit={handleSubmit}>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".xls,.xlsx,.xlsm"
+              className="hidden"
+              onChange={(e) => handleFileChange(e.target.files[0])}
+            />
 
-              {/* Name of Supplier */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Name of Supplier
-                </label>
-                <Input
-                  {...register("supplierName")}
-                  placeholder="Enter supplier name"
-                  className="w-full"
-                />
-                {errors.supplierName && (
-                  <p className="text-xs text-red-500">
-                    {errors.supplierName.message}
-                  </p>
-                )}
-              </div>
+            {!data.excel_file ? (
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center text-center transition-colors cursor-pointer ${
+                  isDragging
+                    ? "border-indigo-500 bg-indigo-50/50"
+                    : "border-gray-200 hover:border-indigo-300 hover:bg-gray-50/50"
+                }`}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center mb-4 text-indigo-600">
+                  <UploadCloud className="w-6 h-6" />
+                </div>
 
-              {/* Supplier Address */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Supplier Address
-                </label>
-                <Input
-                  {...register("supplierAddress")}
-                  placeholder="Enter supplier address"
-                  className="w-full"
-                />
-                {errors.supplierAddress && (
-                  <p className="text-xs text-red-500">
-                    {errors.supplierAddress.message}
-                  </p>
-                )}
-              </div>
+                <h4 className="text-lg font-bold text-gray-800 mb-1">
+                  Drag & drop to upload file
+                </h4>
+                <p className="text-sm text-gray-400 font-medium mb-6">
+                  (XLS, XLSX, XLSM up to 500MB)
+                </p>
 
-              {/* Amount of Gross Purchase */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Amount of Gross Purchase
-                </label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  {...register("grossPurchase")}
-                  placeholder="0.00"
-                  className="w-full"
-                />
-                {errors.grossPurchase && (
-                  <p className="text-xs text-red-500">
-                    {errors.grossPurchase.message}
-                  </p>
-                )}
-              </div>
+                <div className="w-full max-w-xs flex items-center gap-3 my-2 mb-6">
+                  <div className="h-[1px] bg-gray-200 flex-1"></div>
+                  <span className="text-xs text-gray-400 uppercase font-medium">or</span>
+                  <div className="h-[1px] bg-gray-200 flex-1"></div>
+                </div>
 
-              {/* Amount of Exempt Purchase */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Amount of Exempt Purchase
-                </label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  {...register("exemptPurchase")}
-                  placeholder="0.00"
-                  className="w-full"
-                />
-                {errors.exemptPurchase && (
-                  <p className="text-xs text-red-500">
-                    {errors.exemptPurchase.message}
-                  </p>
-                )}
+                <Button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg shadow-sm"
+                >
+                  Browse Files
+                </Button>
               </div>
-            </div>
+            ) : (
+              <div className="border rounded-xl p-6 bg-slate-50 flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="p-3 bg-emerald-100 text-emerald-700 rounded-lg">
+                    <FileSpreadsheet className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      {data.excel_file.name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {(data.excel_file.size / (1024 * 1024)).toFixed(2)} MB
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRemoveFile}
+                  disabled={processing}
+                  className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+
+            {errors.excel_file && (
+              <p className="text-xs text-red-500 mt-2">{errors.excel_file}</p>
+            )}
           </form>
         </CardContent>
 
@@ -202,108 +246,116 @@ function RecordEntry() {
           <Button
             type="button"
             variant="outline"
-            onClick={editingId ? handleCancelEdit : () => reset()}
+            onClick={handleRemoveFile}
+            disabled={!data.excel_file || processing}
             className="px-5"
           >
-            {editingId ? "Cancel" : "Reset"}
+            Clear File
           </Button>
           <Button
             type="submit"
-            form="record-entry-form"
-            className="bg-slate-900 text-white hover:bg-slate-800 px-5"
+            form="record-upload-form"
+            disabled={!data.excel_file || processing}
+            className="bg-slate-900 text-white hover:bg-slate-800 px-6 min-w-[120px]"
           >
-            {editingId ? "Update Record" : "Submit"}
+            {processing ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Uploading...
+              </>
+            ) : (
+              "Submit File"
+            )}
           </Button>
         </CardFooter>
       </Card>
 
-      {/* List of Record Section */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">List of Record</h3>
-        <Card className="w-full shadow-sm border rounded-xl overflow-hidden bg-white">
+      {/* Shadcn Data Table Section */}
+      <Card className="w-full shadow-sm border rounded-xl overflow-hidden bg-white">
+        <CardHeader className="p-6 border-b flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-gray-50/50">
+          <CardTitle className="text-xl font-semibold text-gray-900">
+            VAT Input Records
+          </CardTitle>
+
+          {/* Search Input Filter */}
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              type="text"
+              placeholder="Search supplier or TIN..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 bg-white"
+            />
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
-              <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
-                <TableHead className="font-semibold text-gray-900">Registered Name</TableHead>
-                <TableHead className="font-semibold text-gray-900">Supplier</TableHead>
-                <TableHead className="font-semibold text-gray-900">Address</TableHead>
-                <TableHead className="text-right font-semibold text-gray-900">Gross Purchase</TableHead>
-                <TableHead className="text-right font-semibold text-gray-900">Exempt Purchase</TableHead>
-                <TableHead className="text-center font-semibold text-gray-900">Actions</TableHead>
+              <TableRow className="bg-slate-50 hover:bg-slate-50">
+                <TableHead className="font-semibold text-slate-700">Supplier Name</TableHead>
+                <TableHead className="font-semibold text-slate-700">TIN Number</TableHead>
+                <TableHead className="font-semibold text-slate-700">Imported</TableHead>
+                <TableHead className="font-semibold text-slate-700 text-right">Purchase Imported</TableHead>
+                <TableHead className="font-semibold text-slate-700 text-right">Purchase Local</TableHead>
+                <TableHead className="font-semibold text-slate-700 text-right">Services</TableHead>
+                <TableHead className="font-semibold text-slate-700 text-right">Others</TableHead>
+                <TableHead className="font-semibold text-slate-700 text-right">Total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {recordList?.data?.length > 0 ? (
-                recordList?.data.map((record) => (
-                  <TableRow key={record.id}>
-                    <TableCell className="font-medium text-gray-900">
-                      {record.resgister_name}
-                    </TableCell>
-                    <TableCell>{record.supplier_name}</TableCell>
-                    <TableCell>{record.supplier_address}</TableCell>
-                    <TableCell className="text-right">
-                      ₱{record.amount_of_gross_purchase}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      ₱{record.exempt_purchase}
+              {vatInputs?.data?.length > 0 ? (
+                vatInputs.data.map((item) => (
+                  <TableRow key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                    <TableCell className="font-medium text-slate-900">{item.supplier_name}</TableCell>
+                    <TableCell className="text-slate-600 font-mono text-xs">
+                      {item.tin_number || "—"}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center justify-center gap-2">
-                        {/* VIEW BUTTON */}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleView(record)}
-                          className="h-8 text-blue-600 border-blue-200 hover:bg-blue-50"
-                        >
-                          <Eye className="h-3.5 w-3.5 mr-1" />
-                          View
-                        </Button>
-
-                        {/* EDIT BUTTON */}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEdit(record)}
-                          className="h-8 text-amber-600 border-amber-200 hover:bg-amber-50"
-                        >
-                          <Pencil className="h-3.5 w-3.5 mr-1" />
-                          Edit
-                        </Button>
-
-                        {/* DELETE BUTTON */}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDelete(record.id)}
-                          className="h-8 text-red-600 border-red-200 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 mr-1" />
-                          Delete
-                        </Button>
-                      </div>
+                      <Badge
+                        variant={item.is_imported ? "default" : "secondary"}
+                        className={
+                          item.is_imported
+                            ? "bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-100"
+                        }
+                      >
+                        {item.is_imported ? "Yes" : "No"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs text-slate-700">
+                      {formatCurrency(item.purchase_imported)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs text-slate-700">
+                      {formatCurrency(item.purchase_local)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs text-slate-700">
+                      {formatCurrency(item.services)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs text-slate-700">
+                      {formatCurrency(item.others)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs font-bold text-slate-900">
+                      {formatCurrency(item.total)}
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="h-32 text-center text-muted-foreground"
-                  >
-                    No records found. Submit the form above to add an entry.
+                  <TableCell colSpan={8} className="h-32 text-center text-slate-500">
+                    No records found.
                   </TableCell>
                 </TableRow>
               )}
-
-              <DataTablePagination links={recordList.links} />
             </TableBody>
           </Table>
-        </Card>
-      </div>
+        </CardContent>
+
+
+      <DataTablePagination links={vatInputs.links}/>
+
+      </Card>
     </section>
   );
 }

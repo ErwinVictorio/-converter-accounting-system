@@ -13,6 +13,7 @@ class Dashboard extends Controller
     public function index()
     {
         //
+        //   $record =
          return Inertia::render('Dashboard');
     }
 
