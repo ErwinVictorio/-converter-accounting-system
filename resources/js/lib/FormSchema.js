@@ -12,3 +12,18 @@ export const recordFormSchema = z.object({
         .optional()
         .refine((val) => !val || !isNaN(Number(val)), "Must be a valid number"),
 });
+
+
+
+export const brokerSchema = z.object({
+    broker_name: z
+        .string()
+        .nonempty({ message: 'broker name is required' })
+        .max(100, { message: "Broker name must not exceed 100 characters." }),
+    tin: z
+        .string()
+        .nonempty({ message: 'TIN is required' })
+        .refine((val) => !val || /^\d{3}-\d{3}-\d{3}-\d{3}$/.test(val), {
+            message: "TIN must follow format: 000-000-000-000",
+        }),
+});

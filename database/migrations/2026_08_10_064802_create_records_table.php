@@ -22,6 +22,7 @@ return new class extends Migration
             $table->decimal('others', 10, 2)->nullable();
             $table->decimal('total', 10, 2);
             $table->date('date_uploaded'); 
+            $table->boolean('is_broker')->default(0);
             $table->timestamps();
         });
     }

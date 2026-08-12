@@ -19,7 +19,8 @@ class VatInput extends Model
         'services',
         'others',
         'total',
-        'date_uploaded'
+        'date_uploaded',
+         'is_broker'
     ];
 
     protected $casts = [

@@ -2,48 +2,69 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Brokers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class ManageBrokerController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
-        return Inertia::render('ManageBrokers');
+        $brokerList = Brokers::select('tin_number', 'broker_name', 'id')->get();
+
+        return Inertia::render('ManageBrokers', [
+            'brokerList' => $brokerList,
+        ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
-        //
+        $validated = $request->validate([
+            'broker_name' => 'required',
+            'tin'         => 'nullable',
+        ]);
+
+        try {
+            Brokers::create([
+                'broker_name' => $validated['broker_name'],
+                'tin_number'  => $validated['tin'],
+            ]);
+
+            return redirect()->back()->with('success', 'Broker created successfully!');
+        } catch (\Throwable $th) {
+            return redirect()->back()->with('error', $th->getMessage());
+        }
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, string $id)
     {
-        //
+        $validated = $request->validate([
+            'broker_name' => 'required',
+            'tin'         => 'nullable',
+        ]);
+
+        try {
+            $broker = Brokers::findOrFail($id);
+            $broker->update([
+                'broker_name' => $validated['broker_name'],
+                'tin_number'  => $validated['tin'],
+            ]);
+
+            return redirect()->back()->with('success', 'Broker updated successfully!');
+        } catch (\Throwable $th) {
+            return redirect()->back()->with('error', $th->getMessage());
+        }
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(string $id)
     {
-        //
+        try {
+            $broker = Brokers::findOrFail($id);
+            $broker->delete();
+
+            return redirect()->back()->with('success', 'Broker deleted successfully!');
+        } catch (\Throwable $th) {
+            return redirect()->back()->with('error', $th->getMessage());
+        }
     }
 }
