@@ -23,7 +23,5 @@ export const brokerSchema = z.object({
     tin: z
         .string()
         .nonempty({ message: 'TIN is required' })
-        .refine((val) => !val || /^\d{3}-\d{3}-\d{3}-\d{3}$/.test(val), {
-            message: "TIN must follow format: 000-000-000-000",
-        }),
+       
 });

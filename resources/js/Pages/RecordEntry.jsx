@@ -6,7 +6,8 @@ import {
   FileSpreadsheet, 
   X, 
   Loader2, 
-  Search 
+  Search,
+  Pencil
 } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
@@ -302,11 +303,16 @@ function RecordEntry() {
                 <TableHead className="font-semibold text-slate-700 text-right">Services</TableHead>
                 <TableHead className="font-semibold text-slate-700 text-right">Others</TableHead>
                 <TableHead className="font-semibold text-slate-700 text-right">Total</TableHead>
+                <TableHead className="font-semibold text-slate-700 text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {vatInputs?.data?.length > 0 ? (
-                vatInputs.data.map((item) => (
+                vatInputs.data.map((item) => {
+                  const isBroker = Number(item.is_broker) === 1;
+                  const isImported = Number(item.is_imported) === 1;
+
+                  return (
                   <TableRow key={item.id} className="hover:bg-slate-50/60 transition-colors">
                     <TableCell className="font-medium text-slate-900 whitespace-nowrap">{item.supplier_name}</TableCell>
                     <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
@@ -314,14 +320,14 @@ function RecordEntry() {
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant={item.is_imported ? "default" : "secondary"}
+                        variant={isImported ? "default" : "secondary"}
                         className={
-                          item.is_imported
+                          isImported
                             ? "bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200"
                             : "bg-slate-100 text-slate-700 hover:bg-slate-100"
                         }
                       >
-                        {item.is_imported ? "Yes" : "No"}
+                        {isImported ? "Yes" : "No"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
@@ -339,11 +345,30 @@ function RecordEntry() {
                     <TableCell className="text-right font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
                       {formatCurrency(item.total)}
                     </TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!isBroker}
+                        onClick={() => router.get(`/records/${item.id}/edit`)}
+                        title={
+                          isBroker
+                            ? "Edit VAT record"
+                            : "Only broker records can be edited"
+                        }
+                        className="h-8 gap-1.5"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+                    </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={8} className="h-32 text-center text-slate-500">
+                  <TableCell colSpan={9} className="h-32 text-center text-slate-500">
                     No records found.
                   </TableCell>
                 </TableRow>
