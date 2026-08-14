@@ -479,8 +479,10 @@ function RecordEntry() {
 
       <Dialog open={Boolean(selectedBirRecord)} onOpenChange={(open) => !open && closeBirEditor()}>
         <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>BIR Vendor Information</DialogTitle>
+          <DialogHeader className="border-b border-slate-100 pb-4 pr-8">
+            <DialogTitle className="text-base font-semibold text-slate-900">
+              BIR Vendor Information
+            </DialogTitle>
           </DialogHeader>
 
           <form id="bir-info-form" onSubmit={handleBirSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -489,7 +491,7 @@ function RecordEntry() {
               <select
                 value={birData.vendor_type}
                 onChange={(e) => setBirData("vendor_type", e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs transition-colors focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-blue-500/20"
               >
                 <option value="company">Company</option>
                 <option value="individual">Individual</option>
@@ -507,7 +509,7 @@ function RecordEntry() {
                 value={birData.tin_number}
                 onChange={(e) => setBirData("tin_number", e.target.value.replace(/\D/g, "").slice(0, 9))}
                 placeholder="9 digits only"
-                className={birErrors.tin_number ? "border-red-500 focus-visible:ring-red-500" : ""}
+                className={`h-10 bg-white ${birErrors.tin_number ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               />
               {birErrors.tin_number && (
                 <p className="text-xs text-red-500 font-medium">{birErrors.tin_number}</p>
@@ -522,7 +524,7 @@ function RecordEntry() {
                 <Input
                   value={birData.company_name}
                   onChange={(e) => setBirData("company_name", e.target.value)}
-                  className={birErrors.company_name ? "border-red-500 focus-visible:ring-red-500" : ""}
+                  className={`h-10 bg-white ${birErrors.company_name ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                 />
                 {birErrors.company_name && (
                   <p className="text-xs text-red-500 font-medium">{birErrors.company_name}</p>
@@ -534,11 +536,11 @@ function RecordEntry() {
                   <label className="text-sm font-medium text-slate-700">
                     Last Name <span className="text-red-500">*</span>
                   </label>
-                  <Input
-                    value={birData.last_name}
-                    onChange={(e) => setBirData("last_name", e.target.value)}
-                    className={birErrors.last_name ? "border-red-500 focus-visible:ring-red-500" : ""}
-                  />
+                    <Input
+                      value={birData.last_name}
+                      onChange={(e) => setBirData("last_name", e.target.value)}
+                      className={`h-10 bg-white ${birErrors.last_name ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                    />
                   {birErrors.last_name && (
                     <p className="text-xs text-red-500 font-medium">{birErrors.last_name}</p>
                   )}
@@ -548,11 +550,11 @@ function RecordEntry() {
                   <label className="text-sm font-medium text-slate-700">
                     First Name <span className="text-red-500">*</span>
                   </label>
-                  <Input
-                    value={birData.first_name}
-                    onChange={(e) => setBirData("first_name", e.target.value)}
-                    className={birErrors.first_name ? "border-red-500 focus-visible:ring-red-500" : ""}
-                  />
+                    <Input
+                      value={birData.first_name}
+                      onChange={(e) => setBirData("first_name", e.target.value)}
+                      className={`h-10 bg-white ${birErrors.first_name ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                    />
                   {birErrors.first_name && (
                     <p className="text-xs text-red-500 font-medium">{birErrors.first_name}</p>
                   )}
@@ -565,7 +567,7 @@ function RecordEntry() {
                   <Input
                     value={birData.middle_name}
                     onChange={(e) => setBirData("middle_name", e.target.value)}
-                    className={birErrors.middle_name ? "border-red-500 focus-visible:ring-red-500" : ""}
+                    className={`h-10 bg-white ${birErrors.middle_name ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                   />
                   {birErrors.middle_name && (
                     <p className="text-xs text-red-500 font-medium">{birErrors.middle_name}</p>
@@ -579,7 +581,7 @@ function RecordEntry() {
               <Input
                 value={birData.address1}
                 onChange={(e) => setBirData("address1", e.target.value)}
-                className={birErrors.address1 ? "border-red-500 focus-visible:ring-red-500" : ""}
+                className={`h-10 bg-white ${birErrors.address1 ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               />
             </div>
 
@@ -588,12 +590,12 @@ function RecordEntry() {
               <Input
                 value={birData.address2}
                 onChange={(e) => setBirData("address2", e.target.value)}
-                className={birErrors.address2 ? "border-red-500 focus-visible:ring-red-500" : ""}
+                className={`h-10 bg-white ${birErrors.address2 ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               />
             </div>
           </form>
 
-          <DialogFooter>
+          <DialogFooter className="border-t border-slate-100 pt-4">
             <Button type="button" variant="outline" onClick={closeBirEditor}>
               Cancel
             </Button>
