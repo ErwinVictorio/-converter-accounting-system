@@ -6,7 +6,7 @@ export const recordFormSchema = z.object({
     grossPurchase: z
         .string()
         .min(1, "Gross purchase amount is required.")
-        .refine((val) => !isNaN(Number(val)), "Must be a valid number"),
+        .refine((val) => !isNaN(Number(val)),  "Must be a valid number"),
     exemptPurchase: z
         .string()
         .optional()
