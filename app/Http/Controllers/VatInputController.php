@@ -195,25 +195,27 @@ class VatInputController extends Controller
         $supplierName = $validated['vendor_type'] === 'company'
             ? $validated['company_name']
             : trim($validated['last_name'] . ' ' . $validated['first_name'] . ' ' . $validated['middle_name']);
+        [$address1, $address2] = $this->splitAddress((string) ($validated['address1'] ?? ''));
+        $address2 = $address2 ?: $this->birText((string) ($validated['address2'] ?? ''));
 
         $vatInput->update([
-            'supplier_name' => strtoupper(trim($supplierName)),
+            'supplier_name' => $this->birText($supplierName),
             'tin_number' => $validated['tin_number'],
             'vendor_type' => $validated['vendor_type'],
             'company_name' => $validated['vendor_type'] === 'company'
-                ? strtoupper(trim((string) $validated['company_name']))
+                ? $this->birText((string) $validated['company_name'])
                 : null,
             'last_name' => $validated['vendor_type'] === 'individual'
-                ? strtoupper(trim((string) $validated['last_name']))
+                ? $this->birText((string) $validated['last_name'])
                 : null,
             'first_name' => $validated['vendor_type'] === 'individual'
-                ? strtoupper(trim((string) $validated['first_name']))
+                ? $this->birText((string) $validated['first_name'])
                 : null,
             'middle_name' => $validated['vendor_type'] === 'individual'
-                ? strtoupper(trim((string) $validated['middle_name']))
+                ? $this->birText((string) $validated['middle_name'])
                 : null,
-            'address1' => $validated['address1'] ?? null,
-            'address2' => $validated['address2'] ?? null,
+            'address1' => $address1 ?: null,
+            'address2' => $address2 ?: null,
         ]);
 
         return back()->with('success', 'BIR vendor information updated.');
@@ -226,5 +228,36 @@ class VatInputController extends Controller
         }
 
         return Brokers::where('tin_number', $vatInput->tin_number)->exists();
+    }
+
+    private function splitAddress(string $value): array
+    {
+        $parts = array_values(array_filter(array_map(
+            fn (string $part) => $this->birText($part),
+            explode(',', $value)
+        )));
+
+        if ($parts === []) {
+            return ['', ''];
+        }
+
+        if (count($parts) === 1) {
+            return [$parts[0], ''];
+        }
+
+        return [
+            implode(' ', array_slice($parts, 0, -1)),
+            $parts[count($parts) - 1],
+        ];
+    }
+
+    private function birText(?string $value): string
+    {
+        $value = strtoupper(trim((string) $value));
+        $value = str_replace('&', ' AND ', $value);
+        $value = str_replace(',', ' ', $value);
+        $value = preg_replace('/[^A-Z0-9 .#\/\-\(\)]/', ' ', $value);
+
+        return preg_replace('/\s+/', ' ', trim($value));
     }
 }

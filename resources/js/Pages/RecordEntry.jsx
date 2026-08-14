@@ -583,15 +583,17 @@ function RecordEntry() {
                 onChange={(e) => setBirData("address1", e.target.value)}
                 className={`h-10 bg-white ${birErrors.address1 ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               />
+              <p className="text-xs text-slate-500">Street/building/barangay only. Do not include comma.</p>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Address 2</label>
+              <label className="text-sm font-medium text-slate-700">Address 2 / City</label>
               <Input
                 value={birData.address2}
                 onChange={(e) => setBirData("address2", e.target.value)}
                 className={`h-10 bg-white ${birErrors.address2 ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               />
+              <p className="text-xs text-slate-500">City/province goes here as a separate DAT field.</p>
             </div>
           </form>
 

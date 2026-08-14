@@ -85,12 +85,12 @@ class ReliefPurchaseDatGenerator
             'D',
             'P',
             $this->quote($this->digits((string) ($transaction['vendor_tin'] ?? $transaction['tin_number'] ?? ''))),
-            $this->quote($companyName),
-            $this->optionalName($transaction['last_name'] ?? ''),
-            $this->optionalName($transaction['first_name'] ?? ''),
-            $this->optionalName($transaction['middle_name'] ?? ''),
-            $this->quote($transaction['address1'] ?? ''),
-            $this->quote($transaction['address2'] ?? ''),
+            $this->quote($this->birText($companyName)),
+            $this->optionalName($this->birText($transaction['last_name'] ?? '')),
+            $this->optionalName($this->birText($transaction['first_name'] ?? '')),
+            $this->optionalName($this->birText($transaction['middle_name'] ?? '')),
+            $this->quote($this->birText($transaction['address1'] ?? '')),
+            $this->quote($this->birText($transaction['address2'] ?? '')),
             $this->detailNumber($this->amount($transaction, 'exempt')),
             $this->detailNumber($this->amount($transaction, 'zero_rated')),
             $this->detailNumber($this->amount($transaction, 'services')),
@@ -118,6 +118,16 @@ class ReliefPurchaseDatGenerator
         $value = trim((string) $value);
 
         return $value === '' ? '' : $this->quote($value);
+    }
+
+    private function birText(?string $value): string
+    {
+        $value = strtoupper(trim((string) $value));
+        $value = str_replace('&', ' AND ', $value);
+        $value = str_replace(',', ' ', $value);
+        $value = preg_replace('/[^A-Z0-9 .#\/\-\(\)]/', ' ', $value);
+
+        return preg_replace('/\s+/', ' ', trim($value));
     }
 
     private function headerNumber(float $value): string

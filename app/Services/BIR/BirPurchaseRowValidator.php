@@ -30,6 +30,18 @@ class BirPurchaseRowValidator
             }
         }
 
+        if (trim((string) ($row['address1'] ?? '')) === '') {
+            $errors[] = "Row {$excelRow}: Supplier Address1 is required.";
+        }
+
+        foreach (['company_name', 'last_name', 'first_name', 'middle_name', 'address1', 'address2'] as $field) {
+            $value = (string) ($row[$field] ?? '');
+
+            if (str_contains($value, ',') || str_contains($value, '&')) {
+                $errors[] = "Row {$excelRow}: {$field} cannot contain comma or ampersand.";
+            }
+        }
+
         foreach (['exempt', 'zero_rated', 'services', 'capital_goods', 'other_than_capital_goods', 'input_vat'] as $field) {
             $value = $row[$field] ?? 0;
 

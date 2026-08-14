@@ -105,13 +105,6 @@ class DatFileController extends Controller
     {
         $validated = $request->validate([
             'period' => ['required', 'date'],
-            'non_creditable_input_vat' => ['required', 'numeric', 'min:0'],
-            'company_tin' => ['required', 'regex:/^\d{9}$/'],
-            'company_name' => ['required', 'string', 'max:255'],
-            'registered_name' => ['nullable', 'string', 'max:255'],
-            'company_address1' => ['required', 'string', 'max:255'],
-            'company_address2' => ['nullable', 'string', 'max:255'],
-            'rdo_code' => ['required', 'regex:/^\d{3}$/'],
         ]);
 
         $period = Carbon::parse($validated['period'])->endOfMonth();
@@ -139,13 +132,15 @@ class DatFileController extends Controller
             return back()->with('error', 'Cannot generate DAT. Fix these VAT input rows first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
         }
 
+        $defaultCompany = config('bir.companies.008791976');
+
         $company = [
-            'tin' => $validated['company_tin'],
-            'name' => $validated['company_name'],
-            'registered_name' => $validated['registered_name'] ?: $validated['company_name'],
-            'address1' => $validated['company_address1'],
-            'address2' => $validated['company_address2'] ?? '',
-            'rdo_code' => $validated['rdo_code'],
+            'tin' => $defaultCompany['tin'],
+            'name' => $defaultCompany['name'],
+            'registered_name' => $defaultCompany['registered_name'],
+            'address1' => $defaultCompany['address1'],
+            'address2' => $defaultCompany['address2'],
+            'rdo_code' => $defaultCompany['rdo_code'],
             'final_header_field' => '12',
         ];
 
@@ -153,7 +148,7 @@ class DatFileController extends Controller
             $company,
             $records->map(fn (VatInput $record) => $record->toBirPurchaseRow()),
             $period,
-            (float) $validated['non_creditable_input_vat']
+            0
         );
 
         $fileName = $generator->filename($company, $period);
