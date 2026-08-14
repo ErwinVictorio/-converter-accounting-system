@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Dashboard;
+use App\Http\Controllers\DatFileController;
 use App\Http\Controllers\ManageBrokerController;
 use App\Http\Controllers\VatInputController;
 use Illuminate\Support\Facades\Route;
@@ -13,8 +14,11 @@ Route::get('/records',[VatInputController::class,'index']);
 Route::post('/vat-import',[VatInputController::class,'import']);
 Route::get('/records/{vatInput}/edit', [VatInputController::class, 'edit']);
 Route::put('/records/{vatInput}', [VatInputController::class, 'update']);
+Route::put('/records/{vatInput}/bir-info', [VatInputController::class, 'updateBirInfo']);
 
-Route::get('/generate-datfile',[VatInputController::class,'generateDatFile']);
+Route::get('/generate-datfile',[DatFileController::class,'index']);
+Route::get('/bir/company/{tin}',[DatFileController::class,'companyLookup']);
+Route::get('/download-datfile',[DatFileController::class,'download']);
 
 
 //  Route for Brokers

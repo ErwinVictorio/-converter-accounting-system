@@ -29,6 +29,13 @@ function EditVatInputRecord() {
   const { data, setData, put, processing, errors } = useForm({
     supplier_name: "",
     tin_number: "",
+    vendor_type: "company",
+    company_name: "",
+    last_name: "",
+    first_name: "",
+    middle_name: "",
+    address1: "",
+    address2: "",
     is_imported: Number(vatInput?.is_imported) === 1 ? "1" : "0",
     purchase_imported: "",
     purchase_local: "",
@@ -206,6 +213,109 @@ function EditVatInputRecord() {
                 />
                 {errors.tin_number && (
                   <p className="text-xs text-red-500 font-medium">{errors.tin_number}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Vendor Type</label>
+                <select
+                  value={data.vendor_type}
+                  onChange={(e) => setData("vendor_type", e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                  <option value="company">Company</option>
+                  <option value="individual">Individual</option>
+                </select>
+                {errors.vendor_type && (
+                  <p className="text-xs text-red-500 font-medium">{errors.vendor_type}</p>
+                )}
+              </div>
+
+              {data.vendor_type === "company" ? (
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Company Name <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={data.company_name}
+                    onChange={(e) => {
+                      setData("company_name", e.target.value);
+                      setData("supplier_name", e.target.value);
+                    }}
+                    placeholder="Enter company name"
+                    className={errors.company_name ? "border-red-500 focus-visible:ring-red-500" : ""}
+                  />
+                  {errors.company_name && (
+                    <p className="text-xs text-red-500 font-medium">{errors.company_name}</p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">
+                      Last Name <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                      value={data.last_name}
+                      onChange={(e) => setData("last_name", e.target.value)}
+                      className={errors.last_name ? "border-red-500 focus-visible:ring-red-500" : ""}
+                    />
+                    {errors.last_name && (
+                      <p className="text-xs text-red-500 font-medium">{errors.last_name}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">
+                      First Name <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                      value={data.first_name}
+                      onChange={(e) => setData("first_name", e.target.value)}
+                      className={errors.first_name ? "border-red-500 focus-visible:ring-red-500" : ""}
+                    />
+                    {errors.first_name && (
+                      <p className="text-xs text-red-500 font-medium">{errors.first_name}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">
+                      Middle Name <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                      value={data.middle_name}
+                      onChange={(e) => setData("middle_name", e.target.value)}
+                      className={errors.middle_name ? "border-red-500 focus-visible:ring-red-500" : ""}
+                    />
+                    {errors.middle_name && (
+                      <p className="text-xs text-red-500 font-medium">{errors.middle_name}</p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Address 1</label>
+                <Input
+                  value={data.address1}
+                  onChange={(e) => setData("address1", e.target.value)}
+                  className={errors.address1 ? "border-red-500 focus-visible:ring-red-500" : ""}
+                />
+                {errors.address1 && (
+                  <p className="text-xs text-red-500 font-medium">{errors.address1}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Address 2</label>
+                <Input
+                  value={data.address2}
+                  onChange={(e) => setData("address2", e.target.value)}
+                  className={errors.address2 ? "border-red-500 focus-visible:ring-red-500" : ""}
+                />
+                {errors.address2 && (
+                  <p className="text-xs text-red-500 font-medium">{errors.address2}</p>
                 )}
               </div>
 

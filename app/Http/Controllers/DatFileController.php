@@ -2,58 +2,164 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\RecordEntry;
+use App\Models\VatInput;
+use App\Models\Supplier;
+use App\Services\BIR\BirPurchaseRowValidator;
+use App\Services\BIR\ReliefPurchaseDatGenerator;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class DatFileController extends Controller
 {
-    public function index()
+    public function index(BirPurchaseRowValidator $validator)
     {
+        $availablePeriods = VatInput::query()
+            ->selectRaw("DATE_FORMAT(date_uploaded, '%Y-%m') as value")
+            ->selectRaw("DATE_FORMAT(date_uploaded, '%M %Y') as label")
+            ->selectRaw('COUNT(*) as records_count')
+            ->groupBy('value', 'label')
+            ->orderByDesc('value')
+            ->get();
+        $periodIssues = [];
 
-        return Inertia::render('GenerateDatFile');
+        VatInput::query()
+            ->orderBy('date_uploaded')
+            ->orderBy('id')
+            ->get()
+            ->groupBy(fn (VatInput $record) => $record->date_uploaded->format('Y-m'))
+            ->each(function ($records, string $period) use (&$periodIssues, $validator) {
+                $errors = [];
+
+                foreach ($records->values() as $index => $record) {
+                    foreach ($validator->validate($record->toBirPurchaseRow(), $index + 2) as $error) {
+                        $errors[] = "Record #{$record->id} {$record->supplier_name}: {$error}";
+                    }
+                }
+
+                $periodIssues[$period] = [
+                    'invalid_count' => count($errors),
+                    'errors' => array_slice($errors, 0, 10),
+                ];
+            });
+
+        return Inertia::render('GenerateDatFile', [
+            'defaultCompany' => config('bir.companies.008791976'),
+            'availablePeriods' => $availablePeriods,
+            'periodIssues' => $periodIssues,
+        ]);
     }
 
-    public function download(Request $request)
+    public function companyLookup(string $tin)
     {
-        $request->validate([
-            'startDate' => 'required|date',
-            'endDate'   => 'required|date|after_or_equal:startDate',
-        ]);
+        $tin = preg_replace('/\D/', '', $tin);
+        $company = config("bir.companies.{$tin}");
 
-
-
-        $records = RecordEntry::whereBetween('created_at', [
-            $request->startDate . ' 00:00:00',
-            $request->endDate . ' 23:59:59'
-        ])->get();
-
-        if ($records->isEmpty()) {
-            return redirect()->back()->with('error', 'No records found for the selected date range.');
+        if ($company) {
+            return response()->json($company);
         }
 
-        $fileName = 'PURCHASES_' . $request->startDate . '_TO_' . $request->endDate . '.dat';
+        $vatInput = VatInput::query()
+            ->whereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 9) = ?", [$tin])
+            ->latest('id')
+            ->first();
 
-        return response()->streamDownload(function () use ($records) {
-            $handle = fopen('php://output', 'w');
+        if ($vatInput) {
+            return response()->json([
+                'tin' => $tin,
+                'name' => $vatInput->company_name ?: $vatInput->supplier_name,
+                'registered_name' => $vatInput->company_name ?: $vatInput->supplier_name,
+                'address1' => $vatInput->address1 ?: '',
+                'address2' => $vatInput->address2 ?: '',
+                'rdo_code' => '',
+                'source' => 'vat_inputs',
+            ]);
+        }
 
-            foreach ($records as $record) {
-                $name = $record->resgister_name ?? $record->registered_name ?? '';
+        $supplier = Supplier::query()
+            ->whereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin, '-', ''), ' ', ''), '.', ''), 9) = ?", [$tin])
+            ->first();
 
-                $line = implode(',', [
-                    $name,
-                    $record->supplier_name,
-                    $record->supplier_address,
-                    number_format((float)$record->amount_of_gross_purchase, 2, '.', ''),
-                    number_format((float)$record->exempt_purchase, 2, '.', ''),
-                ]) . "\r\n";
+        if ($supplier) {
+            return response()->json([
+                'tin' => $tin,
+                'name' => $supplier->payee ?: $supplier->name,
+                'registered_name' => $supplier->payee ?: $supplier->name,
+                'address1' => $supplier->addr ?: '',
+                'address2' => '',
+                'rdo_code' => '',
+                'source' => 'suppliers',
+            ]);
+        }
 
-                fwrite($handle, $line);
-            }
+        return response()->json([
+            'message' => 'TIN not found.',
+        ], 404);
+    }
 
-            fclose($handle);
-        }, $fileName, [
-            'Content-Type' => 'text/plain',
+    public function download(
+        Request $request,
+        ReliefPurchaseDatGenerator $generator,
+        BirPurchaseRowValidator $validator
+    )
+    {
+        $validated = $request->validate([
+            'period' => ['required', 'date'],
+            'non_creditable_input_vat' => ['required', 'numeric', 'min:0'],
+            'company_tin' => ['required', 'regex:/^\d{9}$/'],
+            'company_name' => ['required', 'string', 'max:255'],
+            'registered_name' => ['nullable', 'string', 'max:255'],
+            'company_address1' => ['required', 'string', 'max:255'],
+            'company_address2' => ['nullable', 'string', 'max:255'],
+            'rdo_code' => ['required', 'regex:/^\d{3}$/'],
         ]);
+
+        $period = Carbon::parse($validated['period'])->endOfMonth();
+
+        $records = VatInput::query()
+            ->whereBetween('date_uploaded', [
+                $period->copy()->startOfMonth()->toDateString(),
+                $period->copy()->endOfMonth()->toDateString(),
+            ])
+            ->orderBy('id')
+            ->get();
+
+        if ($records->isEmpty()) {
+            return back()->with('error', 'No VAT input records found for the selected reporting month.');
+        }
+
+        $rowErrors = [];
+        foreach ($records as $index => $record) {
+            foreach ($validator->validate($record->toBirPurchaseRow(), $index + 2) as $error) {
+                $rowErrors[] = "Record #{$record->id} {$record->supplier_name}: {$error}";
+            }
+        }
+
+        if ($rowErrors !== []) {
+            return back()->with('error', 'Cannot generate DAT. Fix these VAT input rows first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
+        }
+
+        $company = [
+            'tin' => $validated['company_tin'],
+            'name' => $validated['company_name'],
+            'registered_name' => $validated['registered_name'] ?: $validated['company_name'],
+            'address1' => $validated['company_address1'],
+            'address2' => $validated['company_address2'] ?? '',
+            'rdo_code' => $validated['rdo_code'],
+            'final_header_field' => '12',
+        ];
+
+        $content = $generator->generate(
+            $company,
+            $records->map(fn (VatInput $record) => $record->toBirPurchaseRow()),
+            $period,
+            (float) $validated['non_creditable_input_vat']
+        );
+
+        $fileName = $generator->filename($company, $period);
+
+        return response($content)
+            ->header('Content-Type', 'text/plain')
+            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
     }
 }

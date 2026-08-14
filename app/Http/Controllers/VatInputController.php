@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Imports\VatInputImport;
 use App\Models\Brokers;
 use App\Models\VatInput;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -46,13 +47,14 @@ class VatInputController extends Controller
     {
         $request->validate([
             'excel_file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
+            'reporting_month' => ['required', 'date'],
         ]);
 
         try {
             $file = $request->file('excel_file');
+            $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
 
-            // Ipasa ang $file at ang original filename nito para malaman ng package ang file extension
-            Excel::import(new VatInputImport, $file, null, \Maatwebsite\Excel\Excel::XLSX);
+            Excel::import(new VatInputImport($reportingPeriod), $file, null, \Maatwebsite\Excel\Excel::XLSX);
             // O mas simple:
             // Excel::import(new VatInputImport, $file);
 
@@ -80,8 +82,15 @@ class VatInputController extends Controller
         }
 
         $validated = $request->validate([
-            'supplier_name' => ['required', 'string', 'max:255'],
+            'supplier_name' => ['nullable', 'string', 'max:255'],
             'tin_number' => ['nullable', 'string', 'max:255'],
+            'vendor_type' => ['required', 'in:company,individual'],
+            'company_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,company'],
+            'last_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
+            'first_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
+            'middle_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
+            'address1' => ['nullable', 'string', 'max:255'],
+            'address2' => ['nullable', 'string', 'max:255'],
             'is_imported' => ['required', 'boolean'],
             'purchase_imported' => ['nullable', 'numeric', 'min:0'],
             'purchase_local' => ['nullable', 'numeric', 'min:0'],
@@ -113,13 +122,40 @@ class VatInputController extends Controller
         }
 
         DB::transaction(function () use ($vatInput, $validated, $amounts, $newTotal) {
+            $supplierName = $validated['vendor_type'] === 'company'
+                ? ($validated['company_name'] ?? $validated['supplier_name'] ?? '')
+                : trim(($validated['last_name'] ?? '') . ' ' . ($validated['first_name'] ?? '') . ' ' . ($validated['middle_name'] ?? ''));
+
             VatInput::create([
-                'supplier_name' => strtoupper(trim($validated['supplier_name'])),
+                'supplier_name' => strtoupper(trim($supplierName)),
                 'tin_number' => $validated['tin_number'] ? trim($validated['tin_number']) : null,
+                'vendor_type' => $validated['vendor_type'],
+                'company_name' => $validated['vendor_type'] === 'company'
+                    ? strtoupper(trim((string) ($validated['company_name'] ?? $validated['supplier_name'])))
+                    : null,
+                'last_name' => $validated['vendor_type'] === 'individual'
+                    ? strtoupper(trim((string) ($validated['last_name'] ?? '')))
+                    : null,
+                'first_name' => $validated['vendor_type'] === 'individual'
+                    ? strtoupper(trim((string) ($validated['first_name'] ?? '')))
+                    : null,
+                'middle_name' => $validated['vendor_type'] === 'individual'
+                    ? strtoupper(trim((string) ($validated['middle_name'] ?? '')))
+                    : null,
+                'address1' => $validated['address1'] ?? null,
+                'address2' => $validated['address2'] ?? null,
                 'is_imported' => (bool) $validated['is_imported'],
+                'exempt' => 0,
+                'zero_rated' => 0,
                 'purchase_imported' => $amounts['purchase_imported'],
                 'purchase_local' => $amounts['purchase_local'],
                 'services' => $amounts['services'],
+                'capital_goods' => 0,
+                'other_than_capital_goods' => $amounts['purchase_local'] + $amounts['others'],
+                'taxable_net_of_vat' => $newTotal,
+                'vat_rate' => 12,
+                'input_vat' => round($newTotal * 0.12, 2),
+                'total_purchases' => $newTotal,
                 'others' => $amounts['others'],
                 'total' => $newTotal,
                 'date_uploaded' => $vatInput->getRawOriginal('date_uploaded'),
@@ -141,6 +177,46 @@ class VatInputController extends Controller
         });
 
         return redirect('/records')->with('success', 'VAT input record adjusted successfully.');
+    }
+
+    public function updateBirInfo(Request $request, VatInput $vatInput)
+    {
+        $validated = $request->validate([
+            'vendor_type' => ['required', 'in:company,individual'],
+            'tin_number' => ['required', 'regex:/^\d{9}$/', 'not_in:000000000'],
+            'company_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,company'],
+            'last_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
+            'first_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
+            'middle_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
+            'address1' => ['nullable', 'string', 'max:255'],
+            'address2' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $supplierName = $validated['vendor_type'] === 'company'
+            ? $validated['company_name']
+            : trim($validated['last_name'] . ' ' . $validated['first_name'] . ' ' . $validated['middle_name']);
+
+        $vatInput->update([
+            'supplier_name' => strtoupper(trim($supplierName)),
+            'tin_number' => $validated['tin_number'],
+            'vendor_type' => $validated['vendor_type'],
+            'company_name' => $validated['vendor_type'] === 'company'
+                ? strtoupper(trim((string) $validated['company_name']))
+                : null,
+            'last_name' => $validated['vendor_type'] === 'individual'
+                ? strtoupper(trim((string) $validated['last_name']))
+                : null,
+            'first_name' => $validated['vendor_type'] === 'individual'
+                ? strtoupper(trim((string) $validated['first_name']))
+                : null,
+            'middle_name' => $validated['vendor_type'] === 'individual'
+                ? strtoupper(trim((string) $validated['middle_name']))
+                : null,
+            'address1' => $validated['address1'] ?? null,
+            'address2' => $validated['address2'] ?? null,
+        ]);
+
+        return back()->with('success', 'BIR vendor information updated.');
     }
 
     private function isBrokerRecord(VatInput $vatInput): bool
