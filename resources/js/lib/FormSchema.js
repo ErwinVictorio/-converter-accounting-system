@@ -25,3 +25,22 @@ export const brokerSchema = z.object({
         .nonempty({ message: 'TIN is required' })
        
 });
+
+export const supplierSchema = z.object({
+    tin: z
+        .string()
+        .nonempty({ message: "TIN is required" })
+        .max(20, { message: "TIN must not exceed 20 characters." }),
+    name: z
+        .string()
+        .nonempty({ message: "Supplier name is required" })
+        .max(60, { message: "Supplier name must not exceed 60 characters." }),
+    addr: z
+        .string()
+        .nonempty({ message: "Address is required" })
+        .max(100, { message: "Address must not exceed 100 characters." }),
+    city: z
+        .string()
+        .nonempty({ message: "City is required" })
+        .max(100, { message: "City must not exceed 100 characters." }),
+});

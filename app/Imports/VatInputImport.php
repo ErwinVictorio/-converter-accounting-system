@@ -31,10 +31,10 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         $rawTin = (string) $this->value($data, ['vendor_tin', 'tin', 'tin_number']);
         $systemSupplierName = strtoupper(trim((string) $this->value($data, ['supplier_name', 'company_name', 'companyname'])));
         $supplier = $this->findSupplier($rawTin, $systemSupplierName);
-        [$address1, $address2] = $this->splitAddress((string) ($supplier?->addr ?: $this->value($data, ['address1', 'address_1'])));
+        [$address1, $address2] = $this->supplierAddress($supplier, $data);
 
-        $tinNumber = $this->birTin($supplier?->tin ?: $rawTin);
-        $companyName = $this->birText((string) ($supplier?->payee ?: $supplier?->name ?: $systemSupplierName));
+        $tinNumber = $this->formatTin($supplier?->tin ?: $rawTin);
+        $companyName = $this->birText((string) ($supplier?->name ?: $systemSupplierName));
         $lastName = $this->birText((string) $this->value($data, ['last_name', 'lastname']));
         $firstName = $this->birText((string) $this->value($data, ['first_name', 'firstname']));
         $middleName = $this->birText((string) $this->value($data, ['middle_name', 'middlename']));
@@ -68,6 +68,7 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
 
         $existingRecord = VatInput::where('supplier_name', $supplierName)
             ->where('is_imported', $isImported)
+            ->where('is_adjusted', false)
             ->whereDate('date_uploaded', $this->uploadDate)
             ->first();
 
@@ -85,13 +86,13 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             $newTotal = round($newPurchaseImported + $newPurchaseLocal + $newServices + $newOthers, 2);
 
             $existingRecord->update([
-                'tin_number' => $existingRecord->tin_number ?: $tinNumber,
+                'tin_number' => $tinNumber ?: $existingRecord->tin_number,
                 'company_name' => $existingRecord->company_name ?: ($companyName ?: null),
                 'last_name' => $existingRecord->last_name ?: ($lastName ?: null),
                 'first_name' => $existingRecord->first_name ?: ($firstName ?: null),
                 'middle_name' => $existingRecord->middle_name ?: ($middleName ?: null),
-                'address1' => $existingRecord->address1 ?: $address1,
-                'address2' => $existingRecord->address2 ?: ($address2 ?: $this->birText((string) $this->value($data, ['address2', 'address_2']))),
+                'address1' => $supplier ? $address1 : ($existingRecord->address1 ?: $address1),
+                'address2' => $supplier ? $address2 : ($existingRecord->address2 ?: $address2),
                 'exempt' => $newExempt,
                 'zero_rated' => $newZeroRated,
                 'purchase_imported' => $newPurchaseImported,
@@ -119,7 +120,7 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             'first_name' => $firstName ?: null,
             'middle_name' => $middleName ?: null,
             'address1' => $address1,
-            'address2' => $address2 ?: $this->birText((string) $this->value($data, ['address2', 'address_2'])),
+            'address2' => $address2,
             'is_imported' => $isImported,
             'exempt' => $exempt,
             'zero_rated' => $zeroRated,
@@ -135,6 +136,7 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             'others' => $others,
             'total' => $total,
             'date_uploaded' => $this->uploadDate,
+            'is_adjusted' => false,
         ]);
     }
 
@@ -170,9 +172,49 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         return substr($this->digits($value), 0, 9);
     }
 
+    private function formatTin(?string $value): string
+    {
+        $digits = $this->supplierTin($value);
+
+        if (strlen($digits) > 9 && strlen($digits) < 12) {
+            $digits = str_pad($digits, 12, '0');
+        }
+
+        if (strlen($digits) === 12) {
+            return substr($digits, 0, 3) . '-' .
+                substr($digits, 3, 3) . '-' .
+                substr($digits, 6, 3) . '-' .
+                substr($digits, 9, 3);
+        }
+
+        if (strlen($digits) === 9) {
+            return substr($digits, 0, 3) . '-' .
+                substr($digits, 3, 3) . '-' .
+                substr($digits, 6, 3);
+        }
+
+        return $digits;
+    }
+
+    private function supplierTin(?string $value): string
+    {
+        return substr($this->digits($value), 0, 12);
+    }
+
     private function findSupplier(?string $tin, string $supplierName): ?Supplier
     {
         $birTin = $this->birTin($tin);
+        $supplierTin = $this->supplierTin($tin);
+
+        if (strlen($supplierTin) === 12) {
+            $supplier = Supplier::query()
+                ->whereRaw("REPLACE(REPLACE(REPLACE(tin, '-', ''), ' ', ''), '.', '') = ?", [$supplierTin])
+                ->first();
+
+            if ($supplier) {
+                return $supplier;
+            }
+        }
 
         if ($birTin !== '') {
             $supplier = Supplier::query()
@@ -190,8 +232,24 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
 
         return Supplier::query()
             ->where('name', $supplierName)
-            ->orWhere('payee', $supplierName)
             ->first();
+    }
+
+    private function supplierAddress(?Supplier $supplier, array $data): array
+    {
+        if ($supplier) {
+            return [
+                $this->birText((string) $supplier->addr),
+                $this->birText((string) $supplier->city),
+            ];
+        }
+
+        [$address1, $address2] = $this->splitAddress((string) $this->value($data, ['address1', 'address_1']));
+
+        return [
+            $address1,
+            $address2 ?: $this->birText((string) $this->value($data, ['address2', 'address_2'])),
+        ];
     }
 
     private function splitAddress(string $value): array

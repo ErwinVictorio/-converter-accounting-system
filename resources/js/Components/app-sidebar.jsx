@@ -18,7 +18,9 @@ import {
     DatabasePlus,
     ChartNoAxesCombined,
     Briefcase,
+    Users
 } from "lucide-react";
+
 
 const navItems = [
     {
@@ -42,6 +44,13 @@ const navItems = [
         url: "/generate-datfile",
         icon: ChartNoAxesCombined,
     },
+
+    {
+        title: "Manage Suppliers",
+        url: "/suppliers",
+        icon: Users,
+    },
+
 ];
 
 export function AppSidebar() {

@@ -10,8 +10,12 @@ class BirPurchaseRowValidator
         $vendorType = $row['vendor_type'] ?? 'company';
         $tin = preg_replace('/\D/', '', (string) ($row['vendor_tin'] ?? $row['tin_number'] ?? ''));
 
-        if (! preg_match('/^\d{9}$/', $tin) || $tin === '000000000') {
-            $errors[] = "Row {$excelRow}: Vendor TIN must contain exactly 9 digits and cannot be 000000000.";
+        if (strlen($tin) > 9 && strlen($tin) < 12) {
+            $tin = str_pad($tin, 12, '0');
+        }
+
+        if (! preg_match('/^(\d{9}|\d{12})$/', $tin) || substr($tin, 0, 9) === '000000000') {
+            $errors[] = "Row {$excelRow}: Vendor TIN must contain 9 or 12 digits and cannot start with 000000000.";
         }
 
         if (! in_array($vendorType, ['company', 'individual'], true)) {

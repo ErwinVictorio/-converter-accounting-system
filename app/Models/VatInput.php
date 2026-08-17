@@ -35,7 +35,8 @@ class VatInput extends Model
     'others',
     'total',
     'date_uploaded',
-    'is_broker'
+    'is_broker',
+    'is_adjusted'
   ];
 
   protected $casts = [
@@ -53,6 +54,8 @@ class VatInput extends Model
     'total_purchases' => 'decimal:2',
     'others' => 'decimal:2',
     'total' => 'decimal:2',
+    'is_broker' => 'boolean',
+    'is_adjusted' => 'boolean',
   ];
 
   public function toBirPurchaseRow(): array

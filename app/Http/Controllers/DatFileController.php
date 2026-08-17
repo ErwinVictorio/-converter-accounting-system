@@ -53,14 +53,15 @@ class DatFileController extends Controller
     public function companyLookup(string $tin)
     {
         $tin = preg_replace('/\D/', '', $tin);
-        $company = config("bir.companies.{$tin}");
+        $birTin = substr($tin, 0, 9);
+        $company = config("bir.companies.{$tin}") ?: config("bir.companies.{$birTin}");
 
         if ($company) {
             return response()->json($company);
         }
 
         $vatInput = VatInput::query()
-            ->whereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 9) = ?", [$tin])
+            ->whereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 9) = ?", [$birTin])
             ->latest('id')
             ->first();
 
@@ -77,16 +78,17 @@ class DatFileController extends Controller
         }
 
         $supplier = Supplier::query()
-            ->whereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin, '-', ''), ' ', ''), '.', ''), 9) = ?", [$tin])
+            ->whereRaw("REPLACE(REPLACE(REPLACE(tin, '-', ''), ' ', ''), '.', '') = ?", [$tin])
+            ->orWhereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin, '-', ''), ' ', ''), '.', ''), 9) = ?", [$birTin])
             ->first();
 
         if ($supplier) {
             return response()->json([
                 'tin' => $tin,
-                'name' => $supplier->payee ?: $supplier->name,
-                'registered_name' => $supplier->payee ?: $supplier->name,
+                'name' => $supplier->name,
+                'registered_name' => $supplier->name,
                 'address1' => $supplier->addr ?: '',
-                'address2' => '',
+                'address2' => $supplier->city ?: '',
                 'rdo_code' => '',
                 'source' => 'suppliers',
             ]);

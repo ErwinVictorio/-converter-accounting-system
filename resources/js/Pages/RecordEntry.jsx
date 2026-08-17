@@ -155,12 +155,19 @@ function RecordEntry() {
     }
   };
 
+  const formatTinInput = (value) => {
+    const digits = String(value || "").replace(/\D/g, "").slice(0, 12);
+    const parts = [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 9), digits.slice(9, 12)].filter(Boolean);
+
+    return parts.join("-");
+  };
+
   const openBirEditor = (record) => {
     setSelectedBirRecord(record);
     clearBirErrors();
     setBirData({
       vendor_type: record.vendor_type || "company",
-      tin_number: (record.tin_number || "").replace(/\D/g, "").slice(0, 9),
+      tin_number: formatTinInput(record.tin_number || ""),
       company_name: record.company_name || record.supplier_name || "",
       last_name: record.last_name || "",
       first_name: record.first_name || "",
@@ -391,7 +398,8 @@ function RecordEntry() {
                 vatInputs.data.map((item) => {
                   const isBroker = Number(item.is_broker) === 1;
                   const isImported = Number(item.is_imported) === 1;
-                  const hasBirTin = /^\d{9}$/.test(String(item.tin_number || ""));
+                  const isAdjusted = Number(item.is_adjusted) === 1;
+                  const hasBirTin = /^(\d{9}|\d{12}|\d{3}-\d{3}-\d{3}|\d{3}-\d{3}-\d{3}-\d{3})$/.test(String(item.tin_number || ""));
                   const hasBirName =
                     item.vendor_type === "individual"
                       ? Boolean(item.last_name && item.first_name && item.middle_name)
@@ -399,7 +407,16 @@ function RecordEntry() {
 
                   return (
                   <TableRow key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                    <TableCell className="font-medium text-slate-900 whitespace-nowrap">{item.supplier_name}</TableCell>
+                    <TableCell className="font-medium text-slate-900 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span>{item.supplier_name}</span>
+                        {isAdjusted && (
+                          <Badge className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-50">
+                            Adjusted
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
                       {item.tin_number || "—"}
                     </TableCell>
@@ -507,8 +524,8 @@ function RecordEntry() {
               </label>
               <Input
                 value={birData.tin_number}
-                onChange={(e) => setBirData("tin_number", e.target.value.replace(/\D/g, "").slice(0, 9))}
-                placeholder="9 digits only"
+                onChange={(e) => setBirData("tin_number", formatTinInput(e.target.value))}
+                placeholder="000-000-000-000"
                 className={`h-10 bg-white ${birErrors.tin_number ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               />
               {birErrors.tin_number && (

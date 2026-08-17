@@ -56,6 +56,18 @@ function EditVatInputRecord() {
     }).format(val || 0);
   };
 
+  const formatTinInput = (value) => {
+    const digits = String(value || "").replace(/\D/g, "").slice(0, 12);
+    const parts = [
+      digits.slice(0, 3),
+      digits.slice(3, 6),
+      digits.slice(6, 9),
+      digits.slice(9, 12),
+    ].filter(Boolean);
+
+    return parts.join("-");
+  };
+
   const amountFields = [
     { name: "purchase_imported", label: "Purchase Imported" },
     { name: "purchase_local", label: "Purchase Local" },
@@ -207,7 +219,7 @@ function EditVatInputRecord() {
                 <label className="text-sm font-medium text-slate-700">TIN Number</label>
                 <Input
                   value={data.tin_number}
-                  onChange={(e) => setData("tin_number", e.target.value)}
+                  onChange={(e) => setData("tin_number", formatTinInput(e.target.value))}
                   placeholder="000-000-000-000"
                   className={errors.tin_number ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />

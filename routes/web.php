@@ -3,6 +3,7 @@
 use App\Http\Controllers\Dashboard;
 use App\Http\Controllers\DatFileController;
 use App\Http\Controllers\ManageBrokerController;
+use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\VatInputController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,3 +27,9 @@ Route::get('/brokers', [ManageBrokerController::class, 'index']);
 Route::post('/create', [ManageBrokerController::class, 'store']);
 Route::put('/brokers/{id}', [ManageBrokerController::class, 'update']);
 Route::delete('/brokers/{id}', [ManageBrokerController::class, 'destroy']);
+
+// Route for Suppliers
+Route::get('/suppliers', [SupplierController::class, 'index']);
+Route::post('/suppliers', [SupplierController::class, 'store']);
+Route::put('/suppliers/{id}', [SupplierController::class, 'update']);
+Route::delete('/suppliers/{id}', [SupplierController::class, 'destroy']);
