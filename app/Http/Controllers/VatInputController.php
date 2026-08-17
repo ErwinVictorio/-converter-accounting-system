@@ -75,6 +75,46 @@ class VatInputController extends Controller
         ]);
     }
 
+    public function adjustedLookup(Request $request, VatInput $vatInput)
+    {
+        if (!$this->isBrokerRecord($vatInput)) {
+            abort(403, 'Only broker records can look up adjusted records.');
+        }
+
+        $tinNumber = $this->formatTin($request->input('tin_number'));
+        $tinDigits = substr(preg_replace('/\D/', '', $tinNumber), 0, 9);
+
+        if (strlen($tinDigits) < 9) {
+            return response()->json([
+                'adjustedRecord' => null,
+            ]);
+        }
+
+        $adjustedRecord = VatInput::query()
+            ->select([
+                'id',
+                'supplier_name',
+                'tin_number',
+                'vendor_type',
+                'company_name',
+                'last_name',
+                'first_name',
+                'middle_name',
+                'address1',
+                'address2',
+                'is_imported',
+            ])
+            ->where('is_adjusted', true)
+            ->where('is_imported', $request->boolean('is_imported'))
+            ->whereDate('date_uploaded', $vatInput->getRawOriginal('date_uploaded'))
+            ->whereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 9) = ?", [$tinDigits])
+            ->first();
+
+        return response()->json([
+            'adjustedRecord' => $adjustedRecord,
+        ]);
+    }
+
     public function update(Request $request, VatInput $vatInput)
     {
         if (!$this->isBrokerRecord($vatInput)) {

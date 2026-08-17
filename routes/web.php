@@ -13,6 +13,7 @@ Route::get('/',[Dashboard::class,'index']);
 //  for record entry
 Route::get('/records',[VatInputController::class,'index']);
 Route::post('/vat-import',[VatInputController::class,'import']);
+Route::get('/records/{vatInput}/adjusted-lookup', [VatInputController::class, 'adjustedLookup']);
 Route::get('/records/{vatInput}/edit', [VatInputController::class, 'edit']);
 Route::put('/records/{vatInput}', [VatInputController::class, 'update']);
 Route::put('/records/{vatInput}/bir-info', [VatInputController::class, 'updateBirInfo']);

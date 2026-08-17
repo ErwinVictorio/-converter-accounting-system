@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
@@ -25,6 +25,7 @@ import {
 
 function EditVatInputRecord() {
   const { flash, vatInput } = usePage().props;
+  const [adjustedLookupStatus, setAdjustedLookupStatus] = useState("idle");
 
   const { data, setData, put, processing, errors } = useForm({
     supplier_name: "",
@@ -47,6 +48,55 @@ function EditVatInputRecord() {
     if (flash?.success) toast.success(flash.success);
     if (flash?.error) toast.error(flash.error);
   }, [flash]);
+
+  useEffect(() => {
+    const tinDigits = String(data.tin_number || "").replace(/\D/g, "");
+
+    if (tinDigits.length < 9) {
+      setAdjustedLookupStatus("idle");
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setAdjustedLookupStatus("checking");
+
+      window.axios
+        .get(`/records/${vatInput.id}/adjusted-lookup`, {
+          params: {
+            tin_number: data.tin_number,
+            is_imported: data.is_imported,
+          },
+        })
+        .then((response) => {
+          const adjustedRecord = response.data?.adjustedRecord;
+
+          if (!adjustedRecord) {
+            setAdjustedLookupStatus("empty");
+            return;
+          }
+
+          setData((current) => ({
+            ...current,
+            supplier_name: adjustedRecord.supplier_name || "",
+            tin_number: formatTinInput(adjustedRecord.tin_number || current.tin_number),
+            vendor_type: adjustedRecord.vendor_type || "company",
+            company_name: adjustedRecord.company_name || adjustedRecord.supplier_name || "",
+            last_name: adjustedRecord.last_name || "",
+            first_name: adjustedRecord.first_name || "",
+            middle_name: adjustedRecord.middle_name || "",
+            address1: adjustedRecord.address1 || "",
+            address2: adjustedRecord.address2 || "",
+            is_imported: Number(adjustedRecord.is_imported) === 1 ? "1" : "0",
+          }));
+          setAdjustedLookupStatus("found");
+        })
+        .catch(() => {
+          setAdjustedLookupStatus("error");
+        });
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [data.tin_number, data.is_imported, vatInput.id]);
 
   const formatCurrency = (val) => {
     return new Intl.NumberFormat("en-US", {
@@ -200,6 +250,32 @@ function EditVatInputRecord() {
         <CardContent className="p-4 sm:p-6">
           <form id="vat-input-edit-form" onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">TIN Number</label>
+                <Input
+                  value={data.tin_number}
+                  onChange={(e) => setData("tin_number", formatTinInput(e.target.value))}
+                  placeholder="000-000-000-000"
+                  className={errors.tin_number ? "border-red-500 focus-visible:ring-red-500" : ""}
+                />
+                {adjustedLookupStatus === "checking" && (
+                  <p className="text-xs text-slate-400">Checking adjusted record...</p>
+                )}
+                {adjustedLookupStatus === "found" && (
+                  <p className="text-xs font-medium text-blue-600">
+                    Existing adjusted record found. Vendor fields were filled.
+                  </p>
+                )}
+                {adjustedLookupStatus === "error" && (
+                  <p className="text-xs font-medium text-red-500">
+                    Unable to check adjusted record.
+                  </p>
+                )}
+                {errors.tin_number && (
+                  <p className="text-xs text-red-500 font-medium">{errors.tin_number}</p>
+                )}
+              </div>
+
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-medium text-slate-700">
                   Supplier Name <span className="text-red-500">*</span>
@@ -212,19 +288,6 @@ function EditVatInputRecord() {
                 />
                 {errors.supplier_name && (
                   <p className="text-xs text-red-500 font-medium">{errors.supplier_name}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">TIN Number</label>
-                <Input
-                  value={data.tin_number}
-                  onChange={(e) => setData("tin_number", formatTinInput(e.target.value))}
-                  placeholder="000-000-000-000"
-                  className={errors.tin_number ? "border-red-500 focus-visible:ring-red-500" : ""}
-                />
-                {errors.tin_number && (
-                  <p className="text-xs text-red-500 font-medium">{errors.tin_number}</p>
                 )}
               </div>
 
