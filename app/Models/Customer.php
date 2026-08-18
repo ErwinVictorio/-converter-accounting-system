@@ -18,6 +18,9 @@ class Customer extends Model
 
     public static function normalizeName(?string $value): string
     {
-        return preg_replace('/\s+/', '', strtoupper(trim((string) $value))) ?? '';
+        $value = strtoupper(trim((string) $value));
+        $value = str_replace('&', 'AND', $value);
+
+        return preg_replace('/[^A-Z0-9]/', '', $value) ?? '';
     }
 }

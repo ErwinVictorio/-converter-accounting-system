@@ -101,7 +101,7 @@ class CustomerController extends Controller
     private function syncSalesRows(Customer $customer): void
     {
         SalesVatInput::query()
-            ->whereRaw("UPPER(REPLACE(customer_name, ' ', '')) = ?", [$customer->name_key])
+            ->whereRaw($this->salesCustomerNameKeySql() . ' = ?', [$customer->name_key])
             ->update([
                 'customer_tin' => $customer->tin,
                 'customer_type' => 'company',
@@ -112,6 +112,11 @@ class CustomerController extends Controller
                 'address1' => $customer->addr,
                 'address2' => $customer->city,
             ]);
+    }
+
+    private function salesCustomerNameKeySql(): string
+    {
+        return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(customer_name), ' ', ''), '.', ''), ',', ''), '-', ''), '/', ''), '(', ''), ')', '')";
     }
 
     private function formatTin(?string $value): string

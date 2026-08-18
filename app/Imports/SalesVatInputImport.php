@@ -13,6 +13,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
 {
     protected string $reportingPeriod;
+    protected ?string $format = null;
 
     public function __construct(?string $reportingPeriod = null)
     {
@@ -24,32 +25,50 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
         $data = array_values($row->toArray());
         $firstCell = $this->birText((string) ($data[0] ?? ''));
 
+        if ($firstCell === 'DOCUMENT NO') {
+            $this->format = 'summary';
+
+            return;
+        }
+
+        if ($firstCell === 'CLIENT TIN') {
+            $this->format = 'bir';
+
+            return;
+        }
+
         if ($this->isHeadingOrGuideRow($data)) {
             return;
         }
 
-        if (str_starts_with($firstCell, 'SI#') || str_starts_with($firstCell, 'CM#')) {
-            $this->importSalesSummaryRow($data);
+        if ($this->format === 'summary' || str_starts_with($firstCell, 'SI#') || str_starts_with($firstCell, 'CM#')) {
+            if ($this->looksLikeSalesSummaryRow($data)) {
+                $this->importSalesSummaryRow($data, $row->getIndex());
+            }
 
             return;
         }
 
-        if ($this->looksLikeBirSalesRow($data)) {
+        if (($this->format === 'bir' || $this->format === null) && $this->looksLikeBirSalesRow($data)) {
             $this->importBirSalesRow($data, $row->getIndex());
         }
     }
 
-    private function importSalesSummaryRow(array $data): void
+    private function importSalesSummaryRow(array $data, int $rowNumber): void
     {
         $documentNo = $this->birText((string) ($data[0] ?? ''));
         $customerName = $this->birText((string) ($data[6] ?? ''));
 
-        if ($documentNo === '' && $customerName === '') {
+        if ($customerName === '') {
             return;
         }
 
         if (in_array($customerName, ['TOTAL', 'GRAND TOTAL', 'SUBTOTAL'], true)) {
             return;
+        }
+
+        if ($documentNo === '') {
+            $documentNo = 'SALES-SUMMARY-' . $this->reportingPeriod . '-' . $rowNumber;
         }
 
         $existingBirInfo = SalesVatInput::query()
@@ -155,6 +174,16 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
             || str_contains($joinedRow, 'NOT IN COMMA FORMAT');
     }
 
+    private function looksLikeSalesSummaryRow(array $data): bool
+    {
+        $customerName = $this->birText((string) ($data[6] ?? ''));
+        $hasSalesAmount = $this->parseNumber($data[11] ?? null) !== 0.00
+            || $this->parseNumber($data[12] ?? null) !== 0.00
+            || $this->parseNumber($data[13] ?? null) !== 0.00;
+
+        return $customerName !== '' && $hasSalesAmount;
+    }
+
     private function looksLikeBirSalesRow(array $data): bool
     {
         $hasName = $this->birText((string) ($data[1] ?? '')) !== ''
@@ -225,6 +254,7 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
 
         return Customer::query()
             ->where('name_key', $nameKey)
+            ->latest('id')
             ->first();
     }
 

@@ -438,6 +438,28 @@ Rollback-only valid Sales DAT download returned filename 008791976S062026.DAT an
 php artisan test tests\Unit\ReliefSalesDatGeneratorTest.php tests\Unit\ReliefPurchaseDatGeneratorTest.php -> 10 passed, 15 assertions.
 ```
 
+Sales table display behavior:
+
+```text
+Uploaded Sales rows remain stored as invoice-level rows in sales_vatsinputs.
+The Record Entry Sales table groups matching customer rows for easier review.
+Grouped display sums exempt_sales, zero_rated_sales, taxable_net_of_vat, output_vat, net_amount, and gross_amount.
+The grouped table also shows records_count so the user can see how many rows were combined.
+Sales DAT generation also groups rows before creating D,S detail records.
+```
+
+Sales import format detection:
+
+```text
+SalesVatInputImport supports two Sales upload formats: internal Sales Summary and BIR R_Sales.
+The importer now detects the active format from the header row.
+Document No header -> Sales Summary format, customer name comes from column G.
+client_TIN header -> BIR R_Sales format, customer name comes from companyName or last/first/middle name.
+This prevents Sales Summary rows with blank document numbers from being misread as BIR rows.
+Previously, 22 rows were misread with customer_name set to dates like 05/04/2026 and the real customer in address2.
+Those 22 corrupted rows were removed and the May 2026 Sales Summary was re-imported; remaining date-as-customer rows: 0.
+```
+
 Frontend build remains unverified because `npm` is unavailable in the current PowerShell environment.
 
 ---

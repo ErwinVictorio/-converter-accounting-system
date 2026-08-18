@@ -39,6 +39,25 @@ class VatInputController extends Controller
             ->withQueryString();
 
         $salesVatInputs = SalesVatInput::query()
+            ->select([
+                'customer_name',
+                'customer_tin',
+                'customer_type',
+                'company_name',
+                'last_name',
+                'first_name',
+                'middle_name',
+                'address1',
+                'address2',
+            ])
+            ->selectRaw('MIN(id) as id')
+            ->selectRaw('COUNT(*) as records_count')
+            ->selectRaw('SUM(exempt_sales) as exempt_sales')
+            ->selectRaw('SUM(zero_rated_sales) as zero_rated_sales')
+            ->selectRaw('SUM(taxable_net_of_vat) as taxable_net_of_vat')
+            ->selectRaw('SUM(output_vat) as output_vat')
+            ->selectRaw('SUM(net_amount) as net_amount')
+            ->selectRaw('SUM(gross_amount) as gross_amount')
             ->when($search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('customer_name', 'LIKE', "%{$search}%")
@@ -46,7 +65,18 @@ class VatInputController extends Controller
                         ->orWhere('document_no', 'LIKE', "%{$search}%");
                 });
             })
-            ->orderBy('id', 'asc')
+            ->groupBy([
+                'customer_name',
+                'customer_tin',
+                'customer_type',
+                'company_name',
+                'last_name',
+                'first_name',
+                'middle_name',
+                'address1',
+                'address2',
+            ])
+            ->orderBy('customer_name')
             ->paginate(15, ['*'], 'sales_page')
             ->withQueryString();
 
