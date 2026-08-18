@@ -50,6 +50,11 @@ const navItems = [
         url: "/suppliers",
         icon: Users,
     },
+    {
+        title: "Manage Customers",
+        url: "/customers",
+        icon: Users,
+    },
 
 ];
 

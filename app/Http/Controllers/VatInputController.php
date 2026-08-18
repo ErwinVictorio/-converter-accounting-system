@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Imports\VatInputImport;
+use App\Imports\SalesVatInputImport;
 use App\Models\Brokers;
+use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -36,8 +38,21 @@ class VatInputController extends Controller
             ->paginate(15)
             ->withQueryString();
 
+        $salesVatInputs = SalesVatInput::query()
+            ->when($search, function ($query, $search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('customer_name', 'LIKE', "%{$search}%")
+                        ->orWhere('customer_tin', 'LIKE', "%{$search}%")
+                        ->orWhere('document_no', 'LIKE', "%{$search}%");
+                });
+            })
+            ->orderBy('id', 'asc')
+            ->paginate(15, ['*'], 'sales_page')
+            ->withQueryString();
+
         return Inertia::render('RecordEntry', [
             'vatInputs' => $vatInputs,
+            'salesVatInputs' => $salesVatInputs,
             'filters'   => [
                 'search' => $search,
             ],
@@ -48,17 +63,22 @@ class VatInputController extends Controller
         $request->validate([
             'excel_file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
             'reporting_month' => ['required', 'date'],
+            'record_type' => ['required', 'in:purchase,sales'],
         ]);
 
         try {
             $file = $request->file('excel_file');
             $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
 
-            Excel::import(new VatInputImport($reportingPeriod), $file, null, \Maatwebsite\Excel\Excel::XLSX);
-            // O mas simple:
-            // Excel::import(new VatInputImport, $file);
+            if ($request->input('record_type') === 'sales') {
+                Excel::import(new SalesVatInputImport($reportingPeriod), $file);
 
-            return back()->with('success', 'VAT Input Report successfully imported!');
+                return back()->with('success', 'Sales VAT report successfully imported!');
+            }
+
+            Excel::import(new VatInputImport($reportingPeriod), $file);
+
+            return back()->with('success', 'Purchase VAT report successfully imported!');
         } catch (\Exception $e) {
             return back()->with('error', 'Import failed: ' . $e->getMessage());
         }

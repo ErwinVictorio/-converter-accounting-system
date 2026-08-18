@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from "react";
-import { useForm, usePage } from "@inertiajs/react";
+import { router, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
@@ -8,12 +8,13 @@ import { Button } from "@/Components/ui/button";
 import { Input } from "@/Components/ui/input";
 
 function GenerateDatFile() {
-    const { flash, availablePeriods = [], periodIssues = {} } = usePage().props;
+    const { flash, recordType = "purchase", availablePeriods = [], periodIssues = {} } = usePage().props;
     const currentMonth = new Date().toISOString().slice(0, 7);
     const defaultPeriod = availablePeriods[0]?.value || currentMonth;
 
     const { data, setData, processing, errors } = useForm({
         period: defaultPeriod,
+        record_type: recordType,
     });
 
     const selectedPeriod = useMemo(() => {
@@ -30,11 +31,34 @@ function GenerateDatFile() {
         if (flash?.success) toast.success(flash.success);
     }, [flash]);
 
+    useEffect(() => {
+        setData("record_type", recordType);
+        setData("period", availablePeriods[0]?.value || currentMonth);
+    }, [recordType, availablePeriods]);
+
+    const handleRecordTypeChange = (value) => {
+        setData("record_type", value);
+
+        router.get(
+            "/generate-datfile",
+            { record_type: value },
+            {
+                preserveScroll: true,
+                replace: true,
+            }
+        );
+    };
+
     const handleDownload = (e) => {
         e.preventDefault();
 
         if (!data.period) {
             toast.error("Please select a reporting month.");
+            return;
+        }
+
+        if (!data.record_type) {
+            toast.error("Please select the DAT file type.");
             return;
         }
 
@@ -50,6 +74,7 @@ function GenerateDatFile() {
 
         const params = new URLSearchParams({
             period: data.period,
+            record_type: data.record_type,
         });
 
         window.location.href = `/download-datfile?${params.toString()}`;
@@ -65,38 +90,67 @@ function GenerateDatFile() {
             >
                 <div>
                     <h2 className="text-lg font-semibold text-gray-800">
-                        Generate RELIEF Purchases DAT
+                        Generate RELIEF {data.record_type === "sales" ? "Sales" : "Purchases"} DAT
                     </h2>
                     <p className="text-xs text-gray-500">
-                        Select a reporting month to download one DAT file from VAT input records.
+                        Select a type and reporting month to download one DAT file from VAT records.
                     </p>
                 </div>
 
                 <form onSubmit={handleDownload} className="space-y-6">
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-gray-600">
-                            Reporting Month
-                        </label>
-                        {availablePeriods.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-gray-600">
+                                DAT Type
+                            </label>
                             <select
-                                value={data.period}
-                                onChange={(e) => setData("period", e.target.value)}
-                                className="flex h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-xs transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                value={data.record_type}
+                                onChange={(e) => handleRecordTypeChange(e.target.value)}
+                                className={`flex h-11 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-700 shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-[3px] ${
+                                    errors.record_type
+                                        ? "border-red-500 focus-visible:ring-red-500/20"
+                                        : "border-slate-300 focus-visible:border-ring focus-visible:ring-ring/50"
+                                }`}
                             >
-                                {availablePeriods.map((period) => (
-                                    <option key={period.value} value={period.value}>
-                                        {period.label} ({period.records_count} rows)
-                                    </option>
-                                ))}
+                                <option value="purchase">Purchase</option>
+                                <option value="sales">Sales</option>
                             </select>
-                        ) : (
-                            <Input
-                                type="month"
-                                value={data.period}
-                                onChange={(e) => setData("period", e.target.value)}
-                                className="h-11 rounded-lg border-slate-300 text-gray-700"
-                            />
-                        )}
+                            {errors.record_type && (
+                                <p className="text-xs text-red-500">{errors.record_type}</p>
+                            )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-gray-600">
+                                Reporting Month
+                            </label>
+                            {availablePeriods.length > 0 ? (
+                                <select
+                                    value={data.period}
+                                    onChange={(e) => setData("period", e.target.value)}
+                                    className="flex h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-xs transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                >
+                                    {availablePeriods.map((period) => (
+                                        <option key={period.value} value={period.value}>
+                                            {period.label} ({period.records_count} rows)
+                                        </option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <Input
+                                    type="month"
+                                    value={data.period}
+                                    onChange={(e) => setData("period", e.target.value)}
+                                    className="h-11 rounded-lg border-slate-300 text-gray-700"
+                                />
+                            )}
+                            {errors.period && (
+                                <p className="text-xs text-red-500">{errors.period}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="space-y-1.5">
                         {selectedPeriod && (
                             <p className={`text-xs ${selectedIssues.invalid_count > 0 ? "text-amber-600" : "text-emerald-600"}`}>
                                 {selectedPeriod.records_count} VAT input rows found.
@@ -109,9 +163,6 @@ function GenerateDatFile() {
                             <p className="text-xs text-amber-600">
                                 No imported VAT input records yet.
                             </p>
-                        )}
-                        {errors.period && (
-                            <p className="text-xs text-red-500">{errors.period}</p>
                         )}
                     </div>
 

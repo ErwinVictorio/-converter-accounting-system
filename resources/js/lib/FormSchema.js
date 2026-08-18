@@ -44,3 +44,22 @@ export const supplierSchema = z.object({
         .nonempty({ message: "City is required" })
         .max(100, { message: "City must not exceed 100 characters." }),
 });
+
+export const customerSchema = z.object({
+    tin: z
+        .string()
+        .nonempty({ message: "TIN is required" })
+        .max(20, { message: "TIN must not exceed 20 characters." }),
+    name: z
+        .string()
+        .nonempty({ message: "Customer name is required" })
+        .max(300, { message: "Customer name must not exceed 300 characters." }),
+    addr: z
+        .string()
+        .nonempty({ message: "Address is required" })
+        .max(500, { message: "Address must not exceed 500 characters." }),
+    city: z
+        .string()
+        .nonempty({ message: "City is required" })
+        .max(100, { message: "City must not exceed 100 characters." }),
+});

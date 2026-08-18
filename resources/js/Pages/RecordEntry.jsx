@@ -39,7 +39,7 @@ import {
 import DataTablePagination from "@/Layouts/Pagination";
 
 function RecordEntry() {
-  const { flash, vatInputs, filters } = usePage().props;
+  const { flash, vatInputs, salesVatInputs, filters } = usePage().props;
   const [isDragging, setIsDragging] = useState(false);
   const [searchTerm, setSearchTerm] = useState(filters?.search || "");
   const [selectedBirRecord, setSelectedBirRecord] = useState(null);
@@ -49,7 +49,9 @@ function RecordEntry() {
   const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
     excel_file: null,
     reporting_month: new Date().toISOString().slice(0, 7),
+    record_type: "purchase",
   });
+  const isSalesMode = data.record_type === "sales";
 
   const {
     data: birData,
@@ -208,6 +210,11 @@ function RecordEntry() {
       return;
     }
 
+    if (!data.record_type) {
+      toast.error("Please select the file type.");
+      return;
+    }
+
     post("/vat-import", {
       forceFormData: true,
       onSuccess: () => {
@@ -233,19 +240,42 @@ function RecordEntry() {
 
         <CardContent className="p-4 sm:p-6">
           <form id="record-upload-form" onSubmit={handleSubmit}>
-            <div className="mb-5 max-w-xs space-y-2">
-              <label className="text-sm font-medium text-slate-700">
-                Reporting Month <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="month"
-                value={data.reporting_month}
-                onChange={(e) => setData("reporting_month", e.target.value)}
-                className={errors.reporting_month ? "border-red-500 focus-visible:ring-red-500" : ""}
-              />
-              {errors.reporting_month && (
-                <p className="text-xs text-red-500 font-medium">{errors.reporting_month}</p>
-              )}
+            <div className="mb-5 grid max-w-xl grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Reporting Month <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  type="month"
+                  value={data.reporting_month}
+                  onChange={(e) => setData("reporting_month", e.target.value)}
+                  className={errors.reporting_month ? "border-red-500 focus-visible:ring-red-500" : ""}
+                />
+                {errors.reporting_month && (
+                  <p className="text-xs text-red-500 font-medium">{errors.reporting_month}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">
+                  File Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={data.record_type}
+                  onChange={(e) => setData("record_type", e.target.value)}
+                  className={`flex h-10 w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-[3px] ${
+                    errors.record_type
+                      ? "border-red-500 focus-visible:ring-red-500/20"
+                      : "border-slate-300 focus-visible:border-blue-500 focus-visible:ring-blue-500/20"
+                  }`}
+                >
+                  <option value="purchase">Purchase</option>
+                  <option value="sales">Sales</option>
+                </select>
+                {errors.record_type && (
+                  <p className="text-xs text-red-500 font-medium">{errors.record_type}</p>
+                )}
+              </div>
             </div>
 
             <input
@@ -307,7 +337,7 @@ function RecordEntry() {
                       {data.excel_file.name}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {(data.excel_file.size / (1024 * 1024)).toFixed(2)} MB
+                      {(data.excel_file.size / (1024 * 1024)).toFixed(2)} MB - {data.record_type === "sales" ? "Sales" : "Purchase"}
                     </p>
                   </div>
                 </div>
@@ -361,7 +391,7 @@ function RecordEntry() {
       <Card className="w-full shadow-sm border rounded-xl overflow-hidden bg-white">
         <CardHeader className="p-4 sm:p-6 border-b flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-gray-50/50">
           <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">
-            VAT Input Records
+            {isSalesMode ? "Sales VAT Records" : "VAT Input Records"}
           </CardTitle>
 
           {/* Search Input Filter */}
@@ -369,7 +399,7 @@ function RecordEntry() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input
               type="text"
-              placeholder="Search supplier or TIN..."
+              placeholder={isSalesMode ? "Search customer, TIN, or document..." : "Search supplier or TIN..."}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9 bg-white"
@@ -379,6 +409,66 @@ function RecordEntry() {
 
         {/* 1. DAGDAG: overflow-x-auto dito para pwedeng ma-scroll ang table horizontally nang hindi nasisira ang buong card */}
         <CardContent className="p-0 overflow-x-auto">
+          {isSalesMode ? (
+            <Table className="min-w-[1100px]">
+              <TableHeader>
+                <TableRow className="bg-slate-50 hover:bg-slate-50">
+                  <TableHead className="font-semibold text-slate-700">Customer Name</TableHead>
+                  <TableHead className="font-semibold text-slate-700">TIN Number</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Type</TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right">Exempt</TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right">Zero Rated</TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right">Taxable Net of VAT</TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right">Output VAT</TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right">Total Sales</TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right">Gross Taxable</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {salesVatInputs?.data?.length > 0 ? (
+                  salesVatInputs.data.map((item) => (
+                    <TableRow key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                      <TableCell className="font-medium text-slate-900 whitespace-nowrap">
+                        {item.customer_name}
+                      </TableCell>
+                      <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
+                        {item.customer_tin || "No TIN"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">
+                          {item.customer_type === "individual" ? "Individual" : "Company"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                        {formatCurrency(item.exempt_sales)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                        {formatCurrency(item.zero_rated_sales)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                        {formatCurrency(item.taxable_net_of_vat)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                        {formatCurrency(item.output_vat)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(item.net_amount)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                        {formatCurrency(item.gross_amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={9} className="h-32 text-center text-slate-500">
+                      No sales records found.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          ) : (
           <Table className="min-w-[800px]">
             <TableHeader>
               <TableRow className="bg-slate-50 hover:bg-slate-50">
@@ -489,9 +579,10 @@ function RecordEntry() {
               )}
             </TableBody>
           </Table>
+          )}
         </CardContent>
 
-        <DataTablePagination links={vatInputs?.links}/>
+        <DataTablePagination links={isSalesMode ? salesVatInputs?.links : vatInputs?.links}/>
       </Card>
 
       <Dialog open={Boolean(selectedBirRecord)} onOpenChange={(open) => !open && closeBirEditor()}>

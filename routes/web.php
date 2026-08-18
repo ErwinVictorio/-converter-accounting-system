@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Dashboard;
+use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DatFileController;
 use App\Http\Controllers\ManageBrokerController;
 use App\Http\Controllers\SupplierController;
@@ -34,3 +35,9 @@ Route::get('/suppliers', [SupplierController::class, 'index']);
 Route::post('/suppliers', [SupplierController::class, 'store']);
 Route::put('/suppliers/{id}', [SupplierController::class, 'update']);
 Route::delete('/suppliers/{id}', [SupplierController::class, 'destroy']);
+
+// Route for Customers
+Route::get('/customers', [CustomerController::class, 'index']);
+Route::post('/customers', [CustomerController::class, 'store']);
+Route::put('/customers/{id}', [CustomerController::class, 'update']);
+Route::delete('/customers/{id}', [CustomerController::class, 'destroy']);
