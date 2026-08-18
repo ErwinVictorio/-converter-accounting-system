@@ -84,7 +84,7 @@ class ReliefPurchaseDatGenerator
         $fields = [
             'D',
             'P',
-            $this->quote($this->digits((string) ($transaction['vendor_tin'] ?? $transaction['tin_number'] ?? ''))),
+            $this->quote($this->birTin((string) ($transaction['vendor_tin'] ?? $transaction['tin_number'] ?? ''))),
             $this->quote($this->birText($companyName)),
             $this->optionalName($this->birText($transaction['last_name'] ?? '')),
             $this->optionalName($this->birText($transaction['first_name'] ?? '')),
@@ -162,5 +162,10 @@ class ReliefPurchaseDatGenerator
     private function digits(string $value): string
     {
         return preg_replace('/\D/', '', $value);
+    }
+
+    private function birTin(string $value): string
+    {
+        return substr($this->digits($value), 0, 9);
     }
 }

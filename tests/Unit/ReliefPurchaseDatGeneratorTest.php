@@ -102,6 +102,41 @@ class ReliefPurchaseDatGeneratorTest extends TestCase
         $this->assertSame('008791976P042026.DAT', $filename);
     }
 
+    public function test_detail_vendor_tin_outputs_first_nine_digits_only(): void
+    {
+        $content = app(ReliefPurchaseDatGenerator::class)->generate(
+            [
+                'tin' => '008791976',
+                'name' => 'FORTRESS STEEL INC.',
+                'registered_name' => 'FORTRESS STEEL INC.',
+                'address1' => 'LOT 433 J.P RIZAL NANGKA',
+                'address2' => 'MARIKINA 1808',
+                'rdo_code' => '045',
+            ],
+            new Collection([
+                [
+                    'vendor_type' => 'company',
+                    'vendor_tin' => '000-330-774-000',
+                    'company_name' => 'PHILIPPINE BEARING CORPORATION',
+                    'address1' => '1030 G. MASANGKAY ST. BINONDO',
+                    'address2' => 'MANILA CITY',
+                    'exempt' => 0,
+                    'zero_rated' => 0,
+                    'services' => 423.22,
+                    'capital_goods' => 0,
+                    'other_than_capital_goods' => 0,
+                    'input_vat' => 50.79,
+                ],
+            ]),
+            Carbon::create(2026, 5, 1),
+            0
+        );
+
+        $detail = str_getcsv(explode("\r\n", trim($content))[1]);
+
+        $this->assertSame('000330774', $detail[2]);
+    }
+
     public function test_vendor_type_validation_requires_correct_name_fields(): void
     {
         $validator = app(BirPurchaseRowValidator::class);
