@@ -7,6 +7,12 @@ import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
 import { Input } from "@/Components/ui/input";
 
+const DAT_TYPES = {
+    purchase: { heading: "Purchases", rows: "VAT input" },
+    sales: { heading: "Sales", rows: "Sales VAT" },
+    importation: { heading: "Importations", rows: "importation" },
+};
+
 function GenerateDatFile() {
     const { flash, recordType = "purchase", availablePeriods = [], periodIssues = {} } = usePage().props;
     const currentMonth = new Date().toISOString().slice(0, 7);
@@ -16,6 +22,8 @@ function GenerateDatFile() {
         period: defaultPeriod,
         record_type: recordType,
     });
+
+    const datType = DAT_TYPES[data.record_type] || DAT_TYPES.purchase;
 
     const selectedPeriod = useMemo(() => {
         return availablePeriods.find((period) => period.value === data.period);
@@ -63,12 +71,12 @@ function GenerateDatFile() {
         }
 
         if (availablePeriods.length > 0 && !selectedPeriod) {
-            toast.error("No VAT input records found for the selected reporting month.");
+            toast.error(`No ${datType.rows} records found for the selected reporting month.`);
             return;
         }
 
         if (selectedIssues.invalid_count > 0) {
-            toast.error("Please fix invalid VAT input rows before downloading the DAT file.");
+            toast.error(`Please fix invalid ${datType.rows} rows before downloading the DAT file.`);
             return;
         }
 
@@ -90,7 +98,7 @@ function GenerateDatFile() {
             >
                 <div>
                     <h2 className="text-lg font-semibold text-gray-800">
-                        Generate RELIEF {data.record_type === "sales" ? "Sales" : "Purchases"} DAT
+                        Generate RELIEF {datType.heading} DAT
                     </h2>
                     <p className="text-xs text-gray-500">
                         Select a type and reporting month to download one DAT file from VAT records.
@@ -114,6 +122,7 @@ function GenerateDatFile() {
                             >
                                 <option value="purchase">Purchase</option>
                                 <option value="sales">Sales</option>
+                                <option value="importation">Importation</option>
                             </select>
                             {errors.record_type && (
                                 <p className="text-xs text-red-500">{errors.record_type}</p>
@@ -153,7 +162,7 @@ function GenerateDatFile() {
                     <div className="space-y-1.5">
                         {selectedPeriod && (
                             <p className={`text-xs ${selectedIssues.invalid_count > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                                {selectedPeriod.records_count} VAT input rows found.
+                                {selectedPeriod.records_count} {datType.rows} rows found.
                                 {selectedIssues.invalid_count > 0
                                     ? ` ${selectedIssues.invalid_count} need BIR info fixes.`
                                     : " Ready for DAT generation."}
@@ -161,7 +170,7 @@ function GenerateDatFile() {
                         )}
                         {availablePeriods.length === 0 && (
                             <p className="text-xs text-amber-600">
-                                No imported VAT input records yet.
+                                No {datType.rows} records yet.
                             </p>
                         )}
                     </div>
@@ -169,7 +178,7 @@ function GenerateDatFile() {
                     {selectedIssues.invalid_count > 0 && (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                             <p className="font-semibold">
-                                Fix VAT input rows before downloading DAT
+                                Fix {datType.rows} rows before downloading DAT
                             </p>
                             <ul className="mt-2 space-y-1 text-xs">
                                 {selectedIssues.errors.map((error) => (

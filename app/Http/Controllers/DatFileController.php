@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\VatInput;
+use App\Models\ImportationEntry;
 use App\Models\SalesVatInput;
 use App\Models\Supplier;
+use App\Services\BIR\BirImportationRowValidator;
 use App\Services\BIR\BirPurchaseRowValidator;
 use App\Services\BIR\BirSalesRowValidator;
+use App\Services\BIR\ReliefImportationDatGenerator;
 use App\Services\BIR\ReliefPurchaseDatGenerator;
 use App\Services\BIR\ReliefSalesDatGenerator;
 use Carbon\Carbon;
@@ -19,15 +22,18 @@ class DatFileController extends Controller
     public function index(
         Request $request,
         BirPurchaseRowValidator $purchaseValidator,
-        BirSalesRowValidator $salesValidator
+        BirSalesRowValidator $salesValidator,
+        BirImportationRowValidator $importationValidator
     )
     {
         $recordType = $request->validate([
-            'record_type' => ['nullable', 'in:purchase,sales'],
+            'record_type' => ['nullable', 'in:purchase,sales,importation'],
         ])['record_type'] ?? 'purchase';
 
         if ($recordType === 'sales') {
             [$availablePeriods, $periodIssues] = $this->salesPeriods($salesValidator);
+        } elseif ($recordType === 'importation') {
+            [$availablePeriods, $periodIssues] = $this->importationPeriods($importationValidator);
         } else {
             [$availablePeriods, $periodIssues] = $this->purchasePeriods($purchaseValidator);
         }
@@ -93,13 +99,15 @@ class DatFileController extends Controller
         Request $request,
         ReliefPurchaseDatGenerator $purchaseGenerator,
         ReliefSalesDatGenerator $salesGenerator,
+        ReliefImportationDatGenerator $importationGenerator,
         BirPurchaseRowValidator $purchaseValidator,
-        BirSalesRowValidator $salesValidator
+        BirSalesRowValidator $salesValidator,
+        BirImportationRowValidator $importationValidator
     )
     {
         $validated = $request->validate([
             'period' => ['required', 'date'],
-            'record_type' => ['nullable', 'in:purchase,sales'],
+            'record_type' => ['nullable', 'in:purchase,sales,importation'],
         ]);
 
         $period = Carbon::parse($validated['period'])->endOfMonth();
@@ -109,12 +117,34 @@ class DatFileController extends Controller
             return $this->downloadSales($period, $salesGenerator, $salesValidator);
         }
 
+        if ($recordType === 'importation') {
+            return $this->downloadImportation($period, $importationGenerator, $importationValidator);
+        }
+
         return $this->downloadPurchase($period, $purchaseGenerator, $purchaseValidator);
+    }
+
+    /**
+     * Manual Importation entries are synced into vat_inputs so they stay visible
+     * in the VAT input listing, but they belong in the Importation ("I") DAT, not
+     * the Purchase ("P") one — reporting them in both would double-count the same
+     * input VAT across two submitted schedules. Discriminate on the sync link, not
+     * on vat_inputs.is_imported, which ordinary Excel uploads also set.
+     */
+    private function importationVatInputIds(): array
+    {
+        return ImportationEntry::query()
+            ->whereNotNull('vat_input_id')
+            ->pluck('vat_input_id')
+            ->all();
     }
 
     private function purchasePeriods(BirPurchaseRowValidator $validator): array
     {
+        $importationRowIds = $this->importationVatInputIds();
+
         $availablePeriods = VatInput::query()
+            ->whereNotIn('id', $importationRowIds)
             ->selectRaw("DATE_FORMAT(date_uploaded, '%Y-%m') as value")
             ->selectRaw("DATE_FORMAT(date_uploaded, '%M %Y') as label")
             ->selectRaw('COUNT(*) as records_count')
@@ -124,6 +154,7 @@ class DatFileController extends Controller
         $periodIssues = [];
 
         VatInput::query()
+            ->whereNotIn('id', $importationRowIds)
             ->orderBy('date_uploaded')
             ->orderBy('id')
             ->get()
@@ -182,12 +213,48 @@ class DatFileController extends Controller
         return [$availablePeriods, $periodIssues];
     }
 
+    private function importationPeriods(BirImportationRowValidator $validator): array
+    {
+        $availablePeriods = ImportationEntry::query()
+            ->selectRaw("DATE_FORMAT(tax_month, '%Y-%m') as value")
+            ->selectRaw("DATE_FORMAT(tax_month, '%M %Y') as label")
+            ->selectRaw('COUNT(*) as records_count')
+            ->groupBy('value', 'label')
+            ->orderByDesc('value')
+            ->get();
+        $periodIssues = [];
+
+        ImportationEntry::query()
+            ->orderBy('tax_month')
+            ->orderBy('sequence_number')
+            ->orderBy('id')
+            ->get()
+            ->groupBy(fn (ImportationEntry $record) => $record->tax_month->format('Y-m'))
+            ->each(function ($records, string $period) use (&$periodIssues, $validator) {
+                $errors = [];
+
+                foreach ($records->values() as $index => $record) {
+                    foreach ($validator->validate($record->toBirImportationRow(), $index + 2) as $error) {
+                        $errors[] = "Entry {$record->import_entry_no} {$record->supplier}: {$error}";
+                    }
+                }
+
+                $periodIssues[$period] = [
+                    'invalid_count' => count($errors),
+                    'errors' => array_slice($errors, 0, 10),
+                ];
+            });
+
+        return [$availablePeriods, $periodIssues];
+    }
+
     private function downloadPurchase(
         Carbon $period,
         ReliefPurchaseDatGenerator $generator,
         BirPurchaseRowValidator $validator
     ) {
         $records = VatInput::query()
+            ->whereNotIn('id', $this->importationVatInputIds())
             ->whereBetween('date_uploaded', [
                 $period->copy()->startOfMonth()->toDateString(),
                 $period->copy()->endOfMonth()->toDateString(),
@@ -279,6 +346,61 @@ class DatFileController extends Controller
         ];
 
         $content = $generator->generate($company, $salesRows, $period);
+        $fileName = $generator->filename($company, $period);
+
+        return response($content)
+            ->header('Content-Type', 'text/plain')
+            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+    }
+
+    private function downloadImportation(
+        Carbon $period,
+        ReliefImportationDatGenerator $generator,
+        BirImportationRowValidator $validator
+    ) {
+        $records = ImportationEntry::query()
+            ->whereBetween('tax_month', [
+                $period->copy()->startOfMonth()->toDateString(),
+                $period->copy()->endOfMonth()->toDateString(),
+            ])
+            ->orderBy('sequence_number')
+            ->orderBy('id')
+            ->get();
+
+        if ($records->isEmpty()) {
+            return back()->with('error', 'No importation records found for the selected reporting month.');
+        }
+
+        $rowErrors = [];
+
+        foreach ($records as $index => $record) {
+            foreach ($validator->validate($record->toBirImportationRow(), $index + 2) as $error) {
+                $rowErrors[] = "Entry {$record->import_entry_no} {$record->supplier}: {$error}";
+            }
+        }
+
+        if ($rowErrors !== []) {
+            return back()->with('error', 'Cannot generate Importation DAT. Fix these entries first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
+        }
+
+        $defaultCompany = config('bir.companies.008791976');
+
+        $company = [
+            'tin' => $defaultCompany['tin'],
+            'name' => $defaultCompany['name'],
+            'registered_name' => $defaultCompany['registered_name'],
+            'address1' => $defaultCompany['address1'],
+            'address2' => $defaultCompany['address2'],
+            'rdo_code' => $defaultCompany['rdo_code'],
+            'final_header_field' => '12',
+        ];
+
+        $content = $generator->generate(
+            $company,
+            $records->map(fn (ImportationEntry $record) => $record->toBirImportationRow()),
+            $period
+        );
+
         $fileName = $generator->filename($company, $period);
 
         return response($content)

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Dashboard;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DatFileController;
+use App\Http\Controllers\ImportationController;
 use App\Http\Controllers\ManageBrokerController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\VatInputController;
@@ -41,3 +42,9 @@ Route::get('/customers', [CustomerController::class, 'index']);
 Route::post('/customers', [CustomerController::class, 'store']);
 Route::put('/customers/{id}', [CustomerController::class, 'update']);
 Route::delete('/customers/{id}', [CustomerController::class, 'destroy']);
+
+// Route for Importation (manual entry)
+Route::get('/importation', [ImportationController::class, 'index']);
+Route::post('/importation', [ImportationController::class, 'store']);
+Route::put('/importation/{importationEntry}', [ImportationController::class, 'update']);
+Route::delete('/importation/{importationEntry}', [ImportationController::class, 'destroy']);

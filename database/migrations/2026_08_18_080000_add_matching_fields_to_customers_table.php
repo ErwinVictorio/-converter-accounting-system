@@ -22,8 +22,12 @@ return new class extends Migration
             }
         });
 
-        DB::statement('ALTER TABLE customers MODIFY name VARCHAR(300) NOT NULL');
-        DB::statement('ALTER TABLE customers MODIFY addr VARCHAR(500) NOT NULL');
+        // Enforce NOT NULL only on MySQL; the raw MODIFY syntax is not portable
+        // (e.g. sqlite used by the test suite), where these columns are already NOT NULL.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE customers MODIFY name VARCHAR(300) NOT NULL');
+            DB::statement('ALTER TABLE customers MODIFY addr VARCHAR(500) NOT NULL');
+        }
 
         DB::table('customers')
             ->whereNull('name_key')

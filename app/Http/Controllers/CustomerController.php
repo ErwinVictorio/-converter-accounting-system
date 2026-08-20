@@ -116,7 +116,7 @@ class CustomerController extends Controller
 
     private function salesCustomerNameKeySql(): string
     {
-        return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(customer_name), ' ', ''), '.', ''), ',', ''), '-', ''), '/', ''), '(', ''), ')', '')";
+        return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(customer_name), '&', 'AND'), ' ', ''), '.', ''), ',', ''), '-', ''), '/', ''), '(', ''), ')', '')";
     }
 
     private function formatTin(?string $value): string
