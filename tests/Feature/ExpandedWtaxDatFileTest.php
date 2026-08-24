@@ -13,8 +13,9 @@ use Tests\TestCase;
  *
  * The byte-for-byte comparison against Docs/Expanded/0087919760000123120251604E.dat
  * lives in tests/Unit/ReliefExpandedWtaxDatGeneratorTest.php. What matters here is
- * the wiring: the right rows for the right month, in payee order, blocked when a
- * row is unfilable, and kept out of the RELIEF schedules.
+ * the wiring: the right rows for the right month, consolidated the way the BIR
+ * format requires, in payee order, blocked when a row is unfilable, and kept out of
+ * the RELIEF schedules.
  */
 class ExpandedWtaxDatFileTest extends TestCase
 {
@@ -31,9 +32,6 @@ class ExpandedWtaxDatFileTest extends TestCase
     {
         return ExpandedWtaxEntry::create(array_merge([
             'reporting_period' => '2026-07-31',
-            'transaction_date' => '2026-07-03',
-            'source_no' => '1',
-            'reference_no' => 'SI-1001',
             'payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
             'payee_type' => 'company',
             'payee_tin' => '007-086-184-000',
@@ -46,7 +44,6 @@ class ExpandedWtaxDatFileTest extends TestCase
             'tax_rate' => 1.00,
             'income_payment' => 3682716.00,
             'tax_withheld' => 36827.16,
-            'source_row' => 4,
         ], $overrides));
     }
 
@@ -114,7 +111,7 @@ class ExpandedWtaxDatFileTest extends TestCase
 
         $this->assertSame(1, $issues['invalid_count']);
         $this->assertStringContainsString('SOME PROFESSIONAL SERVICES', $issues['errors'][0]);
-        $this->assertStringContainsString('no ATC code could be resolved', $issues['errors'][0]);
+        $this->assertStringContainsString('ATC is blank', $issues['errors'][0]);
     }
 
     public function test_it_downloads_a_1604e_dat_for_the_selected_month(): void
@@ -191,8 +188,14 @@ class ExpandedWtaxDatFileTest extends TestCase
 
     public function test_details_are_filed_in_payee_order(): void
     {
-        // Inserted out of order on purpose.
-        $this->entry(['payee_name' => 'ZENITH HARDWARE', 'company_name' => 'ZENITH HARDWARE']);
+        // Inserted out of order on purpose. Every row here has a key of its own, so
+        // nothing merges and the three stay three: ZENITH carries its own TIN, and
+        // the two ACERSTEEL rows differ by ATC and rate.
+        $this->entry([
+            'payee_name' => 'ZENITH HARDWARE',
+            'company_name' => 'ZENITH HARDWARE',
+            'payee_tin' => '004-703-296-000',
+        ]);
         $this->entry(['payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC', 'tax_rate' => 2.00, 'atc_code' => 'WC160', 'income_payment' => 1000.00, 'tax_withheld' => 20.00]);
         $this->entry(['payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC']);
 
@@ -210,6 +213,121 @@ class ExpandedWtaxDatFileTest extends TestCase
         ], $names);
         // Within one payee, the lower rate is filed first.
         $this->assertSame(['1.00', '2.00', '1.00'], $rates);
+    }
+
+    /**
+     * The two PRUDENTIAL rows of the reference file, which is where the duplicate
+     * this rule exists for was found: same month, TIN, ATC and rate, filed twice.
+     */
+    private function prudential(array $overrides = []): ExpandedWtaxEntry
+    {
+        return $this->entry(array_merge([
+            'payee_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'company_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'payee_tin' => '000-491-813-000',
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+            'income_payment' => 219023.50,
+            'tax_withheld' => 4380.47,
+        ], $overrides));
+    }
+
+    public function test_matching_rows_become_one_detail_line_with_summed_amounts(): void
+    {
+        $this->prudential();
+        $this->prudential(['income_payment' => 1988.50, 'tax_withheld' => 39.77]);
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+        );
+
+        // Two stored rows, one detail line: header + 1 detail + trailer.
+        $this->assertCount(3, $lines);
+
+        $detail = str_getcsv($lines[1]);
+
+        $this->assertSame('1', $detail[5]);
+        $this->assertSame('000491813', $detail[6]);
+        $this->assertSame('PRUDENTIAL GUARANTEE AND ASSURANCE INC', $detail[8]);
+        $this->assertSame('WC160', $detail[12]);
+        // 219023.50 + 1988.50 and 4380.47 + 39.77, summed rather than replaced.
+        $this->assertSame('221012.00', $detail[13]);
+        $this->assertSame('2.00', $detail[14]);
+        $this->assertSame('4420.24', $detail[15]);
+    }
+
+    public function test_consolidation_leaves_the_control_total_untouched(): void
+    {
+        $this->entry();
+        $this->prudential();
+        $this->prudential(['income_payment' => 1988.50, 'tax_withheld' => 39.77]);
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+        );
+
+        // Three stored rows, two detail lines.
+        $this->assertCount(4, $lines);
+
+        // Consolidation adds rows together rather than dropping any, so the control
+        // total is still the sum of every stored row: 36827.16 + 4380.47 + 39.77.
+        $stored = ExpandedWtaxEntry::sum('tax_withheld');
+
+        $this->assertEqualsWithDelta(41247.40, (float) $stored, 0.001);
+        $this->assertSame('41247.40', str_getcsv($lines[3])[5]);
+    }
+
+    public function test_payee_order_survives_consolidation(): void
+    {
+        // Inserted out of order, with the mergeable pair split up.
+        $this->entry([
+            'payee_name' => 'ZENITH HARDWARE',
+            'company_name' => 'ZENITH HARDWARE',
+            'payee_tin' => '004-703-296-000',
+        ]);
+        $this->prudential();
+        $this->entry();
+        $this->prudential(['income_payment' => 1988.50, 'tax_withheld' => 39.77]);
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+        );
+
+        $this->assertCount(5, $lines); // 4 stored rows, 3 detail lines
+
+        $names = array_map(fn ($line) => str_getcsv($line)[8], array_slice($lines, 1, 3));
+
+        $this->assertSame([
+            'ACERSTEEL INDUSTRIAL SALES INC',
+            'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'ZENITH HARDWARE',
+        ], $names);
+        // Sequence numbers close the gap the merge leaves behind.
+        $this->assertSame(['1', '2', '3'], array_map(
+            fn ($line) => str_getcsv($line)[5],
+            array_slice($lines, 1, 3)
+        ));
+    }
+
+    public function test_the_listed_record_count_is_the_number_of_detail_lines(): void
+    {
+        $this->entry();
+        $this->prudential();
+        $this->prudential(['income_payment' => 1988.50, 'tax_withheld' => 39.77]);
+
+        $response = $this->get('/generate-datfile?record_type=expanded');
+
+        // What the Generate DAT screen promises...
+        $count = $response->viewData('page')['props']['availablePeriods'][0]['records_count'];
+
+        $this->assertSame(2, $count);
+
+        // ...is what the file delivers.
+        $lines = $this->lines(
+            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+        );
+
+        $this->assertCount($count, array_slice($lines, 1, -1));
     }
 
     public function test_only_the_selected_month_is_filed(): void

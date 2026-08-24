@@ -27,8 +27,19 @@ use RuntimeException;
  * 2. Amounts always carry two decimals, including negatives. The reference file
  *    has -51600.00 / -2580.00 on a reversal row, so signs are passed through.
  *
- * Rows are not aggregated per payee: the reference file lists the same payee
- * twice under the same ATC, so each stored row becomes one detail line.
+ * One item in, one detail line out. The generator itself never merges anything --
+ * grouping is ExpandedWtaxEntry::consolidate()'s job, and DatFileController calls it
+ * before handing the collection over, so rows sharing reporting month, TIN, ATC and
+ * rate arrive as a single item with their income payment and tax amount already
+ * summed.
+ *
+ * That is a deliberate departure from the reference file, which lists PRUDENTIAL
+ * GUARANTEE AND ASSURANCE INC twice under WC160 at 2%: the same month regenerated
+ * from consolidated records produces **58 detail lines instead of 59**, with those
+ * two becoming 221012.00 / 4420.24. The control total is unchanged at 241326.68,
+ * because consolidation sums rather than filters. Sequence numbers renumber to close
+ * the gap, so a byte-for-byte comparison against the reference file only holds for a
+ * month with no mergeable duplicates.
  */
 class ReliefExpandedWtaxDatGenerator
 {

@@ -11,20 +11,28 @@ use Tests\TestCase;
 
 /**
  * Covers the upload half of the Expanded WTAX module: POST /vat-import with
- * record_type=expanded must land rows in expanded_wtax_entries, one per rate
- * column that carries an amount, with the income payment and the ATC code
- * derived because the workbook supplies neither.
+ * record_type=expanded reading the BIR 1601EQ Schedule 1 layout -- eleven columns,
+ * headings on row 1, described in Docs/Expanded/BIR_Excel_Guide_Analysis.md.
  *
- * Most cases use a CSV rather than an .xlsx because the route accepts both and
- * the importer reads them through the same heading-row pipeline; one case runs
- * the real Docs/Expanded/EXPANDED WTAX.xlsx end to end so the layout assumptions
- * stay honest.
+ * The rule the whole module turns on is that the workbook's amounts are already
+ * computed and are stored as they stand. Nothing here derives an income payment
+ * from a tax amount, a tax amount from an income payment, or an ATC from a rate,
+ * and several cases below exist only to keep it that way.
+ *
+ * Most cases use a CSV, which the route accepts and the importer reads through the
+ * same heading-row pipeline. Two run the real
+ * Docs/Expanded/EXPANDED_WTAX_BIR_FORMAT_SAMPLE.xlsx end to end, because a CSV
+ * cannot carry the formula that column K holds in a real workbook.
  */
 class ExpandedWtaxImportTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const WORKBOOK = 'Docs/Expanded/EXPANDED WTAX.xlsx';
+    private const WORKBOOK = 'Docs/Expanded/EXPANDED_WTAX_BIR_FORMAT_SAMPLE.xlsx';
+
+    /** The BIR template's own headings, in the template's own order. */
+    private const HEADINGS = 'Reporting_Month,Vendor_TIN,branchCode,companyName,surName,'
+        . 'firstName,middleName,ATC,income_payment,ewt_rate,tax_amount';
 
     protected function setUp(): void
     {
@@ -34,16 +42,11 @@ class ExpandedWtaxImportTest extends TestCase
     }
 
     /**
-     * Two junk rows above the headings, exactly like the real workbook, so the
-     * headingRow() offset is exercised and not just assumed.
+     * A workbook as a CSV: headings on row 1, no title rows above them.
      */
-    private function csv(array $rows): UploadedFile
+    private function csv(array $rows, ?string $headings = null): UploadedFile
     {
-        $lines = [
-            'EXPANDED WITHHOLDING TAX,,,,,,,,,,',
-            'FOR THE MONTH OF JULY 2026,,,,,,,,,,',
-            'NO.,DATE,SUPPLIER NAME,TIN,REFERENCE,(1%),(2%),(5%),(10%),(15%),TOTAL',
-        ];
+        $lines = [$headings ?? self::HEADINGS];
 
         foreach ($rows as $row) {
             $lines[] = implode(',', $row);
@@ -55,6 +58,28 @@ class ExpandedWtaxImportTest extends TestCase
         );
     }
 
+    /**
+     * One company row, with only the cells a case cares about overridden.
+     *
+     * @param  array<int, string>  $overrides  column index (0-based) => value
+     */
+    private function row(array $overrides = []): array
+    {
+        return array_replace([
+            '07/03/2026',                       // Reporting_Month
+            '007086184',                        // Vendor_TIN
+            '0',                                // branchCode
+            'ACERSTEEL INDUSTRIAL SALES INC',   // companyName
+            '',                                 // surName
+            '',                                 // firstName
+            '',                                 // middleName
+            'WC158',                            // ATC
+            '3682716.00',                       // income_payment
+            '1',                                // ewt_rate
+            '36827.16',                         // tax_amount
+        ], $overrides);
+    }
+
     private function upload(UploadedFile $file, string $month = '2026-07'): \Illuminate\Testing\TestResponse
     {
         return $this->post('/vat-import', [
@@ -64,11 +89,22 @@ class ExpandedWtaxImportTest extends TestCase
         ]);
     }
 
-    public function test_it_stores_one_row_per_rate_column_and_derives_the_income_payment(): void
+    private function workbook(): UploadedFile
     {
-        // A single voucher withholding at two rates: 1% on goods, 2% on services.
+        $path = base_path(self::WORKBOOK);
+
+        if (! is_file($path)) {
+            $this->markTestSkipped(self::WORKBOOK . ' is not present in this checkout.');
+        }
+
+        return new UploadedFile($path, 'EXPANDED_WTAX_BIR_FORMAT_SAMPLE.xlsx', null, null, true);
+    }
+
+    public function test_one_worksheet_row_becomes_one_stored_row_with_the_uploaded_amounts(): void
+    {
         $response = $this->upload($this->csv([
-            ['1', '07/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007-086-184-000', 'SI-1001', '368.27', '250.00', '', '', '', '618.27'],
+            $this->row(),
+            $this->row([7 => 'WC160', 8 => '100000.00', 9 => '2', 10 => '2000.00']),
         ]));
 
         $response->assertRedirect();
@@ -78,193 +114,230 @@ class ExpandedWtaxImportTest extends TestCase
 
         $this->assertCount(2, $entries);
 
-        // income_payment = withheld / rate, because the workbook has no base column.
+        // All three amounts exactly as the file supplied them. The 1% row in
+        // particular: a derived income payment would read 3682716.00 only by
+        // coincidence, and 36827.16 / 1% is what the old importer used to compute.
         $this->assertEqualsWithDelta(1.00, (float) $entries[0]->tax_rate, 0.001);
-        $this->assertEqualsWithDelta(36827.00, (float) $entries[0]->income_payment, 0.001);
-        $this->assertEqualsWithDelta(368.27, (float) $entries[0]->tax_withheld, 0.001);
+        $this->assertEqualsWithDelta(3682716.00, (float) $entries[0]->income_payment, 0.001);
+        $this->assertEqualsWithDelta(36827.16, (float) $entries[0]->tax_withheld, 0.001);
         $this->assertSame('WC158', $entries[0]->atc_code);
 
         $this->assertEqualsWithDelta(2.00, (float) $entries[1]->tax_rate, 0.001);
-        $this->assertEqualsWithDelta(12500.00, (float) $entries[1]->income_payment, 0.001);
+        $this->assertEqualsWithDelta(100000.00, (float) $entries[1]->income_payment, 0.001);
+        $this->assertEqualsWithDelta(2000.00, (float) $entries[1]->tax_withheld, 0.001);
         $this->assertSame('WC160', $entries[1]->atc_code);
 
-        // Shared payee fields are copied onto both rows.
+        // The reporting period comes from the form, month-end, for every row.
         foreach ($entries as $entry) {
-            $this->assertSame('ACERSTEEL INDUSTRIAL SALES INC', $entry->payee_name);
-            $this->assertSame('company', $entry->payee_type);
-            $this->assertSame('0000', $entry->payee_branch_code);
             $this->assertSame('2026-07-31', $entry->reporting_period->toDateString());
-            $this->assertSame('2026-07-03', $entry->transaction_date->toDateString());
-            $this->assertSame('SI-1001', $entry->reference_no);
         }
     }
 
-    public function test_it_splits_an_individual_payee_and_picks_the_wi_code(): void
+    public function test_an_income_payment_that_contradicts_the_tax_is_stored_as_uploaded(): void
     {
+        // 1% of 100000.00 is 1000.00, not 4000.00. The row is wrong and the
+        // validator says so -- but neither amount is quietly replaced, because the
+        // workbook is the record of what was withheld and paid.
         $this->upload($this->csv([
-            ['1', '07/05/2026', '"BANSIL, ANNIE"', '220-052-738-000', 'PV-2001', '', '', '', '586.56', '', '586.56'],
-            ['2', '07/06/2026', '"SY, JULIET HUI"', '188-291-434-000', 'PV-2002', '', '', '400.00', '', '', '400.00'],
-        ]))->assertSessionHas('success');
-
-        $bansil = ExpandedWtaxEntry::where('payee_tin', 'like', '220-052-738%')->firstOrFail();
-
-        $this->assertSame('individual', $bansil->payee_type);
-        $this->assertSame('BANSIL', $bansil->last_name);
-        $this->assertSame('ANNIE', $bansil->first_name);
-        $this->assertNull($bansil->middle_name);
-        $this->assertNull($bansil->company_name);
-        // 10% from an individual is WI516, not the company's WC139.
-        $this->assertSame('WI516', $bansil->atc_code);
-
-        $sy = ExpandedWtaxEntry::where('payee_tin', 'like', '188-291-434%')->firstOrFail();
-
-        $this->assertSame('SY', $sy->last_name);
-        $this->assertSame('JULIET', $sy->first_name);
-        $this->assertSame('HUI', $sy->middle_name);
-        // 5% from an individual is WI010, not the company's WC100.
-        $this->assertSame('WI010', $sy->atc_code);
-    }
-
-    public function test_a_company_name_containing_a_comma_stays_a_company(): void
-    {
-        // "CO" is both a company suffix and a common surname, so the corporate
-        // token check has to look at the text after the comma, not anywhere in it.
-        $this->upload($this->csv([
-            ['1', '07/07/2026', '"WORLD BEST SALES, INC."', '004-703-296-000', 'SI-3001', '150.00', '', '', '', '', '150.00'],
-            ['2', '07/08/2026', '"CO, JUAN"', '145-889-201-000', 'PV-3002', '150.00', '', '', '', '', '150.00'],
-        ]))->assertSessionHas('success');
-
-        $company = ExpandedWtaxEntry::where('payee_tin', 'like', '004-703-296%')->firstOrFail();
-
-        $this->assertSame('company', $company->payee_type);
-        $this->assertSame('WORLD BEST SALES INC', $company->company_name);
-        $this->assertNull($company->last_name);
-
-        $individual = ExpandedWtaxEntry::where('payee_tin', 'like', '145-889-201%')->firstOrFail();
-
-        $this->assertSame('individual', $individual->payee_type);
-        $this->assertSame('CO', $individual->last_name);
-        $this->assertSame('JUAN', $individual->first_name);
-    }
-
-    public function test_it_skips_the_totals_row_and_blank_payees(): void
-    {
-        $this->upload($this->csv([
-            ['1', '07/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007-086-184-000', 'SI-1001', '368.27', '', '', '', '', '368.27'],
-            ['', '', '', '', '', '', '', '', '', '', ''],
-            ['', '', 'TOTAL:', '', '', '368.27', '', '', '', '', '368.27'],
-        ]))->assertSessionHas('success');
-
-        $this->assertSame(1, ExpandedWtaxEntry::count());
-        $this->assertSame('ACERSTEEL INDUSTRIAL SALES INC', ExpandedWtaxEntry::firstOrFail()->payee_name);
-    }
-
-    public function test_it_normalises_names_to_bir_safe_text(): void
-    {
-        $this->upload($this->csv([
-            ['1', '07/09/2026', 'h.m. alapide gravel & sand supplier', '302-331-355-000', 'SI-4001', '', '', '2580.00', '', '', '2580.00'],
+            $this->row([8 => '100000.00', 9 => '1', 10 => '4000.00']),
         ]))->assertSessionHas('success');
 
         $entry = ExpandedWtaxEntry::firstOrFail();
 
-        // Upper-cased, "&" spelled out, periods dropped, runs of spaces collapsed:
-        // the reference DAT contains no punctuation at all.
-        $this->assertSame('H M ALAPIDE GRAVEL AND SAND SUPPLIER', $entry->payee_name);
-        $this->assertSame('H M ALAPIDE GRAVEL AND SAND SUPPLIER', $entry->company_name);
-        $this->assertStringNotContainsString('&', $entry->company_name);
-        $this->assertStringNotContainsString('.', $entry->company_name);
+        $this->assertEqualsWithDelta(100000.00, (float) $entry->income_payment, 0.001);
+        $this->assertEqualsWithDelta(4000.00, (float) $entry->tax_withheld, 0.001);
+        $this->assertEqualsWithDelta(1.00, (float) $entry->tax_rate, 0.001);
+
+        $errors = app(BirExpandedWtaxRowValidator::class)->validate($entry->toBirExpandedRow(), 2);
+
+        $this->assertNotEmpty($errors);
+        $this->assertStringContainsString('does not match income_payment', $errors[0]);
     }
 
-    public function test_it_truncates_a_long_company_name_to_fifty_characters(): void
+    public function test_a_company_row_fills_the_company_name_and_leaves_the_name_parts_empty(): void
+    {
+        $this->upload($this->csv([$this->row()]))->assertSessionHas('success');
+
+        $entry = ExpandedWtaxEntry::firstOrFail();
+
+        $this->assertSame('company', $entry->payee_type);
+        $this->assertSame('ACERSTEEL INDUSTRIAL SALES INC', $entry->company_name);
+        $this->assertSame('ACERSTEEL INDUSTRIAL SALES INC', $entry->payee_name);
+        $this->assertNull($entry->last_name);
+        $this->assertNull($entry->first_name);
+        $this->assertNull($entry->middle_name);
+        // Nine digits: the branch suffix is branchCode's own column.
+        $this->assertSame('007086184', $entry->payee_tin);
+    }
+
+    public function test_an_individual_row_fills_the_three_name_columns(): void
     {
         $this->upload($this->csv([
-            ['1', '07/10/2026', 'ACERSTEEL INDUSTRIAL SALES INCORPORATED AND SUBSIDIARIES', '007-086-184-000', 'SI-5001', '100.00', '', '', '', '', '100.00'],
+            $this->row([
+                1 => '220052738', 3 => '', 4 => 'BANSIL', 5 => 'JUAN', 6 => 'CRUZ',
+                7 => 'WI010', 8 => '50000.00', 9 => '5', 10 => '2500.00',
+            ]),
         ]))->assertSessionHas('success');
 
         $entry = ExpandedWtaxEntry::firstOrFail();
 
-        $this->assertSame(50, strlen($entry->company_name));
-        $this->assertSame('ACERSTEEL INDUSTRIAL SALES INCORPORATED AND SUBSID', $entry->company_name);
+        $this->assertSame('individual', $entry->payee_type);
+        $this->assertNull($entry->company_name);
+        $this->assertSame('BANSIL', $entry->last_name);
+        $this->assertSame('JUAN', $entry->first_name);
+        $this->assertSame('CRUZ', $entry->middle_name);
+        // A display label and a sort key that files the payee under their surname.
+        // The comma is safe: payee_name is never written to the DAT.
+        $this->assertSame('BANSIL, JUAN CRUZ', $entry->payee_name);
+        $this->assertSame('WI010', $entry->atc_code);
     }
 
-    public function test_it_keeps_a_negative_reversal(): void
+    public function test_the_atc_comes_from_the_column_rather_than_the_rate(): void
     {
+        // 5% is WC100 for a company and WI010 for an individual, and the old
+        // importer chose between them. Here the file says WC100 for one row and
+        // WI010 for another at the same rate, and both are stored as written.
         $this->upload($this->csv([
-            ['1', '07/11/2026', 'H M ALAPIDE GRAVEL AND SAND SUPPLIER', '302-331-355-000', 'SI-6001', '', '', '-2580.00', '', '', '-2580.00'],
+            $this->row([1 => '302331355', 7 => 'wc100 ', 9 => '5', 8 => '51600.00', 10 => '2580.00']),
+            $this->row([
+                1 => '188291434', 3 => '', 4 => 'SY', 5 => 'JULIET', 6 => 'HUI',
+                7 => 'WI010', 8 => '8000.00', 9 => '5', 10 => '400.00',
+            ]),
         ]))->assertSessionHas('success');
 
-        $entry = ExpandedWtaxEntry::firstOrFail();
-
-        $this->assertEqualsWithDelta(-2580.00, (float) $entry->tax_withheld, 0.001);
-        $this->assertEqualsWithDelta(-51600.00, (float) $entry->income_payment, 0.001);
-        $this->assertSame('WC100', $entry->atc_code);
+        // Upper-cased and trimmed -- an identifier's format, not its value.
+        $this->assertSame('WC100', ExpandedWtaxEntry::where('payee_tin', '302331355')->firstOrFail()->atc_code);
+        $this->assertSame('WI010', ExpandedWtaxEntry::where('payee_tin', '188291434')->firstOrFail()->atc_code);
     }
 
-    public function test_an_unmappable_rate_is_stored_with_no_atc_instead_of_failing_the_upload(): void
+    public function test_a_blank_atc_is_stored_null_and_blocks_the_dat(): void
     {
-        // 15% is deliberately left out of default_rate_codes: nobody has confirmed
-        // which schedule it belongs to. Dropping the row would lose money silently,
-        // so it is stored and the validator blocks the DAT until it is mapped.
-        $this->upload($this->csv([
-            ['1', '07/12/2026', 'SOME PROFESSIONAL SERVICES', '123-456-789-000', 'PV-7001', '', '', '', '', '1500.00', '1500.00'],
-        ]))->assertSessionHas('success');
+        // Storing the row keeps the money visible; inventing a code would file the
+        // payment on a schedule nobody chose.
+        $this->upload($this->csv([$this->row([7 => ''])]))->assertSessionHas('success');
 
         $entry = ExpandedWtaxEntry::firstOrFail();
 
         $this->assertNull($entry->atc_code);
-        $this->assertEqualsWithDelta(15.00, (float) $entry->tax_rate, 0.001);
-        $this->assertEqualsWithDelta(10000.00, (float) $entry->income_payment, 0.001);
 
-        $errors = app(BirExpandedWtaxRowValidator::class)->validate($entry->toBirExpandedRow(), 4);
+        $errors = app(BirExpandedWtaxRowValidator::class)->validate($entry->toBirExpandedRow(), 2);
+
         $this->assertNotEmpty($errors);
+        $this->assertStringContainsString('ATC is blank', $errors[0]);
     }
 
-    public function test_a_per_payee_override_beats_the_default_code_for_that_rate(): void
+    public function test_the_branch_code_is_padded_to_four_digits(): void
     {
-        // 10% covers both professional fees and brokers' commissions; only the
-        // taxpayer knows which applies to a given payee.
-        config()->set('bir.expanded_wtax.payee_atc_overrides', [
-            '007086184' => ['10.00' => 'WC139'],
-        ]);
-
         $this->upload($this->csv([
-            ['1', '07/13/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007-086-184-000', 'SI-8001', '', '', '', '900.00', '', '900.00'],
-            ['2', '07/13/2026', 'OTHER SUPPLIER INC', '004-703-296-000', 'SI-8002', '', '', '', '900.00', '', '900.00'],
+            $this->row([2 => '1']),
+            $this->row([1 => '004703296', 2 => '']),
         ]))->assertSessionHas('success');
 
-        $this->assertSame(
-            'WC139',
-            ExpandedWtaxEntry::where('payee_tin', 'like', '007-086-184%')->firstOrFail()->atc_code
-        );
-        $this->assertSame(
-            'WC139',
-            ExpandedWtaxEntry::where('payee_tin', 'like', '004-703-296%')->firstOrFail()->atc_code
-        );
+        // The template writes a plain number; the DAT carries four digits.
+        $this->assertSame('0001', ExpandedWtaxEntry::where('payee_tin', '007086184')->firstOrFail()->payee_branch_code);
+        // Blank means head office, which the reference DAT files as 0000.
+        $this->assertSame('0000', ExpandedWtaxEntry::where('payee_tin', '004703296')->firstOrFail()->payee_branch_code);
+    }
+
+    public function test_it_keeps_a_negative_reversal_on_both_amounts(): void
+    {
+        $this->upload($this->csv([
+            $this->row([7 => 'WC160', 8 => '-51600.00', 9 => '2', 10 => '-1032.00']),
+        ]))->assertSessionHas('success');
+
+        $entry = ExpandedWtaxEntry::firstOrFail();
+
+        $this->assertEqualsWithDelta(-51600.00, (float) $entry->income_payment, 0.001);
+        $this->assertEqualsWithDelta(-1032.00, (float) $entry->tax_withheld, 0.001);
+
+        // A reversal is a legitimate row, not an error.
+        $this->assertSame([], app(BirExpandedWtaxRowValidator::class)->validate($entry->toBirExpandedRow(), 2));
+    }
+
+    public function test_it_normalises_names_to_bir_safe_text_and_truncates_at_fifty(): void
+    {
+        $this->upload($this->csv([
+            $this->row([3 => 'h.m. alapide gravel & sand supplier incorporated and subsidiaries']),
+        ]))->assertSessionHas('success');
+
+        $entry = ExpandedWtaxEntry::firstOrFail();
+
+        // Upper-cased, "&" spelled out, periods dropped, cut to the DAT's 50
+        // characters. The DAT is comma-delimited and its longest reference name is
+        // exactly 50 characters wide.
+        $this->assertSame('H M ALAPIDE GRAVEL AND SAND SUPPLIER INCORPORATED', $entry->company_name);
+        $this->assertLessThanOrEqual(50, strlen($entry->company_name));
+        $this->assertStringNotContainsString('&', $entry->company_name);
+        $this->assertStringNotContainsString('.', $entry->company_name);
     }
 
     public function test_re_uploading_a_month_replaces_it_rather_than_doubling_the_tax(): void
     {
-        $file = fn (string $withheld) => $this->csv([
-            ['1', '07/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007-086-184-000', 'SI-1001', $withheld, '', '', '', '', $withheld],
+        $file = fn (string $income, string $withheld, string $date = '07/03/2026') => $this->csv([
+            $this->row([0 => $date, 8 => $income, 10 => $withheld]),
         ]);
 
-        $this->upload($file('368.27'))->assertSessionHas('success');
-        $this->upload($file('400.00'))->assertSessionHas('success');
+        $this->upload($file('3682716.00', '36827.16'))->assertSessionHas('success');
+        $this->upload($file('4000000.00', '40000.00'))->assertSessionHas('success');
 
         $this->assertSame(1, ExpandedWtaxEntry::count());
-        $this->assertEqualsWithDelta(400.00, (float) ExpandedWtaxEntry::firstOrFail()->tax_withheld, 0.001);
+        $this->assertEqualsWithDelta(40000.00, (float) ExpandedWtaxEntry::firstOrFail()->tax_withheld, 0.001);
 
-        // A different month is untouched by the replace.
-        $this->upload($file('500.00'), '2026-08')->assertSessionHas('success');
+        // A different month is untouched by the replace. Its own Reporting_Month has
+        // to match, which is the pre-flight's business and is covered on its own below.
+        $this->upload($file('500000.00', '5000.00', '08/04/2026'), '2026-08')->assertSessionHas('success');
 
         $this->assertSame(2, ExpandedWtaxEntry::count());
     }
 
+    public function test_a_missing_column_rejects_the_upload_and_leaves_the_month_alone(): void
+    {
+        $this->upload($this->csv([$this->row()]))->assertSessionHas('success');
+
+        // income_payment dropped, which is the column whose absence would otherwise
+        // store a zero for every payee and look like a successful import.
+        $headings = str_replace(',income_payment', '', self::HEADINGS);
+        $short = fn (array $row) => array_values(array_diff_key($row, [8 => null]));
+
+        $response = $this->upload($this->csv([$short($this->row())], $headings));
+
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
+
+        $error = session('error');
+
+        $this->assertStringContainsString('missing the column income_payment', $error);
+        // The message names the layout, so the fix does not need a second question.
+        $this->assertStringContainsString('BIR 1601EQ Schedule 1', $error);
+
+        // The month already on file survived the rejected upload intact.
+        $this->assertSame(1, ExpandedWtaxEntry::count());
+        $this->assertEqualsWithDelta(3682716.00, (float) ExpandedWtaxEntry::firstOrFail()->income_payment, 0.001);
+    }
+
+    public function test_a_row_from_another_month_rejects_the_upload_and_names_the_row(): void
+    {
+        $response = $this->upload($this->csv([
+            $this->row(),
+            $this->row([0 => '11/28/2026', 1 => '004703296']),
+        ]));
+
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
+
+        $error = session('error');
+
+        // Worksheet row 3: headings on row 1, so the second data row.
+        $this->assertStringContainsString('Row 3: Reporting_Month is 11/28/2026', $error);
+        $this->assertStringContainsString('but this upload is for July 2026', $error);
+
+        // Nothing was stored: the whole file is one month or it is not imported.
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
     public function test_expanded_rows_stay_out_of_the_vat_tables(): void
     {
-        $this->upload($this->csv([
-            ['1', '07/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007-086-184-000', 'SI-1001', '368.27', '', '', '', '', '368.27'],
-        ]))->assertSessionHas('success');
+        $this->upload($this->csv([$this->row()]))->assertSessionHas('success');
 
         // Expanded withholding tax is not input VAT; merging the two would
         // overstate the VAT credit on the dashboard and in the RELIEF files.
@@ -273,96 +346,72 @@ class ExpandedWtaxImportTest extends TestCase
         $this->assertSame(0, \App\Models\SalesVatInput::count());
     }
 
-    public function test_the_records_page_lists_the_imported_expanded_rows(): void
+    public function test_it_reads_the_bir_format_workbook_and_resolves_its_formulas(): void
     {
-        $this->upload($this->csv([
-            ['1', '07/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007-086-184-000', 'SI-1001', '368.27', '', '', '', '', '368.27'],
-            ['2', '07/05/2026', '"BANSIL, ANNIE"', '220-052-738-000', 'PV-2001', '', '', '', '586.56', '', '586.56'],
-        ]))->assertSessionHas('success');
+        $this->upload($this->workbook(), '2025-12')->assertSessionHas('success');
 
+        $entries = ExpandedWtaxEntry::orderBy('id')->get();
+
+        // Seven worksheet rows, seven stored rows.
+        $this->assertCount(7, $entries);
+
+        /*
+         * Column K of the fixture is the template's own formula,
+         * =ROUND(I*J/100,2). Stored as the value it computes -- had the formula text
+         * been read instead, its digits would have been scraped into a nonsense
+         * amount, which is what these three figures pin down.
+         */
+        $this->assertEqualsWithDelta(36827.16, (float) $entries[0]->tax_withheld, 0.001);
+        $this->assertEqualsWithDelta(4380.47, (float) $entries[2]->tax_withheld, 0.001);
+        $this->assertEqualsWithDelta(-1032.00, (float) $entries[5]->tax_withheld, 0.001);
+
+        // Leading zeros survive: 000491813 is a real TIN, not 491813.
+        $this->assertSame('000491813', $entries[2]->payee_tin);
+        $this->assertSame('0000', $entries[2]->payee_branch_code);
+        $this->assertSame('2025-12-31', $entries[0]->reporting_period->toDateString());
+
+        // The individual row fills the name columns; the six company rows do not.
+        $this->assertSame('individual', $entries[4]->payee_type);
+        $this->assertSame('BANSIL', $entries[4]->last_name);
+        $this->assertSame(6, $entries->where('payee_type', 'company')->count());
+
+        // Every row is filable exactly as imported.
+        $validator = app(BirExpandedWtaxRowValidator::class);
+
+        foreach ($entries as $index => $entry) {
+            $this->assertSame(
+                [],
+                $validator->validate($entry->toBirExpandedRow(), $index + 2),
+                "Worksheet row {$index} of the fixture is unfilable as imported."
+            );
+        }
+    }
+
+    public function test_the_records_page_lists_the_consolidated_rows(): void
+    {
+        $this->upload($this->workbook(), '2025-12')->assertSessionHas('success');
+
+        // Seven stored rows, six listed: the two PRUDENTIAL rows share reporting
+        // month, TIN, ATC and rate, so they are one filing line.
         $this->get('/records')->assertOk()->assertInertia(
             fn ($page) => $page
                 ->component('RecordEntry')
-                ->has('expandedWtaxEntries.data', 2)
+                ->has('expandedWtaxEntries.data', 6)
         );
+
+        $this->assertSame(7, ExpandedWtaxEntry::count());
 
         // Search covers the payee, the TIN and the ATC code.
         $this->get('/records?search=BANSIL')->assertOk()->assertInertia(
             fn ($page) => $page->has('expandedWtaxEntries.data', 1)
         );
 
-        $this->get('/records?search=WC158')->assertOk()->assertInertia(
+        $this->get('/records?search=000491813')->assertOk()->assertInertia(
             fn ($page) => $page->has('expandedWtaxEntries.data', 1)
         );
-    }
 
-    public function test_it_imports_the_sample_workbook_and_only_blank_tin_rows_are_unfilable(): void
-    {
-        $path = base_path(self::WORKBOOK);
-
-        if (! is_file($path)) {
-            $this->markTestSkipped(self::WORKBOOK . ' is not present in this checkout.');
-        }
-
-        $this->upload(new UploadedFile($path, 'EXPANDED WTAX.xlsx', null, null, true))
-            ->assertSessionHas('success');
-
-        $entries = ExpandedWtaxEntry::all();
-
-        // 125 worksheet rows, each contributing at least one rate row.
-        $this->assertGreaterThanOrEqual(125, $entries->count());
-
-        $validator = app(BirExpandedWtaxRowValidator::class);
-        $errors = [];
-
-        foreach ($entries as $entry) {
-            foreach ($validator->validate($entry->toBirExpandedRow(), $entry->source_row ?? 0) as $error) {
-                $errors[] = $error;
-            }
-        }
-
-        /*
-         * The sample workbook leaves the TIN cell empty on 16 of its 125 rows --
-         * column D is blank for worksheet rows 33, 60-63, 65, 72, 75, 76, 98, 99,
-         * 115 and 122-125 -- even though the same payees carry a TIN on their
-         * other rows. Those rows are the ONLY thing the 1604E validator objects
-         * to, which is the assertion worth locking down: nothing else about the
-         * workbook needs fixing, and the module does not invent a TIN to paper
-         * over a gap the BIR would reject.
-         */
-        $missingTin = array_values(array_filter(
-            $errors,
-            fn ($error) => str_contains($error, 'payee_tin must contain at least 9 digits')
-        ));
-
-        $this->assertSame($missingTin, $errors, 'The workbook has a problem other than its blank TIN cells.');
-        $this->assertCount(16, $missingTin);
-
-        // The row number in the message is the worksheet row, so the user can
-        // open the workbook and go straight to the cell that needs a TIN.
-        $this->assertContains('Row 33: payee_tin must contain at least 9 digits.', $missingTin);
-        $this->assertContains('Row 125: payee_tin must contain at least 9 digits.', $missingTin);
-
-        foreach (ExpandedWtaxEntry::whereIn('source_row', [33, 125])->get() as $entry) {
-            $this->assertSame('', $entry->payee_tin);
-            $this->assertNotSame('', $entry->payee_name);
-        }
-
-        // Everything that does carry a TIN is filable as imported.
-        $filable = $entries->where('payee_tin', '!=', '');
-
-        $this->assertGreaterThan(100, $filable->count());
-
-        foreach ($filable as $entry) {
-            $this->assertSame(
-                [],
-                $validator->validate($entry->toBirExpandedRow(), $entry->source_row ?? 0),
-                "Worksheet row {$entry->source_row} has a TIN but is still unfilable."
-            );
-        }
-
-        // No totals row leaked in, and the 15% column really is empty in this file.
-        $this->assertSame(0, ExpandedWtaxEntry::where('payee_name', 'like', '%TOTAL%')->count());
-        $this->assertSame(0, ExpandedWtaxEntry::where('tax_rate', 15.00)->count());
+        $this->get('/records?search=WC158')->assertOk()->assertInertia(
+            fn ($page) => $page->has('expandedWtaxEntries.data', 2)
+        );
     }
 }

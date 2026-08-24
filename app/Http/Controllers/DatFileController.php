@@ -276,9 +276,16 @@ class DatFileController extends Controller
             $availablePeriods[] = [
                 'value' => $period,
                 'label' => $records->first()->reporting_period->format('F Y'),
-                'records_count' => $records->count(),
+                // The consolidated count, not the stored one, so the number on the
+                // Generate DAT screen is the number of detail lines the file will
+                // actually carry. Two uploaded lines for the same payee, ATC and rate
+                // are one line in the DAT, and the screen should say so before the
+                // file is downloaded rather than after.
+                'records_count' => ExpandedWtaxEntry::consolidate($records)->count(),
             ];
 
+            // Validated per stored row, deliberately: an error names the line of the
+            // workbook it came from, which a consolidated group could not.
             $errors = [];
 
             foreach ($records->values() as $index => $record) {
@@ -386,14 +393,23 @@ class DatFileController extends Controller
             return back()->with('error', 'Cannot generate DAT. Fix these expanded withholding tax rows first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
         }
 
+        /*
+         * Validated as uploaded, then consolidated: rows sharing Reporting Month +
+         * TIN + ATC + EWT Rate become one detail line with the income payment and the
+         * tax amount summed. Checking the raw rows first means each row is measured
+         * against the figures the workbook actually stated.
+         *
+         * No re-sort afterwards, deliberately. consolidate() keeps the order rows
+         * arrive in, so the payee_name / tax_rate ordering above carries through --
+         * and a PHP re-sort would be wrong, because tax_rate reads back as a decimal
+         * string where '10.00' sorts before '2.00'.
+         */
+        $records = ExpandedWtaxEntry::consolidate($records);
+
         // Head office unless config/bir.php ever carries a branch of its own.
         $company = config('bir.companies.008791976') + ['branch_code' => '0000'];
 
-        $content = $generator->generate(
-            $company,
-            $records->map(fn (ExpandedWtaxEntry $record) => $record->toBirExpandedRow()),
-            $period
-        );
+        $content = $generator->generate($company, $records, $period);
 
         $fileName = $generator->filename($company, $period);
 

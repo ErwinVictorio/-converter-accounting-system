@@ -313,11 +313,68 @@ function RecordEntry() {
                 )}
                 {isExpandedMode && (
                   <p className="text-xs text-slate-500">
-                    Re-uploading a month replaces that month's expanded withholding tax rows.
+                    Upload the BIR 1601EQ Schedule 1 workbook — layout below.
                   </p>
                 )}
               </div>
             </div>
+
+            {/*
+              The upload stores what the workbook says and recomputes nothing, so
+              whether a month files correctly comes down to whether the file is
+              laid out right. Spelled out on the upload screen rather than in a doc
+              nobody opens mid-upload.
+            */}
+            {isExpandedMode && (
+              <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 text-xs leading-relaxed text-slate-600">
+                <p className="text-sm font-semibold text-slate-800">
+                  Expanded WTAX file layout — BIR 1601EQ Schedule 1
+                </p>
+                <ul className="mt-2 list-disc space-y-1.5 pl-4">
+                  <li>
+                    Column headings sit on <span className="font-medium text-slate-800">row 1</span> and
+                    data starts on row 2 — no title rows above the headings.
+                  </li>
+                  <li>
+                    Eleven columns, in this order:{" "}
+                    <span className="font-mono text-[11px] text-slate-800">
+                      Reporting_Month, Vendor_TIN, branchCode, companyName, surName, firstName,
+                      middleName, ATC, income_payment, ewt_rate, tax_amount
+                    </span>
+                  </li>
+                  <li>
+                    Name a payee on one side only:{" "}
+                    <span className="font-medium text-slate-800">companyName</span> for a company, or{" "}
+                    <span className="font-medium text-slate-800">surName / firstName / middleName</span>{" "}
+                    for an individual — never both.
+                  </li>
+                  <li>
+                    <span className="font-medium text-slate-800">income_payment</span> and{" "}
+                    <span className="font-medium text-slate-800">tax_amount</span> are read and stored
+                    exactly as the file states them. Neither is derived from the other, so the workbook's
+                    own computed figures are what gets filed.
+                  </li>
+                  <li>
+                    Amount columns follow the template's ReadMe:{" "}
+                    <span className="font-medium text-slate-800">Number</span> format, not Comma or
+                    Accounting, and no thousands separators.
+                  </li>
+                  <li>
+                    Fill <span className="font-medium text-slate-800">ATC</span> on every row. A blank one
+                    is imported but blocks the DAT, because the rate alone cannot choose between the
+                    company and individual code at 5% or 10%.
+                  </li>
+                  <li>
+                    Every <span className="font-medium text-slate-800">Reporting_Month</span> must fall
+                    inside the month selected above, and re-uploading a month replaces that month's rows.
+                  </li>
+                  <li>
+                    Rows sharing reporting month, TIN, ATC and rate are listed and filed as a single line,
+                    with their income payment and tax amount added together.
+                  </li>
+                </ul>
+              </div>
+            )}
 
             <input
               type="file"
@@ -456,12 +513,12 @@ function RecordEntry() {
                 <TableRow className="bg-slate-50 hover:bg-slate-50">
                   <TableHead className="font-semibold text-slate-700">Payee</TableHead>
                   <TableHead className="font-semibold text-slate-700">TIN</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Branch</TableHead>
                   <TableHead className="font-semibold text-slate-700">ATC</TableHead>
                   <TableHead className="font-semibold text-slate-700 text-right">Rate</TableHead>
                   <TableHead className="font-semibold text-slate-700 text-right">Income Payment</TableHead>
                   <TableHead className="font-semibold text-slate-700 text-right">Tax Withheld</TableHead>
                   <TableHead className="font-semibold text-slate-700">Reporting Month</TableHead>
-                  <TableHead className="font-semibold text-slate-700">Reference</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -474,10 +531,26 @@ function RecordEntry() {
                           <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">
                             {item.payee_type === "individual" ? "Individual" : "Company"}
                           </Badge>
+                          {/*
+                            Consolidated line: this row is more than one worksheet row added
+                            together. Without the badge the list would just show fewer rows
+                            than were uploaded, which reads as missing data.
+                          */}
+                          {item.merged_rows > 1 && (
+                            <Badge
+                              className="border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-50"
+                              title={`${item.merged_rows} uploaded rows share this reporting month, TIN, ATC and rate, so they file as one line.`}
+                            >
+                              {item.merged_rows} rows merged
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
                         {item.payee_tin || "No TIN"}
+                      </TableCell>
+                      <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
+                        {item.payee_branch_code || "0000"}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         {item.atc_code ? (
@@ -485,7 +558,9 @@ function RecordEntry() {
                             {item.atc_code}
                           </Badge>
                         ) : (
-                          // Blocks DAT generation until a mapping is configured.
+                          // The workbook's ATC column was blank. Blocks DAT generation until
+                          // it is filled and the month re-uploaded -- the rate alone cannot
+                          // choose between the company and individual code at 5% or 10%.
                           <Badge className="border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
                             No ATC
                           </Badge>
@@ -502,9 +577,6 @@ function RecordEntry() {
                       </TableCell>
                       <TableCell className="text-slate-600 text-xs whitespace-nowrap">
                         {formatMonth(item.reporting_period)}
-                      </TableCell>
-                      <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
-                        {[item.source_no, item.reference_no].filter(Boolean).join(" · ") || "—"}
                       </TableCell>
                     </TableRow>
                   ))

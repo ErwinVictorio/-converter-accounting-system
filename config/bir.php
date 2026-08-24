@@ -29,10 +29,11 @@ return [
     /*
      * Expanded withholding tax (form 1604E).
      *
-     * The source spreadsheet carries a tax-withheld amount per rate column but no
-     * ATC code, while the DAT needs an exact one. Rate alone cannot decide it:
-     * 5% is WC100 or WI010 and 10% is WC139 or WI516. Rate plus payee type does
-     * decide it, and resolves every row in both reference samples.
+     * The BIR-format workbook (Docs/Expanded/BIR_Excel_Guide_Analysis.md) carries an
+     * ATC column of its own, so the code is read from the file rather than worked out
+     * here. A blank ATC cell is reported and blocks the DAT: only the taxpayer knows
+     * which schedule a payment belongs on, and 10% alone cannot choose between WC139
+     * and WI516.
      */
     'expanded_wtax' => [
         /*
@@ -46,6 +47,11 @@ return [
          * no restriction on purpose: the reference DAT files individual payees under
          * both (three rows at 1%, two at 2%), so restricting them would reject a
          * file the BIR already accepted.
+         *
+         * This list is now the gate on an uploaded ATC, which makes it the one place
+         * to extend when Accounting starts filing a schedule this system has not seen
+         * -- a 15% row, or a WI code beyond WI010 and WI516. An ATC that is missing
+         * here is rejected with the code named, so the message says what to add.
          */
         'allowed_atc_codes' => [
             'WC158' => ['rate' => 1.00],
@@ -57,11 +63,17 @@ return [
         ],
 
         /*
-         * Rate + payee type -> ATC, applied at import time.
+         * DEPRECATED, and read by nothing since the BIR-format upload landed.
          *
-         * 15% is intentionally absent. No row in either reference file uses it, so
-         * a 15% row is stored without a code and reported as an issue on the
-         * Generate DAT screen instead of being given a guessed one.
+         * The in-house workbook this module first read had a tax-withheld column per
+         * rate and no ATC column, so the code had to be derived from rate + payee
+         * type. The BIR format states the ATC outright, and deriving one would put a
+         * payment on a schedule nobody chose.
+         *
+         * Kept rather than deleted because the two blocks record which code each rate
+         * was filed under before the change, which is the only place that history is
+         * written down. Delete both once no month imported through the old workbook
+         * still needs explaining.
          */
         'default_rate_codes' => [
             '1.00' => ['company' => 'WC158', 'individual' => 'WC158'],
@@ -71,13 +83,10 @@ return [
         ],
 
         /*
-         * Per-payee overrides, keyed by 9-digit TIN then by rate. These win over
-         * default_rate_codes.
-         *
-         * Needed because a rate default can only be right for the common case:
-         * WC139 covers brokers and agents, and every 10% company payee in the
-         * reference files happens to be one, so a non-broker company withheld at
-         * 10% belongs here.
+         * DEPRECATED alongside default_rate_codes, and empty in any case. A per-payee
+         * override existed to settle what a rate default could not -- WC139 covers
+         * brokers and agents, so a non-broker company withheld at 10% belonged here.
+         * The workbook's own ATC column settles it now.
          *
          *   '123456789' => ['10.00' => 'WC140'],
          */

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Imports\ExpandedWtaxImport;
+use App\Imports\ExpandedWtaxUploadPreflight;
 use App\Imports\VatInputImport;
 use App\Imports\SalesVatInputImport;
 use App\Models\Brokers;
@@ -11,6 +12,7 @@ use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
@@ -82,19 +84,43 @@ class VatInputController extends Controller
             ->paginate(15, ['*'], 'sales_page')
             ->withQueryString();
 
-        $expandedWtaxEntries = ExpandedWtaxEntry::query()
-            ->when($search, function ($query, $search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('payee_name', 'LIKE', "%{$search}%")
-                        ->orWhere('payee_tin', 'LIKE', "%{$search}%")
-                        ->orWhere('atc_code', 'LIKE', "%{$search}%");
-                });
-            })
-            ->orderByDesc('reporting_period')
-            ->orderBy('payee_name')
-            ->orderBy('tax_rate')
-            ->paginate(15, ['*'], 'expanded_page')
-            ->withQueryString();
+        /*
+         * Expanded WTAX is listed the way it is filed: rows sharing Reporting Month
+         * + TIN + ATC + EWT Rate are one line, with the income payment and the tax
+         * amount summed.
+         *
+         * The grouping runs in PHP through ExpandedWtaxEntry::consolidate() rather
+         * than as a SQL GROUP BY so this list, the Generate DAT screen's record
+         * count and the DAT download all share one rule and cannot drift apart.
+         * Search and ordering stay in SQL, and the consolidated collection is
+         * paginated afterwards -- the same trade-off DatFileController's expanded
+         * period listing already makes.
+         */
+        $expandedRows = ExpandedWtaxEntry::consolidate(
+            ExpandedWtaxEntry::query()
+                ->when($search, function ($query, $search) {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('payee_name', 'LIKE', "%{$search}%")
+                            ->orWhere('payee_tin', 'LIKE', "%{$search}%")
+                            ->orWhere('atc_code', 'LIKE', "%{$search}%");
+                    });
+                })
+                ->orderByDesc('reporting_period')
+                ->orderBy('payee_name')
+                ->orderBy('tax_rate')
+                ->orderBy('id')
+                ->get()
+        );
+
+        $expandedPage = LengthAwarePaginator::resolveCurrentPage('expanded_page');
+
+        $expandedWtaxEntries = (new LengthAwarePaginator(
+            $expandedRows->forPage($expandedPage, 15)->values(),
+            $expandedRows->count(),
+            15,
+            $expandedPage,
+            ['path' => $request->url(), 'pageName' => 'expanded_page']
+        ))->withQueryString();
 
         return Inertia::render('RecordEntry', [
             'vatInputs' => $vatInputs,
@@ -125,10 +151,26 @@ class VatInputController extends Controller
 
             if ($request->input('record_type') === 'expanded') {
                 /*
-                 * The workbook covers a whole month, totals row included, so
-                 * re-uploading a month replaces it instead of adding to it.
-                 * Appending would double the tax withheld and file twice the real
-                 * figure, which is worse than losing a manual correction.
+                 * Checked before anything is deleted, so a workbook with a missing
+                 * column or the wrong reporting month cannot cost the user the month
+                 * already on file. The transaction below would roll the delete back
+                 * regardless; checking here is what makes the message name the
+                 * column or the row instead of reporting a bare failure.
+                 */
+                $issues = (new ExpandedWtaxUploadPreflight)->check($file, $reportingPeriod);
+
+                if ($issues !== []) {
+                    return back()->with(
+                        'error',
+                        'Expanded withholding tax upload rejected. ' . implode(' ', $issues)
+                    );
+                }
+
+                /*
+                 * The workbook covers a whole month, so re-uploading a month replaces
+                 * it instead of adding to it. Appending would double the tax withheld
+                 * and file twice the real figure, which is worse than losing a manual
+                 * correction.
                  */
                 DB::transaction(function () use ($reportingPeriod, $file) {
                     ExpandedWtaxEntry::where('reporting_period', $reportingPeriod)->delete();

@@ -6,57 +6,71 @@ use App\Models\ExpandedWtaxEntry;
 use Illuminate\Support\Carbon;
 use Maatwebsite\Excel\Concerns\OnEachRow;
 use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
+use Maatwebsite\Excel\Concerns\WithCalculatedFormulas;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Row;
-use Throwable;
 
 /**
- * Reads the Expanded Withholding Tax workbook into expanded_wtax_entries.
+ * Reads a BIR-format Expanded Withholding Tax workbook into expanded_wtax_entries.
  *
- * The spreadsheet holds one line per payment voucher with the tax withheld split
- * across rate columns (1%, 2%, 5%, 10%, 15%), while the 1604E DAT wants one
- * detail row per payee per ATC. So one worksheet line can produce several rows
- * here -- one for each rate column that carries an amount.
+ * The layout is the eleven columns of Docs/1601EQ_Schedule_1_template.xls, headings
+ * on row 1:
  *
- * The workbook also gives no income payment and no ATC code, both of which the
- * DAT needs, so this importer derives them:
+ *   Reporting_Month | Vendor_TIN | branchCode | companyName | surName | firstName
+ *   | middleName | ATC | income_payment | ewt_rate | tax_amount
  *
- *   income_payment = tax_withheld / (rate / 100)
- *   atc_code       = config('bir.expanded_wtax') keyed by rate and payee type
+ * One worksheet line becomes exactly one stored row.
  *
- * All BIR text normalisation happens here rather than in the generator, because
- * this is where messy spreadsheet text enters the system. A row whose ATC cannot
- * be resolved is still stored, with a null code, so the upload does not fail
- * wholesale -- BirExpandedWtaxRowValidator then reports it and blocks the DAT.
+ * **Nothing here computes an amount.** income_payment, ewt_rate and tax_amount are
+ * already computed in the workbook -- column K is normally the formula
+ * ROUND(I*J/100, 2) -- and all three are read and stored as the file supplies
+ * them. The income payment is never derived from the tax, the tax is never derived
+ * from the income payment, and no rate is applied to either. Where the two sides
+ * disagree, BirExpandedWtaxRowValidator reports the row and blocks the DAT; it
+ * does not correct the figures. Formula cells are resolved to their computed value
+ * because the value is what the accountant entered the formula to produce.
+ *
+ * Text and identifiers are normalised, which is a different matter from
+ * recalculating an amount: names are folded to the BIR's punctuation-free
+ * uppercase because the DAT is comma-delimited, the TIN is reduced to its digits,
+ * and the branch code is padded to the four digits the DAT carries. Values, not
+ * amounts.
+ *
+ * Two columns are stored that the BIR format does not carry, both composed purely
+ * from the columns above: payee_type, which tells the validator whether to require
+ * a company name or a surname, and payee_name, a display label and sort key. See
+ * ExpandedWtaxEntry for the full mapping.
+ *
+ * Header and reporting-month checks that must fail the whole file live in
+ * ExpandedWtaxUploadPreflight, which runs before the month is replaced.
  */
-class ExpandedWtaxImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
+class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFormulas, WithHeadingRow
 {
     /**
-     * Column headings slug down to the bare rate number, e.g. "(1%)" -> "1".
-     * Ascending so a voucher split across two rates lands in a stable order.
+     * The BIR heading as written in the template, mapped to the heading keys
+     * WithHeadingRow can produce for it (Str::slug($header, '_')). The alternates
+     * cost nothing and spare Accounting a failed upload over an underscore.
      *
-     * @var array<string, array{rate: float, keys: array<int, string>}>
+     * ExpandedWtaxUploadPreflight reads this same list, so the columns the upload
+     * requires and the columns the importer looks for cannot drift apart.
+     *
+     * @var array<string, array<int, string>>
      */
-    private const RATE_COLUMNS = [
-        '1' => ['rate' => 1.00, 'keys' => ['1', '1_percent', '1percent']],
-        '2' => ['rate' => 2.00, 'keys' => ['2', '2_percent', '2percent']],
-        '5' => ['rate' => 5.00, 'keys' => ['5', '5_percent', '5percent']],
-        '10' => ['rate' => 10.00, 'keys' => ['10', '10_percent', '10percent']],
-        '15' => ['rate' => 15.00, 'keys' => ['15', '15_percent', '15percent']],
+    public const COLUMNS = [
+        'Reporting_Month' => ['reporting_month', 'reportingmonth'],
+        'Vendor_TIN' => ['vendor_tin', 'vendortin'],
+        'branchCode' => ['branchcode', 'branch_code'],
+        'companyName' => ['companyname', 'company_name'],
+        'surName' => ['surname', 'sur_name', 'last_name'],
+        'firstName' => ['firstname', 'first_name'],
+        'middleName' => ['middlename', 'middle_name'],
+        'ATC' => ['atc', 'atc_code'],
+        'income_payment' => ['income_payment', 'incomepayment'],
+        'ewt_rate' => ['ewt_rate', 'ewtrate'],
+        'tax_amount' => ['tax_amount', 'taxamount'],
     ];
 
-    private const TOTAL_LABELS = ['TOTAL', 'GRAND TOTAL', 'SUBTOTAL', 'TOTALS'];
-
-    /**
-     * Tokens that cannot occur in a personal name, used to tell a company whose
-     * registered name contains a comma from an individual filed "SURNAME, GIVEN".
-     */
-    private const CORPORATE_TOKENS = [
-        'INC', 'INCORPORATED', 'CORP', 'CORPORATION', 'CO', 'COMPANY', 'LTD',
-        'LIMITED', 'LLC', 'OPC', 'ENTERPRISE', 'ENTERPRISES', 'TRADING',
-        'HOLDINGS', 'BANK', 'INSURANCE', 'CONSTRUCTION', 'INDUSTRIES',
-    ];
-
+    /** The DAT's company-name field, and the reference file's longest entry. */
     private const COMPANY_NAME_LIMIT = 50;
 
     protected string $reportingPeriod;
@@ -68,184 +82,98 @@ class ExpandedWtaxImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             ->toDateString();
     }
 
+    /**
+     * The BIR template puts its headings on row 1, unlike the in-house workbook
+     * this module first read, which had two title rows above them.
+     */
     public function headingRow(): int
     {
-        return 3;
+        return 1;
     }
 
-    public function onRow(Row $row)
+    public function onRow(Row $row): void
     {
-        $data = $row->toArray();
+        // true = resolve formulas. Column K is a formula in the BIR template, and
+        // its computed value is the tax amount the file is stating.
+        $data = $row->toArray(null, true);
 
-        $rawName = (string) $this->value($data, ['supplier_name', 'payee_name', 'suppliername', 'payee']);
-        $rawTin = (string) $this->value($data, ['tin', 'payee_tin', 'tin_number']);
+        $companyName = $this->birName($this->value($data, 'companyName'), self::COMPANY_NAME_LIMIT);
+        $lastName = $this->birName($this->value($data, 'surName'));
+        $firstName = $this->birName($this->value($data, 'firstName'));
+        $middleName = $this->birName($this->value($data, 'middleName'));
+        $tin = $this->digits($this->value($data, 'Vendor_TIN'));
 
-        $payeeName = $this->birName($rawName);
-
-        if ($payeeName === '' && $this->digits($rawTin) === '') {
+        // A line that names nobody is a spacer or a stray note, not a payment.
+        if ($companyName === '' && $lastName === '' && $firstName === '' && $tin === '') {
             return;
         }
 
-        if (in_array($payeeName, self::TOTAL_LABELS, true)) {
-            return;
-        }
+        // The template has no payee-type column: the type is whichever name side
+        // the file filled in. A row that fills both, or neither, is stored as it
+        // stands and reported by the validator rather than guessed at here.
+        $isCompany = $companyName !== '';
 
-        $parts = $this->splitName($rawName);
-        $tin = $this->formatTin($rawTin);
-
-        $shared = [
+        ExpandedWtaxEntry::create([
             'reporting_period' => $this->reportingPeriod,
-            'transaction_date' => $this->parseDate($this->value($data, ['date', 'transaction_date'])),
-            'source_no' => $this->birReference($this->value($data, ['no', 'source_no', 'voucher', 'voucher_no'])),
-            'reference_no' => $this->birReference($this->value($data, ['reference', 'reference_no', 'invoice', 'si_no'])),
-            'payee_name' => $payeeName,
-            'payee_type' => $parts['type'],
-            'payee_tin' => $tin,
-            // Constant, not derived from the TIN: every payee in the reference DAT
-            // carries 0000 even when its TIN has a non-zero branch suffix.
-            'payee_branch_code' => '0000',
-            'company_name' => $parts['company_name'],
-            'last_name' => $parts['last_name'],
-            'first_name' => $parts['first_name'],
-            'middle_name' => $parts['middle_name'],
-            'source_row' => $row->getIndex(),
-        ];
-
-        foreach (self::RATE_COLUMNS as $column) {
-            $withheld = $this->parseNumber($this->value($data, $column['keys']));
-
-            if ($withheld === 0.00) {
-                continue;
-            }
-
-            $rate = $column['rate'];
-
-            ExpandedWtaxEntry::create($shared + [
-                'atc_code' => $this->resolveAtc($tin, $parts['type'], $rate),
-                'tax_rate' => $rate,
-                'income_payment' => round($withheld * 100 / $rate, 2),
-                'tax_withheld' => $withheld,
-            ]);
-        }
+            'payee_name' => $isCompany
+                ? $companyName
+                : $this->individualName($lastName, $firstName, $middleName),
+            'payee_type' => $isCompany ? 'company' : 'individual',
+            // Nine digits, the shape both the template and the DAT use. Any branch
+            // suffix the file carries is dropped; branchCode is its own column.
+            'payee_tin' => substr($tin, 0, 9),
+            'payee_branch_code' => $this->branchCode($this->value($data, 'branchCode')),
+            'company_name' => $companyName ?: null,
+            'last_name' => $lastName ?: null,
+            'first_name' => $firstName ?: null,
+            'middle_name' => $middleName ?: null,
+            'atc_code' => $this->atcCode($this->value($data, 'ATC')),
+            // The three uploaded amounts, exactly as the workbook computed them.
+            'income_payment' => $this->parseNumber($this->value($data, 'income_payment')),
+            'tax_rate' => $this->parseNumber($this->value($data, 'ewt_rate')),
+            'tax_withheld' => $this->parseNumber($this->value($data, 'tax_amount')),
+        ]);
     }
 
     /**
-     * Rate alone cannot decide the code -- 5% is WC100 or WI010 and 10% is WC139
-     * or WI516 -- so the payee type decides between the WC and WI families, and a
-     * per-TIN override wins over both. Returns null when nothing maps, leaving
-     * the row for the validator to report.
+     * "SURNAME, FIRST MIDDLE" -- a label for the screen and a sort key that files
+     * an individual under their surname, the way the reference DAT orders them.
+     * It is never written to the DAT, so the comma is safe here; the four name
+     * columns the DAT does carry are stored separately and stay comma-free.
      */
-    private function resolveAtc(string $tin, string $payeeType, float $rate): ?string
+    private function individualName(string $last, string $first, string $middle): string
     {
-        $rateKey = number_format($rate, 2, '.', '');
-        $tinKey = $this->birTin($tin);
+        $given = trim($first . ' ' . $middle);
 
-        $overrides = (array) config('bir.expanded_wtax.payee_atc_overrides', []);
-
-        if ($tinKey !== '' && isset($overrides[$tinKey][$rateKey])) {
-            return strtoupper((string) $overrides[$tinKey][$rateKey]);
+        if ($last === '') {
+            return $given;
         }
 
-        $mapping = ((array) config('bir.expanded_wtax.default_rate_codes', []))[$rateKey] ?? null;
-
-        // A flat "rate => code" mapping is accepted too, for a site that files a
-        // single code per rate regardless of payee type.
-        if (is_string($mapping)) {
-            return $mapping === '' ? null : strtoupper($mapping);
-        }
-
-        if (is_array($mapping) && isset($mapping[$payeeType]) && $mapping[$payeeType] !== '') {
-            return strtoupper((string) $mapping[$payeeType]);
-        }
-
-        return null;
+        return $given === '' ? $last : $last . ', ' . $given;
     }
 
     /**
-     * Splits a supplier cell into the DAT's name columns.
-     *
-     * A name counts as an individual only when it has one comma and nothing after
-     * that comma looks corporate. Checking only the tail matters: "CO" is both a
-     * company suffix and a common surname, so "CO, JUAN" must stay an individual
-     * while "WORLD BEST SALES, INC." must not.
-     *
-     * For the given-name half, the last token is taken as the middle name when
-     * there is more than one -- "SY, JULIET HUI" is Juliet Hui Sy. A single token
-     * leaves the middle name empty, which the reference DAT does for three of its
-     * twelve individual payees.
-     *
-     * @return array{type: string, company_name: ?string, last_name: ?string, first_name: ?string, middle_name: ?string}
+     * The template writes a plain number (its sample shows 1); the DAT carries four
+     * digits. Padding here keeps the screen and the generated file in agreement.
+     * Blank means head office, which the reference file files as 0000.
      */
-    private function splitName(string $rawName): array
+    private function branchCode($value): string
     {
-        $company = [
-            'type' => 'company',
-            'company_name' => $this->birName($rawName, self::COMPANY_NAME_LIMIT) ?: null,
-            'last_name' => null,
-            'first_name' => null,
-            'middle_name' => null,
-        ];
+        $digits = substr($this->digits($value), 0, 4);
 
-        $pieces = explode(',', trim($rawName));
-
-        if (count($pieces) !== 2) {
-            return $company;
-        }
-
-        $last = $this->birName($pieces[0]);
-        $given = $this->birName($pieces[1]);
-
-        if ($last === '' || $given === '') {
-            return $company;
-        }
-
-        foreach (explode(' ', $given) as $token) {
-            if (in_array($token, self::CORPORATE_TOKENS, true)) {
-                return $company;
-            }
-        }
-
-        $tokens = explode(' ', $given);
-        $middle = count($tokens) > 1 ? array_pop($tokens) : '';
-
-        return [
-            'type' => 'individual',
-            'company_name' => null,
-            'last_name' => $last,
-            'first_name' => implode(' ', $tokens),
-            'middle_name' => $middle ?: null,
-        ];
+        return $digits === '' ? '0000' : str_pad($digits, 4, '0', STR_PAD_LEFT);
     }
 
     /**
-     * Excel dates arrive as DateTime objects, serial numbers or plain strings
-     * depending on how the cell was formatted.
+     * Stored null when the cell is blank, so the row is visible in the listing and
+     * reported by the validator. It is no longer resolved from the rate: the file
+     * states the ATC, and guessing one would put a payment on the wrong schedule.
      */
-    private function parseDate($value): ?string
+    private function atcCode($value): ?string
     {
-        if ($value instanceof \DateTimeInterface) {
-            return Carbon::instance($value)->toDateString();
-        }
+        $code = strtoupper(trim((string) $value));
 
-        if (is_null($value) || trim((string) $value) === '') {
-            return null;
-        }
-
-        if (is_numeric($value)) {
-            try {
-                return Carbon::instance(
-                    \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $value)
-                )->toDateString();
-            } catch (Throwable) {
-                return null;
-            }
-        }
-
-        try {
-            return Carbon::parse((string) $value)->toDateString();
-        } catch (Throwable) {
-            return null;
-        }
+        return $code === '' ? null : $code;
     }
 
     /**
@@ -253,7 +181,7 @@ class ExpandedWtaxImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
      * DAT contains no punctuation at all, so periods and apostrophes become
      * spaces rather than being kept.
      */
-    private function birName(?string $value, ?int $limit = null): string
+    private function birName($value, ?int $limit = null): string
     {
         $value = strtoupper(trim((string) $value));
         $value = str_replace('&', ' AND ', $value);
@@ -264,18 +192,11 @@ class ExpandedWtaxImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
     }
 
     /**
-     * Voucher and invoice numbers are not written to the DAT, so they keep more of
-     * their punctuation than names do; only the comma has to go, since these are
-     * shown next to CSV-bound fields on screen.
+     * Reads the cell as the number it is. Thousands separators are tolerated even
+     * though the template's ReadMe forbids them, because a stray comma-formatted
+     * cell is a formatting slip rather than a different amount. Two decimals is the
+     * column's own scale, not a recalculation -- no rate is ever applied here.
      */
-    private function birReference($value): string
-    {
-        $value = strtoupper(trim((string) $value));
-        $value = str_replace(',', ' ', $value);
-
-        return preg_replace('/\s+/', ' ', trim($value));
-    }
-
     private function parseNumber($value): float
     {
         if (is_null($value) || trim((string) $value) === '') {
@@ -287,9 +208,13 @@ class ExpandedWtaxImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         return is_numeric($cleanValue) ? round((float) $cleanValue, 2) : 0.00;
     }
 
-    private function value(array $data, array $keys): mixed
+    /**
+     * Looks a BIR column up by its template heading, trying each heading key
+     * WithHeadingRow might have produced for it.
+     */
+    private function value(array $data, string $column): mixed
     {
-        foreach ($keys as $key) {
+        foreach (self::COLUMNS[$column] as $key) {
             if (array_key_exists($key, $data)) {
                 return $data[$key];
             }
@@ -298,37 +223,8 @@ class ExpandedWtaxImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         return null;
     }
 
-    private function digits(?string $value): string
+    private function digits($value): string
     {
         return preg_replace('/\D/', '', (string) $value);
-    }
-
-    private function birTin(?string $value): string
-    {
-        return substr($this->digits($value), 0, 9);
-    }
-
-    private function formatTin(?string $value): string
-    {
-        $digits = substr($this->digits($value), 0, 12);
-
-        if (strlen($digits) > 9 && strlen($digits) < 12) {
-            $digits = str_pad($digits, 12, '0');
-        }
-
-        if (strlen($digits) === 12) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
-                substr($digits, 6, 3) . '-' .
-                substr($digits, 9, 3);
-        }
-
-        if (strlen($digits) === 9) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
-                substr($digits, 6, 3);
-        }
-
-        return $digits;
     }
 }

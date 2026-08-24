@@ -212,16 +212,46 @@ class BirExpandedWtaxRowValidatorTest extends TestCase
 
     public function test_a_missing_atc_names_the_rate_the_payee_type_and_where_to_fix_it(): void
     {
-        // The upload stores an unmappable row rather than failing, so this message
-        // is the only place the user learns what to configure.
+        // The upload stores a row with a blank ATC rather than failing, so this
+        // message is the only place the user learns which cell to fill.
         $errors = $this->validator->validate($this->companyRow([
             'atc_code' => null,
             'tax_rate' => 15.00,
             'tax_withheld' => 552407.40,
         ]), 4);
 
-        $this->assertHasError($errors, 'no ATC code could be resolved for 15.00% withheld from a company payee');
-        $this->assertHasError($errors, 'config bir.expanded_wtax');
+        $this->assertHasError($errors, 'ATC is blank for a company payee at 15.00% withheld');
+        // The fix is in the workbook now, not in config: the file states the ATC.
+        $this->assertHasError($errors, 'Fill the ATC column in the workbook');
+    }
+
+    public function test_it_rejects_a_row_that_fills_both_name_sides(): void
+    {
+        // The BIR template's two name sides are mutually exclusive, and the DAT has
+        // no way to express both, so the row is reported rather than guessed at.
+        $errors = $this->validator->validate($this->companyRow([
+            'last_name' => 'BANSIL',
+            'first_name' => 'JUAN',
+        ]), 4);
+
+        $this->assertHasError($errors, 'company_name is filled alongside last_name and first_name');
+        $this->assertHasError($errors, 'not both');
+    }
+
+    public function test_it_rejects_a_row_that_names_nobody(): void
+    {
+        // A payment has a payee. An empty name row would file an amount against a
+        // blank name, which the BIR rejects and nobody can trace afterwards.
+        $company = $this->validator->validate($this->companyRow(['company_name' => '']), 4);
+        $individual = $this->validator->validate($this->individualRow([
+            'last_name' => '',
+            'first_name' => '',
+            'middle_name' => '',
+        ]), 10);
+
+        $this->assertHasError($company, 'company_name is required for a company payee');
+        $this->assertHasError($individual, 'last_name is required for an individual payee');
+        $this->assertHasError($individual, 'first_name is required for an individual payee');
     }
 
     public function test_it_rejects_an_atc_code_that_is_not_configured(): void
@@ -287,9 +317,10 @@ class BirExpandedWtaxRowValidatorTest extends TestCase
 
     public function test_every_configured_default_code_is_also_an_allowed_code(): void
     {
-        // The importer resolves from default_rate_codes and the validator checks
-        // against allowed_atc_codes; a code in one list and not the other would
-        // make every row of that rate unfilable.
+        // default_rate_codes is deprecated -- the workbook's ATC column replaced it,
+        // and nothing reads it any more. It is kept as the record of which code each
+        // rate used to be filed under, and that record is only worth keeping while it
+        // agrees with the allow-list the validator actually applies.
         $allowed = config('bir.expanded_wtax.allowed_atc_codes');
 
         foreach (config('bir.expanded_wtax.default_rate_codes') as $rate => $mapping) {

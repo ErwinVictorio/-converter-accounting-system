@@ -120,6 +120,16 @@ class DashboardMetrics
             ];
         }
 
+        // The expanded module counts filing lines rather than uploaded rows, so the
+        // card cannot disagree with the DAT it will produce: two rows sharing
+        // reporting month, TIN, ATC and rate are one 1604E detail line.
+        // ExpandedWtaxEntry::consolidate() is the same rule the records list and the
+        // generator apply. Only the count is re-read -- consolidation adds rows
+        // together rather than dropping any, so the two sums above are unaffected.
+        $totals['expanded']['records'] = $this->consolidatedCount(
+            $this->scopedToMonth($this->baseQuery('expanded'), self::SOURCES['expanded']['date'], $month)->get()
+        );
+
         return $totals;
     }
 
@@ -212,7 +222,9 @@ class DashboardMetrics
                     Carbon::create($year, 1, 1)->startOfMonth()->toDateString(),
                     Carbon::create($year, 12, 1)->endOfMonth()->toDateString(),
                 ])
-                ->get([$source['date'], $source['amount']])
+                // The expanded series counts consolidated filing lines, which needs
+                // the grouping columns, so that one source is loaded whole.
+                ->get($key === 'expanded' ? ['*'] : [$source['date'], $source['amount']])
                 ->groupBy(fn ($record) => (int) Carbon::parse(
                     $record->getRawOriginal($source['date'])
                 )->format('n'));
@@ -230,7 +242,9 @@ class DashboardMetrics
                 /** @var Collection $rows */
                 $rows = $grouped[$key]->get($month, collect());
 
-                $transactionPoint[$key] = $rows->count();
+                $transactionPoint[$key] = $key === 'expanded'
+                    ? $this->consolidatedCount($rows)
+                    : $rows->count();
                 $amountPoint[$key] = $this->money($rows->sum(
                     fn ($record) => (float) $record->{$source['amount']}
                 ));
@@ -333,6 +347,21 @@ class DashboardMetrics
             $month->copy()->startOfMonth()->toDateString(),
             $month->copy()->endOfMonth()->toDateString(),
         ]);
+    }
+
+    /**
+     * How many 1604E detail lines a set of stored expanded rows becomes.
+     *
+     * Counted through ExpandedWtaxEntry::consolidate() rather than a DISTINCT over
+     * the four grouping columns, for two reasons: the count then matches the DAT's
+     * line count by construction, whatever shape the stored values are in, and
+     * COUNT(DISTINCT a,b,c,d) is MySQL-only -- the test suite runs on sqlite.
+     *
+     * @param  Collection<int, \App\Models\ExpandedWtaxEntry>  $rows
+     */
+    private function consolidatedCount(Collection $rows): int
+    {
+        return ExpandedWtaxEntry::consolidate($rows)->count();
     }
 
     private function money(float|int|string $value): float

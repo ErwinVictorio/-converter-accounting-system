@@ -118,40 +118,42 @@ Records screen.
 ### Tax Withheld
 
 * **What it shows:** Total tax withheld for the selected month — the amount remittable.
-* **Source:** The withholding tax file. Read straight from the rate columns (1%, 2%, 5%,
-  10%, 15%).
+* **Source:** The withholding tax file's own `tax_amount` column.
 * **Calculation:** Adds the tax withheld on every withholding line filed under the selected
-  month.
+  month. The uploaded amount is stored and added as it stands; no rate is applied to it.
 * **Tax Month:** Only lines filed under the selected month are included.
 
 ### Income Payments
 
 * **What it shows:** The gross amount paid to payees that the tax was withheld on.
-* **Source:** The same withholding tax file.
-* **Calculation:** **Worked backwards from the tax withheld**, one line at a time:
-
-  ```
-  Income Payment = Tax Withheld ÷ Withholding Rate
-  ```
-
-  For example ₱1,000 withheld at 2% becomes ₱50,000 of income payments.
+* **Source:** The same withholding tax file, from its own `income_payment` column.
+* **Calculation:** Adds the income payment on every withholding line filed under the
+  selected month.
 * **Tax Month:** Only lines filed under the selected month are included.
 
-> **Important:** the withholding workbook does not carry an income payment column, so the
-> system derives it from the tax withheld and the rate. It is a **back-computed figure**,
-> not a figure read from your file. Where the withheld amount was rounded in the workbook,
-> the derived income payment inherits that rounding.
+> **Both amounts are read, not computed.** The BIR 1601EQ Schedule 1 workbook carries both
+> `income_payment` and `tax_amount` already computed, and the import stores each exactly as
+> the file states it. Neither figure is derived from the other, so what the dashboard totals
+> is what the workbook filed.
+>
+> This changed when the BIR-format upload landed. The earlier workbook had no income payment
+> column, so the system back-computed one as *Tax Withheld ÷ Rate* and inherited whatever
+> rounding the withheld amount carried. Nothing does that any more. A month imported before
+> the change still holds its back-computed figures until it is re-uploaded in the BIR format.
 
 ### Withholding Lines
 
-* **What it shows:** How many withholding lines the month holds.
+* **What it shows:** How many 1604E detail lines the month will file.
 * **Source:** The same withholding tax file.
-* **Calculation:** Counts the stored lines — **one per payee, per ATC (rate)**.
+* **Calculation:** Counts the **consolidated** lines — worksheet rows sharing reporting
+  month, TIN, ATC and rate are one line, with their income payment and tax amount added
+  together.
 * **Tax Month:** Only lines filed under the selected month are counted.
 
-> **This is not a count of vouchers.** One worksheet line that withholds at two different
-> rates becomes **two** lines here, because 1604E wants one detail row per payee per ATC.
-> A voucher split across 1% and 2% therefore counts as two withholding lines.
+> **This is not a count of worksheet rows.** It is deliberately the number of detail lines
+> the DAT will contain, so the card cannot disagree with the file it produces. Two rows for
+> the same payee under the same ATC and rate count as **one**; one payee withheld at two
+> different rates counts as **two**, because 1604E wants one detail row per payee per ATC.
 
 > **Re-uploading replaces the month.** When a withholding file is uploaded for a month that
 > already has data, the existing lines for that month are removed first and the file is read
@@ -171,7 +173,7 @@ Eight figures for the selected month, in two rows.
 | Total Sales | Net Amount on sales records |
 | Total Purchases | Total Purchases on purchase records (importation copies excluded) |
 | Importation (Landed Cost) | Total Landed Cost on importation entries |
-| WTAX Income Payments | Derived income payments on withholding lines |
+| WTAX Income Payments | Income payments on withholding lines, as uploaded |
 
 **Bottom row — the VAT breakdown**
 
@@ -215,15 +217,15 @@ Each chart carries the same four series, in the same colours as the cards:
   | Sales | Sales records |
   | Purchases | Purchase records, importation copies excluded |
   | Importation | Importation entries |
-  | Expanded WTax | Withholding lines (one per payee, per ATC) |
+  | Expanded WTax | 1604E detail lines (one per payee, per ATC, per rate — consolidated) |
 
 * **Tax Month:** Only the **year** matters. The selected month does not filter this chart.
 
 > **Read the counts as "records as stored", not as invoices.** Two behaviours affect them:
 > purchases are **merged per supplier per reporting month** — if the same supplier appears
 > on five rows of one upload, that is **one** purchase record, with the amounts added
-> together; and withholding lines are split per rate, as described in §3. Sales records and
-> importation entries are one-for-one.
+> together; and withholding rows are consolidated into filing lines, as described in §3.
+> Sales records and importation entries are one-for-one.
 
 ### Monthly Amount Trend
 
@@ -237,7 +239,7 @@ Each chart carries the same four series, in the same colours as the cards:
   | Sales | Net Amount on sales records |
   | Purchases | Total Purchases on purchase records, importation copies excluded |
   | Importation | Total Landed Cost on importation entries |
-  | Expanded WTax | Derived income payments on withholding lines — **not** the tax withheld |
+  | Expanded WTax | Income payments on withholding lines — **not** the tax withheld |
 
 * **Tax Month:** Only the **year** matters, exactly as above.
 
@@ -284,8 +286,14 @@ existing behaviour and has not been changed — flag it if the merged total ever
 **Where amounts are read versus calculated.** The Dashboard adds up what your files say; it
 does not re-derive VAT. Sales output VAT and purchase input VAT are read from the file when
 those columns are present (purchase input VAT falls back to *taxable net of VAT × VAT rate*,
-default 12%, when the column is blank). Importation VAT is typed on the entry form. Only
-withholding income payments are derived, as described in §3.
+default 12%, when the column is blank). Importation VAT is typed on the entry form.
+Withholding income payments and tax amounts are both read from the file's own columns, as
+described in §3 — nothing on this screen back-computes either of them.
+
+**One figure is a count of filing lines, not of rows.** The Expanded WTax record count on the
+card and in the Monthly Transactions chart counts consolidated 1604E detail lines, so it
+matches the DAT the month will produce. Every other count on the Dashboard is a count of
+stored records. See §3, *Withholding Lines*.
 
 **The Dashboard is read-only.** Opening it, or changing the Tax Month, never changes a
 record. It does not generate DAT files either — that is the Generate DAT File screen.
@@ -307,9 +315,9 @@ record. It does not generate DAT files either — that is the Generate DAT File 
 
 | Figure | Shows | Adds up |
 | --- | --- | --- |
-| **Tax Withheld** | Amount remittable on 1604E | Tax withheld on withholding lines |
-| **Income Payments** | Gross paid to payees | Tax withheld ÷ rate, per line (back-computed) |
-| **Withholding Lines** | How many lines the month holds | Count of lines — one per payee, per ATC |
+| **Tax Withheld** | Amount remittable on 1604E | Tax withheld on withholding lines, as uploaded |
+| **Income Payments** | Gross paid to payees | Income payment on withholding lines, as uploaded |
+| **Withholding Lines** | How many 1604E detail lines the month will file | Count of consolidated lines — one per payee, per ATC, per rate |
 
 **Monthly Summary — selected month only**
 

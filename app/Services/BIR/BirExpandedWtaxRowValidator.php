@@ -16,6 +16,12 @@ namespace App\Services\BIR;
  *   individual payees in the reference file leave it blank.
  * - The payee branch code is not derived from the TIN. Every payee carries 0000,
  *   including those whose TIN has a non-zero branch suffix.
+ *
+ * Every check here only ever reports. The uploaded income payment, rate and tax
+ * amount are never replaced with a computed figure -- including by the
+ * tax_amount = ROUND(income x rate / 100, 2) check at the end, which names the
+ * discrepancy and leaves both uploaded values standing. A failing row stays in the
+ * table as uploaded and blocks the DAT until the workbook is corrected.
  */
 class BirExpandedWtaxRowValidator
 {
@@ -56,6 +62,21 @@ class BirExpandedWtaxRowValidator
                     $errors[] = "Row {$excelRow}: {$field} is required for an individual payee.";
                 }
             }
+        }
+
+        // The BIR template's two name sides are mutually exclusive -- a company
+        // fills companyName and leaves surName/firstName/middleName blank, an
+        // individual does the reverse. A row that fills both contradicts itself and
+        // the DAT has no way to express it, so it is reported rather than guessed.
+        $filledNameParts = array_values(array_filter(
+            ['last_name', 'first_name', 'middle_name'],
+            fn ($field) => $this->text($row, $field) !== ''
+        ));
+
+        if ($this->text($row, 'company_name') !== '' && $filledNameParts !== []) {
+            $errors[] = "Row {$excelRow}: company_name is filled alongside "
+                . implode(' and ', $filledNameParts)
+                . '. Fill either the company name or the individual name columns, not both.';
         }
 
         foreach (self::NAME_FIELDS as $field) {
@@ -111,8 +132,12 @@ class BirExpandedWtaxRowValidator
             $rateLabel = is_numeric($rate) ? number_format((float) $rate, 2) : $rate;
             $typeLabel = $type === '' ? 'this payee' : "a {$type} payee";
 
-            return ["Row {$excelRow}: no ATC code could be resolved for {$rateLabel}% withheld from "
-                . "{$typeLabel}. Add the mapping under config bir.expanded_wtax."];
+            // The ATC now comes from the workbook's own ATC column rather than from
+            // a rate-to-code mapping, so a blank cell is a gap in the upload. It is
+            // not filled in here: only the taxpayer knows which schedule a payment
+            // belongs on, and 10% alone cannot choose between WC139 and WI516.
+            return ["Row {$excelRow}: ATC is blank for {$typeLabel} at {$rateLabel}% withheld. "
+                . 'Fill the ATC column in the workbook and upload the month again.'];
         }
 
         if (! array_key_exists($atc, $allowed)) {

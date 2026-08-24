@@ -122,14 +122,16 @@ class DashboardTest extends TestCase
      * A 1604E line: 1% withheld from a company payee. reporting_period holds a
      * day inside the month, the way the importer stores it -- day 28 for the same
      * reason sale() uses it, so a February fixture cannot roll into March.
+     *
+     * Only BIR-facing columns, because that is all the table has: the upload reads
+     * the BIR 1601EQ Schedule 1 workbook, which carries no voucher or reference
+     * number. Two calls with no overrides describe the same filing line and so
+     * consolidate into one -- vary the TIN, the ATC or the rate to get two.
      */
     private function withholding(string $taxMonth, array $overrides = []): ExpandedWtaxEntry
     {
         return ExpandedWtaxEntry::create(array_merge([
             'reporting_period' => $taxMonth . '-28',
-            'transaction_date' => $taxMonth . '-14',
-            'source_no' => 'PV-' . fake()->unique()->numerify('#####'),
-            'reference_no' => 'INV-' . fake()->unique()->numerify('#####'),
             'payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
             'payee_type' => 'company',
             'payee_tin' => '007086184',
@@ -230,6 +232,40 @@ class DashboardTest extends TestCase
         $this->assertEqualsWithDelta(37413.72, $expanded['tax_withheld'], 0.001);
         $this->assertEqualsWithDelta(3682716.0, $expanded['previous_amount'], 0.001);
         $this->assertEqualsWithDelta(36827.16, $expanded['previous_tax_withheld'], 0.001);
+    }
+
+    /**
+     * The 1604E card counts filing lines, not uploaded rows, so it cannot disagree
+     * with the DAT the same month would produce: rows sharing reporting month, TIN,
+     * ATC and rate are one detail line. The amounts are unaffected -- consolidation
+     * adds rows together rather than dropping any.
+     */
+    public function test_the_withholding_card_counts_consolidated_filing_lines(): void
+    {
+        // Two rows, one filing line: the same payee at the same rate under the same ATC.
+        $this->withholding('2026-04', ['income_payment' => 219023.50, 'tax_withheld' => 4380.47]);
+        $this->withholding('2026-04', ['income_payment' => 1988.50, 'tax_withheld' => 39.77]);
+
+        // A different rate under a different ATC is a second line, same payee.
+        $this->withholding('2026-04', [
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+            'income_payment' => 100000.00,
+            'tax_withheld' => 2000.00,
+        ]);
+
+        $props = $this->props('?tax_month=2026-04');
+        $expanded = $props['stats']['expanded'];
+
+        $this->assertSame(3, ExpandedWtaxEntry::count());
+        $this->assertSame(2, $expanded['records']);
+        $this->assertEqualsWithDelta(321012.00, $expanded['amount'], 0.001);
+        $this->assertEqualsWithDelta(6420.24, $expanded['tax_withheld'], 0.001);
+
+        // The chart's transaction series counts the same way as the card.
+        $april = collect($props['transactions'])->firstWhere('month', 'Apr');
+
+        $this->assertSame(2, $april['expanded']);
     }
 
     /**
