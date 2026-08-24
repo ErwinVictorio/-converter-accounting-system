@@ -130,21 +130,14 @@ class DatFileController extends Controller
      * the Purchase ("P") one — reporting them in both would double-count the same
      * input VAT across two submitted schedules. Discriminate on the sync link, not
      * on vat_inputs.is_imported, which ordinary Excel uploads also set.
+     *
+     * The rule itself lives on VatInput::scopeExcludingImportationMirrors() so the
+     * dashboard totals apply exactly the same exclusion.
      */
-    private function importationVatInputIds(): array
-    {
-        return ImportationEntry::query()
-            ->whereNotNull('vat_input_id')
-            ->pluck('vat_input_id')
-            ->all();
-    }
-
     private function purchasePeriods(BirPurchaseRowValidator $validator): array
     {
-        $importationRowIds = $this->importationVatInputIds();
-
         $availablePeriods = VatInput::query()
-            ->whereNotIn('id', $importationRowIds)
+            ->excludingImportationMirrors()
             ->selectRaw("DATE_FORMAT(date_uploaded, '%Y-%m') as value")
             ->selectRaw("DATE_FORMAT(date_uploaded, '%M %Y') as label")
             ->selectRaw('COUNT(*) as records_count')
@@ -154,7 +147,7 @@ class DatFileController extends Controller
         $periodIssues = [];
 
         VatInput::query()
-            ->whereNotIn('id', $importationRowIds)
+            ->excludingImportationMirrors()
             ->orderBy('date_uploaded')
             ->orderBy('id')
             ->get()
@@ -254,7 +247,7 @@ class DatFileController extends Controller
         BirPurchaseRowValidator $validator
     ) {
         $records = VatInput::query()
-            ->whereNotIn('id', $this->importationVatInputIds())
+            ->excludingImportationMirrors()
             ->whereBetween('date_uploaded', [
                 $period->copy()->startOfMonth()->toDateString(),
                 $period->copy()->endOfMonth()->toDateString(),

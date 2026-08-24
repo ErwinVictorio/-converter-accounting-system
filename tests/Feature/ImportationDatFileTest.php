@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ImportationEntry;
+use App\Models\User;
 use App\Models\VatInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -10,6 +11,14 @@ use Tests\TestCase;
 class ImportationDatFileTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // The whole app sits behind the "auth" middleware now.
+        $this->actingAs(User::factory()->create());
+    }
 
     /**
      * Mirrors row 1 of the reference file: charges are 0 there, so the landed

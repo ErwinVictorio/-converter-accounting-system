@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class VatInput extends Model
@@ -57,6 +58,23 @@ class VatInput extends Model
     'is_broker' => 'boolean',
     'is_adjusted' => 'boolean',
   ];
+
+  /**
+   * Drops the rows that ImportationController::syncVatInput() mirrors here from
+   * importation_entries.
+   *
+   * Those rows exist so the purchase DAT generator can emit importations without
+   * a second engine, but they are not standalone purchases: counting them
+   * alongside importation_entries double-counts the same transaction and its VAT.
+   * The purchase DAT download and the dashboard both read purchases through this
+   * scope so the two can never disagree.
+   */
+  public function scopeExcludingImportationMirrors(Builder $query): Builder
+  {
+    return $query->whereNotIn('id', ImportationEntry::query()
+      ->whereNotNull('vat_input_id')
+      ->select('vat_input_id'));
+  }
 
   public function toBirPurchaseRow(): array
   {

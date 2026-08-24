@@ -1,4 +1,11 @@
 import * as z from "zod";
+
+export const loginSchema = z.object({
+    username: z.string().nonempty({ message: "Username is required." }),
+    password: z.string().nonempty({ message: "Password is required." }),
+    remember: z.boolean().optional(),
+});
+
 export const recordFormSchema = z.object({
     registeredName: z.string().min(1, "Registered name is required."),
     supplierName: z.string().min(1, "Supplier name is required."),

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ImportationEntry;
+use App\Models\User;
 use App\Models\VatInput;
 use App\Services\BIR\BirPurchaseRowValidator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -11,6 +12,14 @@ use Tests\TestCase;
 class ImportationEntryTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // The whole app sits behind the "auth" middleware now.
+        $this->actingAs(User::factory()->create());
+    }
 
     /**
      * The form posts total_landed_cost; charges and taxable_goods are derived.

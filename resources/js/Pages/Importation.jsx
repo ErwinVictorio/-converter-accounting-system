@@ -49,11 +49,20 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 };
 
+// The reporting month is always the one just closed: filing in August 2026
+// covers July 2026.
+const previousMonth = () => {
+  const now = new Date();
+  const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, "0")}`;
+};
+
 // The entry screen mirrors the customs paperwork: users key total landed cost,
 // and "all charges before release" + "taxable goods" are derived from it. Those
 // two are shown read-only here and computed server-side, never posted.
 const defaultValues = {
-  tax_month: "",
+  tax_month: previousMonth(),
   import_entry_no: "",
   assessment_date: "",
   supplier: "",
@@ -63,8 +72,8 @@ const defaultValues = {
   dutiable_value: "0",
   exempt: "0",
   vat_rate: "12",
-  vat_payable: "",
-  or_number: "",
+  vat_payable: "0.00",
+  or_number: "000",
   payment_date: "",
 };
 
@@ -86,6 +95,27 @@ const derive = (landedRaw, subtractRaw) => {
   return Math.round((landed - subtract) * 100) / 100;
 };
 
+// VAT is taxable goods x VAT rate, never keyed. Installed on both the add and
+// the edit form, so re-opening a stored row also refreshes its VAT.
+function useComputedVat(watch, setValue) {
+  const landed = watch("total_landed_cost");
+  const exempt = watch("exempt");
+  const vatRate = watch("vat_rate");
+
+  useEffect(() => {
+    const taxable = derive(landed, exempt);
+    const rate = Number(vatRate);
+
+    if (taxable === null || String(vatRate ?? "").trim() === "" || Number.isNaN(rate)) {
+      return;
+    }
+
+    setValue("vat_payable", (Math.round(taxable * rate) / 100).toFixed(2), {
+      shouldValidate: false,
+    });
+  }, [landed, exempt, vatRate, setValue]);
+}
+
 function Importation() {
   const { flash, entries, months = [], filters = {} } = usePage().props;
   const rows = entries?.data || [];
@@ -99,6 +129,7 @@ function Importation() {
     handleSubmit,
     reset,
     setError,
+    setValue,
     watch,
     formState: { errors },
   } = useForm({
@@ -111,12 +142,16 @@ function Importation() {
     handleSubmit: handleEditSubmit,
     reset: resetEdit,
     setError: setEditError,
+    setValue: setEditValue,
     watch: watchEdit,
     formState: { errors: editErrors },
   } = useForm({
     resolver: zodResolver(importationSchema),
     defaultValues,
   });
+
+  useComputedVat(watch, setValue);
+  useComputedVat(watchEdit, setEditValue);
 
   useEffect(() => {
     if (flash?.success) toast.success(flash.success);
@@ -210,29 +245,42 @@ function Importation() {
   const renderField = (
     field,
     label,
-    { type = "text", placeholder = "", step, suffix } = {},
+    { type = "text", placeholder = "", step, suffix, readOnly = false, hint, onValueChange } = {},
     fieldErrors,
     fieldRegister
-  ) => (
-    <div className="space-y-2">
-      <label className="text-sm font-medium text-slate-700">
-        {label} <span className="text-red-500">*</span>
-      </label>
-      <div className="flex items-center gap-2">
-        <Input
-          type={type}
-          step={step}
-          placeholder={placeholder}
-          {...fieldRegister(field)}
-          className={fieldErrors[field] ? "border-red-500 focus-visible:ring-red-500" : ""}
-        />
-        {suffix && <span className="text-sm text-slate-500">{suffix}</span>}
+  ) => {
+    const registration = fieldRegister(field);
+
+    return (
+      <div className="space-y-2">
+        <label className={`text-sm font-medium ${readOnly ? "text-slate-500" : "text-slate-700"}`}>
+          {label} {!readOnly && <span className="text-red-500">*</span>}
+        </label>
+        <div className="flex items-center gap-2">
+          <Input
+            type={type}
+            step={step}
+            placeholder={placeholder}
+            readOnly={readOnly}
+            tabIndex={readOnly ? -1 : undefined}
+            {...registration}
+            onChange={(event) => {
+              registration.onChange(event);
+              onValueChange?.(event.target.value);
+            }}
+            className={`${readOnly ? "bg-slate-100 text-slate-600 cursor-not-allowed" : ""} ${
+              fieldErrors[field] ? "border-red-500 focus-visible:ring-red-500" : ""
+            }`}
+          />
+          {suffix && <span className="text-sm text-slate-500">{suffix}</span>}
+        </div>
+        {hint && <p className="text-xs text-slate-400">{hint}</p>}
+        {fieldErrors[field] && (
+          <p className="text-xs text-red-500 font-medium">{fieldErrors[field].message}</p>
+        )}
       </div>
-      {fieldErrors[field] && (
-        <p className="text-xs text-red-500 font-medium">{fieldErrors[field].message}</p>
-      )}
-    </div>
-  );
+    );
+  };
 
   // Read-only twin of renderField for the two amounts the system computes --
   // the greyed boxes on the old entry screen.
@@ -254,7 +302,7 @@ function Importation() {
 
   // Field order and wording follow the old Importation Data Entry Screen.
   // Sequence number is intentionally absent -- it is assigned server-side.
-  const renderFormFields = (fieldErrors, fieldRegister, fieldWatch) => {
+  const renderFormFields = (fieldErrors, fieldRegister, fieldWatch, fieldSetValue) => {
     const landed = fieldWatch("total_landed_cost");
     const charges = derive(landed, fieldWatch("dutiable_value"));
     const taxableGoods = derive(landed, fieldWatch("exempt"));
@@ -275,7 +323,19 @@ function Importation() {
         <div className="rounded-lg border border-slate-100 bg-slate-50/40 p-4">
           <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
             {renderField("vat_rate", "VAT rate", { ...amount, placeholder: "12", suffix: "%" }, fieldErrors, fieldRegister)}
-            {renderField("total_landed_cost", "Total Landed Cost", amount, fieldErrors, fieldRegister)}
+            {renderField(
+              "total_landed_cost",
+              "Total Landed Cost",
+              {
+                ...amount,
+                // Dutiable value tracks the landed cost. Editing it afterwards is
+                // still allowed -- that is what makes charges non-zero.
+                onValueChange: (value) =>
+                  fieldSetValue("dutiable_value", value, { shouldValidate: false }),
+              },
+              fieldErrors,
+              fieldRegister
+            )}
           </div>
         </div>
 
@@ -298,7 +358,13 @@ function Importation() {
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           {renderField("or_number", "OR Number", { placeholder: "e.g. 987654" }, fieldErrors, fieldRegister)}
           {renderField("payment_date", "Date of VAT Payment", { type: "date" }, fieldErrors, fieldRegister)}
-          {renderField("vat_payable", "VAT", amount, fieldErrors, fieldRegister)}
+          {renderField(
+            "vat_payable",
+            "VAT",
+            { ...amount, readOnly: true, hint: "Taxable Goods × VAT rate" },
+            fieldErrors,
+            fieldRegister
+          )}
         </div>
       </div>
     );
@@ -327,7 +393,7 @@ function Importation() {
           </CardHeader>
           <CardContent className="p-6">
             <form id="importation-form" onSubmit={handleSubmit(onSubmit)}>
-              {renderFormFields(errors, register, watch)}
+              {renderFormFields(errors, register, watch, setValue)}
             </form>
           </CardContent>
 
@@ -470,7 +536,7 @@ function Importation() {
           </DialogHeader>
 
           <form id="edit-importation-form" onSubmit={handleEditSubmit(onEditSubmit)}>
-            {renderFormFields(editErrors, registerEdit, watchEdit)}
+            {renderFormFields(editErrors, registerEdit, watchEdit, setEditValue)}
           </form>
 
           <DialogFooter>

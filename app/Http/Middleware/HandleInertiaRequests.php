@@ -30,6 +30,11 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         return array_merge(parent::share($request), [
+            'auth' => [
+                // Only what the sidebar needs to name the signed-in user; never
+                // the password hash or remember token.
+                'user' => fn() => $request->user()?->only('id', 'name', 'email'),
+            ],
             'flash' => [
                 'success' => fn() => $request->session()->get('success'),
                 'error'   => fn() => $request->session()->get('error'),

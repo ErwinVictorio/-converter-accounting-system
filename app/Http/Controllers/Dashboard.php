@@ -2,50 +2,47 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\BIR\DashboardMetrics;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class Dashboard extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * BIR data & DAT file automation overview for one tax month, across Sales,
+     * Purchases and Importation.
+     *
+     * All aggregation lives in DashboardMetrics; this only resolves which month to
+     * report on. Nothing here writes, and DAT generation is untouched.
      */
-    public function index()
+    public function index(Request $request, DashboardMetrics $metrics)
     {
-        //
-        //   $record =
-         return Inertia::render('Dashboard');
+        $selected = $this->resolveTaxMonth($request->input('tax_month'));
+
+        return Inertia::render('Dashboard', $metrics->forMonth($selected));
     }
 
     /**
-     * Store a newly created resource in storage.
+     * The reporting month defaults to the one just closed, matching the
+     * importation entry form.
      */
-    public function store(Request $request)
+    private function resolveTaxMonth(?string $value): Carbon
     {
-        //
-    }
+        $value = trim((string) $value);
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
-    {
-        //
-    }
+        if ($value === '') {
+            return Carbon::now()->startOfMonth()->subMonth();
+        }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        //
-    }
+        if (preg_match('/^\d{4}-\d{2}$/', $value)) {
+            $value .= '-01';
+        }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        try {
+            return Carbon::parse($value)->startOfMonth();
+        } catch (\Throwable) {
+            return Carbon::now()->startOfMonth()->subMonth();
+        }
     }
 }

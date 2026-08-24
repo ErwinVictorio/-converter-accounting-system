@@ -19,7 +19,8 @@ import {
     ChartNoAxesCombined,
     Briefcase,
     Users,
-    Ship
+    Ship,
+    LogOut
 } from "lucide-react";
 
 
@@ -65,7 +66,8 @@ const navItems = [
 ];
 
 export function AppSidebar() {
-    const { url: currentUrl } = usePage();
+    const { url: currentUrl, props } = usePage();
+    const user = props?.auth?.user;
     const { isMobile, setOpenMobile } = useSidebar();
 
     // Kusa nitong isasara ang mobile drawer pagkatapos mag-click ng link
@@ -137,8 +139,40 @@ export function AppSidebar() {
             </SidebarContent>
 
             {/* Footer */}
-            <SidebarFooter className="border-t border-gray-100 bg-white p-4 text-xs text-gray-400 group-data-[collapsible=icon]:hidden">
-                <span>System v1.0</span>
+            <SidebarFooter className="border-t border-gray-100 bg-white p-2">
+                <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton
+                            asChild
+                            tooltip="Log out"
+                            className="text-sm font-medium text-gray-600 transition-colors hover:bg-red-50 hover:text-red-600"
+                        >
+                            {/* method="post" so Inertia sends the CSRF token with it */}
+                            <Link
+                                href="/logout"
+                                method="post"
+                                as="button"
+                                type="button"
+                                onClick={handleNavClick}
+                                className="flex w-full items-center gap-3"
+                            >
+                                <LogOut className="h-4 w-4 shrink-0" />
+                                <span className="truncate group-data-[collapsible=icon]:hidden">
+                                    Log out
+                                </span>
+                            </Link>
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                </SidebarMenu>
+
+                <div className="px-2 pb-1 text-xs text-gray-400 group-data-[collapsible=icon]:hidden">
+                    {user?.name && (
+                        <p className="truncate font-medium text-gray-500">
+                            {user.name}
+                        </p>
+                    )}
+                    <span>System v1.0</span>
+                </div>
             </SidebarFooter>
         </Sidebar>
     );
