@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ExpandedWtaxEntry;
 use App\Models\ImportationEntry;
 use App\Models\SalesVatInput;
 use App\Models\User;
@@ -12,9 +13,10 @@ use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 /**
- * The dashboard aggregates Sales, Purchases and Importation for one tax month.
+ * The dashboard aggregates Sales, Purchases, Importation and Expanded
+ * Withholding Tax for one tax month.
  *
- * Two things these tests exist to protect:
+ * Three things these tests exist to protect:
  *
  * 1. Portability. The suite runs on sqlite, so a MySQL-only idiom slipping into
  *    the metrics service (DATE_FORMAT, as used in DatFileController) fails here
@@ -22,6 +24,9 @@ use Tests\TestCase;
  * 2. The importation/purchase double-count. Every importation entry is mirrored
  *    into vat_inputs; if that mirror leaks into the purchase totals, the same
  *    transaction and its VAT are reported twice.
+ * 3. The VAT/withholding separation. Expanded withholding tax is remitted on
+ *    1604E and is not creditable against output VAT, so it must never reach the
+ *    VAT breakdown or the Total VAT card.
  */
 class DashboardTest extends TestCase
 {
@@ -114,6 +119,30 @@ class DashboardTest extends TestCase
     }
 
     /**
+     * A 1604E line: 1% withheld from a company payee. reporting_period holds a
+     * day inside the month, the way the importer stores it -- day 28 for the same
+     * reason sale() uses it, so a February fixture cannot roll into March.
+     */
+    private function withholding(string $taxMonth, array $overrides = []): ExpandedWtaxEntry
+    {
+        return ExpandedWtaxEntry::create(array_merge([
+            'reporting_period' => $taxMonth . '-28',
+            'transaction_date' => $taxMonth . '-14',
+            'source_no' => 'PV-' . fake()->unique()->numerify('#####'),
+            'reference_no' => 'INV-' . fake()->unique()->numerify('#####'),
+            'payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'payee_type' => 'company',
+            'payee_tin' => '007086184',
+            'payee_branch_code' => '0000',
+            'company_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'atc_code' => 'WC158',
+            'tax_rate' => 1.00,
+            'income_payment' => 3682716.00,
+            'tax_withheld' => 36827.16,
+        ], $overrides));
+    }
+
+    /**
      * The whole Inertia prop payload. Read through toArray() rather than
      * AssertableInertia::where() because where() compares strictly, and a
      * rounded money float that lands on a whole number JSON-encodes without a
@@ -148,11 +177,13 @@ class DashboardTest extends TestCase
         $this->sale('2026-04');
         $this->purchase('2026-04');
         $this->importation('2026-04');
+        $this->withholding('2026-04');
 
-        // A neighbouring month must not leak into any of the three.
+        // A neighbouring month must not leak into any of the four.
         $this->sale('2026-05');
         $this->purchase('2026-05');
         $this->importation('2026-05');
+        $this->withholding('2026-05');
 
         $stats = $this->props('?tax_month=2026-04')['stats'];
 
@@ -164,6 +195,70 @@ class DashboardTest extends TestCase
 
         $this->assertSame(1, $stats['importation']['records']);
         $this->assertEqualsWithDelta(1512000.0, $stats['importation']['amount'], 0.001);
+
+        $this->assertSame(1, $stats['expanded']['records']);
+        $this->assertEqualsWithDelta(3682716.0, $stats['expanded']['amount'], 0.001);
+        $this->assertEqualsWithDelta(36827.16, $stats['expanded']['tax_withheld'], 0.001);
+    }
+
+    /**
+     * The 1604E card reports both of its figures -- the income payments it
+     * withheld from and the tax withheld -- and both compare against the
+     * preceding month, like every other card.
+     */
+    public function test_the_withholding_card_reports_income_payments_and_tax_withheld(): void
+    {
+        $this->withholding('2026-03');
+        $this->withholding('2026-04');
+        $this->withholding('2026-04', [
+            'payee_name' => 'BANSIL ANNIE',
+            'payee_type' => 'individual',
+            'company_name' => null,
+            'last_name' => 'BANSIL',
+            'first_name' => 'ANNIE',
+            'atc_code' => 'WI516',
+            'tax_rate' => 10.00,
+            'income_payment' => 5865.60,
+            'tax_withheld' => 586.56,
+        ]);
+
+        $expanded = $this->props('?tax_month=2026-04')['stats']['expanded'];
+
+        $this->assertSame(2, $expanded['records']);
+        $this->assertSame(1, $expanded['previous_records']);
+        $this->assertEqualsWithDelta(3688581.60, $expanded['amount'], 0.001);
+        $this->assertEqualsWithDelta(37413.72, $expanded['tax_withheld'], 0.001);
+        $this->assertEqualsWithDelta(3682716.0, $expanded['previous_amount'], 0.001);
+        $this->assertEqualsWithDelta(36827.16, $expanded['previous_tax_withheld'], 0.001);
+    }
+
+    /**
+     * Withholding tax is remitted on 1604E and cannot be credited against output
+     * VAT, so an expanded row must move none of the VAT figures. Without this,
+     * the obvious "one more input" refactor would silently understate the VAT
+     * payable by the whole month's withholding.
+     */
+    public function test_expanded_withholding_tax_stays_out_of_the_vat_figures(): void
+    {
+        $this->sale('2026-04');
+        $this->purchase('2026-04');
+
+        $before = $this->props('?tax_month=2026-04');
+
+        $this->withholding('2026-04');
+
+        $after = $this->props('?tax_month=2026-04');
+
+        $this->assertSame($before['summary']['vat'], $after['summary']['vat']);
+        $this->assertSame($before['stats']['vat'], $after['stats']['vat']);
+
+        // Output 24,000 - input 12,000, with nothing withheld folded in.
+        $this->assertEqualsWithDelta(12000.0, $after['summary']['vat']['total_input'], 0.001);
+        $this->assertEqualsWithDelta(12000.0, $after['stats']['vat']['net'], 0.001);
+
+        // ...and the withholding is still reported, just on its own figures.
+        $this->assertEqualsWithDelta(36827.16, $after['stats']['expanded']['tax_withheld'], 0.001);
+        $this->assertEqualsWithDelta(3682716.0, $after['summary']['total_expanded'], 0.001);
     }
 
     /**
@@ -250,7 +345,9 @@ class DashboardTest extends TestCase
         $this->sale('2026-04');
         $this->purchase('2026-04');
         $this->importation('2026-04');
+        $this->withholding('2026-04');
         $this->importation('2026-11');
+        $this->withholding('2026-08');
         // A different year must not appear in this series.
         $this->sale('2025-04');
 
@@ -266,27 +363,36 @@ class DashboardTest extends TestCase
         $this->assertSame(1, $transactions['Apr']['sales']);
         $this->assertSame(1, $transactions['Apr']['purchases']);
         $this->assertSame(1, $transactions['Apr']['importation']);
+        $this->assertSame(1, $transactions['Apr']['expanded']);
 
         $this->assertSame(0, $transactions['Jan']['sales']);
         $this->assertSame(1, $transactions['Nov']['importation']);
         $this->assertSame(0, $transactions['Nov']['sales']);
+        $this->assertSame(1, $transactions['Aug']['expanded']);
+        $this->assertSame(0, $transactions['Aug']['purchases']);
 
         $this->assertEqualsWithDelta(224000.0, $amounts['Apr']['sales'], 0.001);
         $this->assertEqualsWithDelta(1512000.0, $amounts['Apr']['importation'], 0.001);
+        // The withholding series carries income payments, not the tax withheld:
+        // an amount trend has to compare like with like.
+        $this->assertEqualsWithDelta(3682716.0, $amounts['Apr']['expanded'], 0.001);
         $this->assertEqualsWithDelta(0.0, $amounts['Jan']['purchases'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $amounts['Jan']['expanded'], 0.001);
     }
 
-    public function test_the_monthly_summary_covers_all_three_modules(): void
+    public function test_the_monthly_summary_covers_all_four_modules(): void
     {
         $this->sale('2026-04');
         $this->purchase('2026-04');
         $this->importation('2026-04');
+        $this->withholding('2026-04');
 
         $summary = $this->props('?tax_month=2026-04')['summary'];
 
         $this->assertEqualsWithDelta(224000.0, $summary['total_sales'], 0.001);
         $this->assertEqualsWithDelta(112000.0, $summary['total_purchases'], 0.001);
         $this->assertEqualsWithDelta(1512000.0, $summary['total_importation'], 0.001);
+        $this->assertEqualsWithDelta(3682716.0, $summary['total_expanded'], 0.001);
         $this->assertEqualsWithDelta(24000.0, $summary['vat']['output'], 0.001);
         $this->assertEqualsWithDelta(12000.0, $summary['vat']['input'], 0.001);
         $this->assertEqualsWithDelta(181440.0, $summary['vat']['importation'], 0.001);
@@ -312,14 +418,17 @@ class DashboardTest extends TestCase
     {
         $oldSale = Carbon::now()->startOfMonth()->subMonths(30);
         $oldImportation = Carbon::now()->startOfMonth()->subMonths(36);
+        $oldWithholding = Carbon::now()->startOfMonth()->subMonths(42);
 
         $this->sale($oldSale->format('Y-m'));
         $this->importation($oldImportation->format('Y-m'));
+        $this->withholding($oldWithholding->format('Y-m'));
 
         $values = collect($this->props()['months'])->pluck('value')->all();
 
         $this->assertContains($oldSale->format('Y-m'), $values);
         $this->assertContains($oldImportation->format('Y-m'), $values);
+        $this->assertContains($oldWithholding->format('Y-m'), $values);
     }
 
     public function test_an_empty_database_reports_zeroes_rather_than_failing(): void
@@ -328,9 +437,22 @@ class DashboardTest extends TestCase
 
         $this->assertFalse($props['hasAnyData']);
         $this->assertSame(0, $props['stats']['sales']['records']);
+        $this->assertSame(0, $props['stats']['expanded']['records']);
+        $this->assertEqualsWithDelta(0.0, $props['stats']['expanded']['tax_withheld'], 0.001);
         $this->assertEqualsWithDelta(0.0, $props['stats']['vat']['net'], 0.001);
         $this->assertSame([], $props['recent']);
         $this->assertCount(12, $props['transactions']);
+    }
+
+    /**
+     * A month whose only records are withholding lines still counts as data, or
+     * the "No BIR data yet" banner would contradict the panel below it.
+     */
+    public function test_withholding_records_alone_count_as_data(): void
+    {
+        $this->withholding('2026-04');
+
+        $this->assertTrue($this->props('?tax_month=2026-04')['hasAnyData']);
     }
 
     public function test_a_month_with_no_records_is_distinguished_from_an_empty_database(): void

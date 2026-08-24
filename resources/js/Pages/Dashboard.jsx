@@ -13,10 +13,13 @@ import {
   YAxis,
 } from "recharts";
 import {
+  Banknote,
   BarChart3,
   Calculator,
   Database,
+  FileText,
   Loader2,
+  Percent,
   ReceiptText,
   Ship,
   ShoppingCart,
@@ -66,6 +69,22 @@ const MODULES = [
     icon: Ship,
   },
 ];
+
+/**
+ * Expanded withholding tax is filed on 1604E, not on a VAT return, so it stays
+ * out of the VAT card row and gets its own panel. It is still a monthly figure
+ * per payee, so it does belong in both trend charts.
+ */
+const EXPANDED = {
+  key: "expanded",
+  label: "Expanded WTAX",
+  color: "#db2777",
+  tone: "pink",
+  icon: Percent,
+};
+
+// Both charts and their shared legend cover every module, VAT or not.
+const SERIES = [...MODULES, EXPANDED];
 
 // Every peso figure in the UI reads ₱0.00. The sign sits outside the symbol,
 // which is how a credit balance is written.
@@ -141,6 +160,8 @@ const TONES = {
   green: "bg-emerald-50 text-emerald-600",
   amber: "bg-amber-50 text-amber-600",
   violet: "bg-violet-50 text-violet-600",
+  pink: "bg-pink-50 text-pink-600",
+  slate: "bg-slate-100 text-slate-500",
 };
 
 // 200-300ms throughout.
@@ -184,7 +205,7 @@ function DeltaBadge({ current, previous, neutral = false }) {
 function StatCard({ icon: Icon, tone, label, value, footnote, badge }) {
   return (
     <motion.div variants={item} whileHover={{ y: -4 }} transition={{ duration: 0.2 }}>
-      <Card className="flex h-full items-start gap-3.5 p-5 shadow-sm ring-1 ring-slate-950/5 transition-shadow duration-200 hover:shadow-lg">
+      <Card className="flex h-full w-full min-w-0 items-start gap-3.5 p-5 shadow-sm ring-1 ring-slate-950/5 transition-shadow duration-200 hover:shadow-lg">
         <div
           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${TONES[tone]}`}
         >
@@ -195,8 +216,12 @@ function StatCard({ icon: Icon, tone, label, value, footnote, badge }) {
           <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
             {label}
           </p>
+          {/*
+            text-2xl lang sa 2xl: 4-across ang grid mula xl, kaya pinakamakitid
+            ang card sa 1280-1535 -- doon mag-o-overflow ang 7-digit na halaga.
+          */}
           <p
-            className="mt-1 truncate text-xl font-extrabold tracking-tight tabular-nums text-slate-900"
+            className="mt-1 truncate text-lg font-extrabold tracking-tight tabular-nums text-slate-900 sm:text-xl 2xl:text-2xl"
             title={value}
           >
             {value}
@@ -215,7 +240,7 @@ function StatCard({ icon: Icon, tone, label, value, footnote, badge }) {
 function SeriesLegend() {
   return (
     <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
-      {MODULES.map((module) => (
+      {SERIES.map((module) => (
         <span
           key={module.key}
           className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500"
@@ -233,8 +258,8 @@ function SeriesLegend() {
 
 function ChartCard({ icon: Icon, tone, title, note, children }) {
   return (
-    <motion.div variants={item}>
-      <Card className="p-5 shadow-sm ring-1 ring-slate-950/5">
+    <motion.div variants={item} className="min-w-0">
+      <Card className="w-full min-w-0 p-5 shadow-sm ring-1 ring-slate-950/5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <div className="flex items-center gap-2.5">
             <span
@@ -253,7 +278,13 @@ function ChartCard({ icon: Icon, tone, title, note, children }) {
           <SeriesLegend />
         </div>
 
+        {/*
+          Dito nakatira ang taas ng chart -- hinahabol ng ResponsiveContainer
+          (height="100%") at ng EmptyChart (h-full), kaya isang lugar lang ang
+          babaguhin at pareho pa rin ang taas kahit walang data.
+        */}
         <motion.div
+          className="h-[260px] w-full min-w-0 sm:h-[300px] lg:h-[320px]"
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
@@ -298,17 +329,19 @@ function ChartTooltip({ active, payload, label, format, year }) {
 
 function EmptyChart({ year }) {
   return (
-    <div className="flex h-[270px] flex-col items-center justify-center gap-2 text-center">
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
       <BarChart3 className="h-8 w-8 text-slate-300" />
-      <p className="text-sm text-slate-500">No sales, purchase or importation records in {year}.</p>
+      <p className="text-sm text-slate-500">
+        No sales, purchase, importation or withholding records in {year}.
+      </p>
     </div>
   );
 }
 
-function SummaryFigure({ icon: Icon, tone, label, value, hint, divider }) {
+function SummaryFigure({ icon: Icon, tone, label, value, hint, badge, divider }) {
   return (
     <div
-      className={`flex items-center gap-3 lg:px-4 ${
+      className={`flex min-w-0 items-center gap-3 lg:px-4 ${
         divider ? "lg:border-l lg:border-slate-100" : ""
       }`}
     >
@@ -319,12 +352,15 @@ function SummaryFigure({ icon: Icon, tone, label, value, hint, divider }) {
       </span>
       <div className="min-w-0">
         <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</p>
-        <p
-          className="mt-0.5 truncate text-[15px] font-extrabold tabular-nums text-slate-900"
-          title={value}
-        >
-          {value}
-        </p>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <p
+            className="truncate text-[15px] font-extrabold tabular-nums text-slate-900"
+            title={value}
+          >
+            {value}
+          </p>
+          {badge}
+        </div>
         {hint && <p className="text-[10px] font-medium text-slate-400">{hint}</p>}
       </div>
     </div>
@@ -368,62 +404,135 @@ export default function Dashboard({
 
   const vat = stats.vat ?? {};
   const summaryVat = summary.vat ?? {};
+  const expanded = stats.expanded ?? {};
 
   // Negative net VAT is a credit carried forward, not an error.
   const vatIsPayable = Number(vat.net ?? 0) >= 0;
 
   const amountFigures = [
-    { icon: ReceiptText, tone: "blue", label: "Total Sales", value: summary.total_sales },
-    { icon: ShoppingCart, tone: "green", label: "Total Purchases", value: summary.total_purchases },
+    { icon: ReceiptText, tone: "blue", label: "Total Sales", value: peso(summary.total_sales) },
+    {
+      icon: ShoppingCart,
+      tone: "green",
+      label: "Total Purchases",
+      value: peso(summary.total_purchases),
+    },
     {
       icon: Ship,
       tone: "amber",
       label: "Importation (Landed Cost)",
-      value: summary.total_importation,
+      value: peso(summary.total_importation),
+    },
+    {
+      icon: Percent,
+      tone: "pink",
+      label: "WTAX Income Payments",
+      value: peso(summary.total_expanded),
     },
   ];
 
   const vatFigures = [
-    { icon: ReceiptText, tone: "blue", label: "Output VAT", value: summaryVat.output, hint: "Sales" },
-    { icon: ShoppingCart, tone: "green", label: "Input VAT", value: summaryVat.input, hint: "Purchases" },
-    { icon: Ship, tone: "amber", label: "Importation VAT", value: summaryVat.importation, hint: "Importation" },
+    {
+      icon: ReceiptText,
+      tone: "blue",
+      label: "Output VAT",
+      value: peso(summaryVat.output),
+      hint: "Sales",
+    },
+    {
+      icon: ShoppingCart,
+      tone: "green",
+      label: "Input VAT",
+      value: peso(summaryVat.input),
+      hint: "Purchases",
+    },
+    {
+      icon: Ship,
+      tone: "amber",
+      label: "Importation VAT",
+      value: peso(summaryVat.importation),
+      hint: "Importation",
+    },
     {
       icon: Wallet,
       tone: "violet",
       label: "Combined VAT",
-      value: summaryVat.net,
-      hint: Number(summaryVat.net ?? 0) >= 0 ? "Output less input — payable" : "Output less input — creditable",
+      value: peso(summaryVat.net),
+      hint:
+        Number(summaryVat.net ?? 0) >= 0
+          ? "Output less input — payable"
+          : "Output less input — creditable",
+    },
+  ];
+
+  /**
+   * The 1604E panel. Tax withheld leads because that is the amount remitted;
+   * the income payments it was computed from and the line count follow. None of
+   * these figures touch the VAT breakdown above -- withholding tax is not
+   * creditable against output VAT.
+   */
+  const expandedFigures = [
+    {
+      icon: Percent,
+      tone: "pink",
+      label: "Tax Withheld",
+      value: peso(expanded.tax_withheld),
+      hint: "Remittable for the month",
+      badge: (
+        <DeltaBadge
+          current={expanded.tax_withheld}
+          previous={expanded.previous_tax_withheld}
+          neutral
+        />
+      ),
+    },
+    {
+      icon: Banknote,
+      tone: "pink",
+      label: "Income Payments",
+      value: peso(expanded.amount),
+      hint: "Gross paid to payees",
+      badge: <DeltaBadge current={expanded.amount} previous={expanded.previous_amount} />,
+    },
+    {
+      icon: FileText,
+      tone: "slate",
+      label: "Withholding Lines",
+      value: count(expanded.records),
+      hint: "One per payee, per ATC",
     },
   ];
 
   const hasTransactionData = transactions.some(
-    (point) => point.sales || point.purchases || point.importation
+    (point) => point.sales || point.purchases || point.importation || point.expanded
   );
   const hasAmountData = amounts.some(
-    (point) => point.sales || point.purchases || point.importation
+    (point) => point.sales || point.purchases || point.importation || point.expanded
   );
 
   return (
     <>
       <Head title="Dashboard" />
 
-      <motion.div className="space-y-6" initial="hidden" animate="visible" variants={container}>
+      <motion.div className="space-y-4 lg:space-y-5" initial="hidden" animate="visible" variants={container}>
         {/* Page header + tax month filter */}
         <motion.div
           variants={item}
-          className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+          className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between"
         >
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Dashboard</h1>
+          <div className="min-w-0">
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">
+              Dashboard
+            </h1>
             <p className="mt-0.5 text-sm text-slate-500">
               BIR Data &amp; DAT File Automation Overview
             </p>
           </div>
 
-          <Card className="flex items-center gap-3 px-4 py-2.5 shadow-sm ring-1 ring-slate-950/5">
+          <Card className="flex w-full min-w-0 items-center gap-3 px-4 py-2.5 shadow-sm ring-1 ring-slate-950/5 sm:w-auto">
             <span className="shrink-0 text-xs font-semibold text-slate-500">Tax Month:</span>
             <Select value={selectedMonth} onValueChange={handleMonthChange}>
-              <SelectTrigger className="h-8 w-[150px] border-0 px-1 text-sm font-bold text-slate-900 shadow-none focus:ring-0">
+              <SelectTrigger className="h-8 w-full min-w-0 border-0 px-1 text-sm font-bold text-slate-900 shadow-none focus:ring-0 sm:w-[180px]">
                 <SelectValue placeholder="Select month" />
               </SelectTrigger>
               <SelectContent className="max-h-72">
@@ -454,8 +563,8 @@ export default function Dashboard({
                 <div>
                   <p className="text-sm font-bold text-slate-900">No BIR data yet</p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    Upload sales or purchase records, or add an importation entry, and this overview
-                    fills in on its own.
+                    Upload sales, purchase or withholding records, or add an importation entry, and
+                    this overview fills in on its own.
                   </p>
                 </div>
               </div>
@@ -480,13 +589,13 @@ export default function Dashboard({
 
         {/* Everything below reflects the selected month, so it dims while that reloads. */}
         <motion.div
-          className="space-y-6"
+          className="space-y-4 lg:space-y-5"
           animate={{ opacity: loading ? 0.55 : 1 }}
           transition={{ duration: 0.2 }}
           aria-busy={loading}
         >
           {/* Main summary cards */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:gap-5 xl:grid-cols-4">
             {MODULES.map((module) => {
               const figures = stats[module.key] ?? {};
 
@@ -515,8 +624,57 @@ export default function Dashboard({
             />
           </div>
 
+          {/*
+            Expanded withholding tax sits below the VAT cards rather than among
+            them: it is remitted on 1604E, so folding it into that row would read
+            as though it were part of the VAT position.
+          */}
+          <motion.div variants={item} className="min-w-0">
+            <Card className="w-full min-w-0 p-5 shadow-sm ring-1 ring-slate-950/5">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                      TONES[EXPANDED.tone]
+                    }`}
+                  >
+                    <EXPANDED.icon className="h-4 w-4" />
+                  </span>
+                  <h2 className="text-xs font-bold uppercase tracking-[0.1em] text-slate-700">
+                    Expanded Withholding Tax
+                    <span className="ml-1.5 font-medium normal-case text-slate-400">
+                      (1604E · {monthLabel})
+                    </span>
+                  </h2>
+                </div>
+
+                {/*
+                  Plain /records: the page picks its own record type in local
+                  state, so a ?record_type= link would land on the purchase table.
+                */}
+                <Link
+                  href="/records"
+                  className="text-xs font-semibold text-[#0344a4] transition-colors duration-200 hover:text-[#023384]"
+                >
+                  View records
+                </Link>
+              </div>
+
+              {/*
+                lg: at hindi sm: -- sa lg pa lang lumalabas ang divider at side
+                padding ng SummaryFigure, kaya bago nito ay magkasiksikan ang
+                tatlo nang walang hati sa pagitan.
+              */}
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:gap-0">
+                {expandedFigures.map((figure, index) => (
+                  <SummaryFigure key={figure.label} {...figure} divider={index > 0} />
+                ))}
+              </div>
+            </Card>
+          </motion.div>
+
           {/* Analytics */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:gap-5 xl:grid-cols-2">
             <ChartCard
               icon={BarChart3}
               tone="blue"
@@ -524,7 +682,7 @@ export default function Dashboard({
               note={`(${chartYear})`}
             >
               {hasTransactionData ? (
-                <ResponsiveContainer width="100%" height={270}>
+                <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={transactions}
                     margin={{ top: 12, right: 8, left: -18, bottom: 0 }}
@@ -538,7 +696,7 @@ export default function Dashboard({
                       content={<ChartTooltip format={count} year={chartYear} />}
                       cursor={{ fill: "#f8fafc" }}
                     />
-                    {MODULES.map((module) => (
+                    {SERIES.map((module) => (
                       <Bar
                         key={module.key}
                         dataKey={module.key}
@@ -562,7 +720,7 @@ export default function Dashboard({
               note={`(${chartYear})`}
             >
               {hasAmountData ? (
-                <ResponsiveContainer width="100%" height={270}>
+                <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={amounts} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
                     <XAxis dataKey="month" tickLine={false} {...axis} />
@@ -574,7 +732,7 @@ export default function Dashboard({
                       stroke={axis.stroke}
                     />
                     <Tooltip content={<ChartTooltip format={peso} year={chartYear} />} />
-                    {MODULES.map((module) => (
+                    {SERIES.map((module) => (
                       <Line
                         key={module.key}
                         type="monotone"
@@ -595,8 +753,8 @@ export default function Dashboard({
           </div>
 
           {/* Monthly summary */}
-          <motion.div variants={item}>
-            <Card className="p-5 shadow-sm ring-1 ring-slate-950/5">
+          <motion.div variants={item} className="min-w-0">
+            <Card className="w-full min-w-0 p-5 shadow-sm ring-1 ring-slate-950/5">
               <h2 className="mb-5 text-xs font-bold uppercase tracking-[0.1em] text-slate-700">
                 Monthly Summary
                 <span className="ml-1.5 font-medium normal-case text-slate-400">
@@ -604,7 +762,7 @@ export default function Dashboard({
                 </span>
               </h2>
 
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 lg:gap-0">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 lg:gap-0">
                 {amountFigures.map((figure, index) => (
                   <SummaryFigure key={figure.label} {...figure} divider={index > 0} />
                 ))}
@@ -621,8 +779,8 @@ export default function Dashboard({
           </motion.div>
 
           {/* Importation analytics stay on the dashboard */}
-          <motion.div variants={item}>
-            <Card className="overflow-hidden shadow-sm ring-1 ring-slate-950/5">
+          <motion.div variants={item} className="min-w-0">
+            <Card className="w-full min-w-0 overflow-hidden shadow-sm ring-1 ring-slate-950/5">
               <div className="flex items-center justify-between px-5 py-4">
                 <h2 className="text-xs font-bold uppercase tracking-[0.1em] text-slate-700">
                   Recent Importation Entries
@@ -635,7 +793,8 @@ export default function Dashboard({
                 </Link>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* Ang table lang ang pinapayagang mag-scroll pahalang, hindi ang page. */}
+              <div className="w-full overflow-x-auto">
                 <table className="w-full min-w-[860px] text-sm">
                   <thead>
                     <tr className="border-y border-slate-100 bg-slate-50/60 text-[10px] uppercase tracking-[0.08em] text-slate-500">

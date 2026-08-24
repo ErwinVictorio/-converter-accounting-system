@@ -8,9 +8,11 @@ import { Button } from "@/Components/ui/button";
 import { Input } from "@/Components/ui/input";
 
 const DAT_TYPES = {
-    purchase: { heading: "Purchases", rows: "VAT input" },
-    sales: { heading: "Sales", rows: "Sales VAT" },
-    importation: { heading: "Importations", rows: "importation" },
+    purchase: { heading: "RELIEF Purchases", rows: "VAT input" },
+    sales: { heading: "RELIEF Sales", rows: "Sales VAT" },
+    importation: { heading: "RELIEF Importations", rows: "importation" },
+    // 1604E rather than RELIEF: a different form, and a different file layout.
+    expanded: { heading: "1604E Expanded WTAX", rows: "expanded withholding tax" },
 };
 
 function GenerateDatFile() {
@@ -98,10 +100,10 @@ function GenerateDatFile() {
             >
                 <div>
                     <h2 className="text-lg font-semibold text-gray-800">
-                        Generate RELIEF {datType.heading} DAT
+                        Generate {datType.heading} DAT
                     </h2>
                     <p className="text-xs text-gray-500">
-                        Select a type and reporting month to download one DAT file from VAT records.
+                        Select a type and reporting month to download one DAT file from your uploaded records.
                     </p>
                 </div>
 
@@ -123,6 +125,7 @@ function GenerateDatFile() {
                                 <option value="purchase">Purchase</option>
                                 <option value="sales">Sales</option>
                                 <option value="importation">Importation</option>
+                                <option value="expanded">Expanded WTAX</option>
                             </select>
                             {errors.record_type && (
                                 <p className="text-xs text-red-500">{errors.record_type}</p>

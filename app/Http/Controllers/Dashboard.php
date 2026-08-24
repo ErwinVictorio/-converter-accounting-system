@@ -11,7 +11,7 @@ class Dashboard extends Controller
 {
     /**
      * BIR data & DAT file automation overview for one tax month, across Sales,
-     * Purchases and Importation.
+     * Purchases, Importation and Expanded Withholding Tax.
      *
      * All aggregation lives in DashboardMetrics; this only resolves which month to
      * report on. Nothing here writes, and DAT generation is untouched.

@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\VatInput;
+use App\Models\ExpandedWtaxEntry;
 use App\Models\ImportationEntry;
 use App\Models\SalesVatInput;
 use App\Models\Supplier;
+use App\Services\BIR\BirExpandedWtaxRowValidator;
 use App\Services\BIR\BirImportationRowValidator;
 use App\Services\BIR\BirPurchaseRowValidator;
 use App\Services\BIR\BirSalesRowValidator;
+use App\Services\BIR\ReliefExpandedWtaxDatGenerator;
 use App\Services\BIR\ReliefImportationDatGenerator;
 use App\Services\BIR\ReliefPurchaseDatGenerator;
 use App\Services\BIR\ReliefSalesDatGenerator;
@@ -23,17 +26,20 @@ class DatFileController extends Controller
         Request $request,
         BirPurchaseRowValidator $purchaseValidator,
         BirSalesRowValidator $salesValidator,
-        BirImportationRowValidator $importationValidator
+        BirImportationRowValidator $importationValidator,
+        BirExpandedWtaxRowValidator $expandedValidator
     )
     {
         $recordType = $request->validate([
-            'record_type' => ['nullable', 'in:purchase,sales,importation'],
+            'record_type' => ['nullable', 'in:purchase,sales,importation,expanded'],
         ])['record_type'] ?? 'purchase';
 
         if ($recordType === 'sales') {
             [$availablePeriods, $periodIssues] = $this->salesPeriods($salesValidator);
         } elseif ($recordType === 'importation') {
             [$availablePeriods, $periodIssues] = $this->importationPeriods($importationValidator);
+        } elseif ($recordType === 'expanded') {
+            [$availablePeriods, $periodIssues] = $this->expandedPeriods($expandedValidator);
         } else {
             [$availablePeriods, $periodIssues] = $this->purchasePeriods($purchaseValidator);
         }
@@ -100,14 +106,16 @@ class DatFileController extends Controller
         ReliefPurchaseDatGenerator $purchaseGenerator,
         ReliefSalesDatGenerator $salesGenerator,
         ReliefImportationDatGenerator $importationGenerator,
+        ReliefExpandedWtaxDatGenerator $expandedGenerator,
         BirPurchaseRowValidator $purchaseValidator,
         BirSalesRowValidator $salesValidator,
-        BirImportationRowValidator $importationValidator
+        BirImportationRowValidator $importationValidator,
+        BirExpandedWtaxRowValidator $expandedValidator
     )
     {
         $validated = $request->validate([
             'period' => ['required', 'date'],
-            'record_type' => ['nullable', 'in:purchase,sales,importation'],
+            'record_type' => ['nullable', 'in:purchase,sales,importation,expanded'],
         ]);
 
         $period = Carbon::parse($validated['period'])->endOfMonth();
@@ -119,6 +127,10 @@ class DatFileController extends Controller
 
         if ($recordType === 'importation') {
             return $this->downloadImportation($period, $importationGenerator, $importationValidator);
+        }
+
+        if ($recordType === 'expanded') {
+            return $this->downloadExpanded($period, $expandedGenerator, $expandedValidator);
         }
 
         return $this->downloadPurchase($period, $purchaseGenerator, $purchaseValidator);
@@ -241,6 +253,49 @@ class DatFileController extends Controller
         return [$availablePeriods, $periodIssues];
     }
 
+    /**
+     * Unlike its purchase/sales/importation siblings this groups in PHP instead of
+     * with MySQL's DATE_FORMAT, so the listing works on any driver and can be
+     * covered by the test suite, which runs on sqlite. It costs nothing extra: the
+     * rows have to be loaded anyway to validate them.
+     */
+    private function expandedPeriods(BirExpandedWtaxRowValidator $validator): array
+    {
+        $availablePeriods = [];
+        $periodIssues = [];
+
+        $months = ExpandedWtaxEntry::query()
+            ->orderByDesc('reporting_period')
+            ->orderBy('payee_name')
+            ->orderBy('tax_rate')
+            ->orderBy('id')
+            ->get()
+            ->groupBy(fn (ExpandedWtaxEntry $record) => $record->reporting_period->format('Y-m'));
+
+        foreach ($months as $period => $records) {
+            $availablePeriods[] = [
+                'value' => $period,
+                'label' => $records->first()->reporting_period->format('F Y'),
+                'records_count' => $records->count(),
+            ];
+
+            $errors = [];
+
+            foreach ($records->values() as $index => $record) {
+                foreach ($validator->validate($record->toBirExpandedRow(), $index + 2) as $error) {
+                    $errors[] = "{$record->payee_name}: {$error}";
+                }
+            }
+
+            $periodIssues[$period] = [
+                'invalid_count' => count($errors),
+                'errors' => array_slice($errors, 0, 10),
+            ];
+        }
+
+        return [$availablePeriods, $periodIssues];
+    }
+
     private function downloadPurchase(
         Carbon $period,
         ReliefPurchaseDatGenerator $generator,
@@ -287,6 +342,57 @@ class DatFileController extends Controller
             $records->map(fn (VatInput $record) => $record->toBirPurchaseRow()),
             $period,
             0
+        );
+
+        $fileName = $generator->filename($company, $period);
+
+        return response($content)
+            ->header('Content-Type', 'text/plain')
+            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+    }
+
+    /**
+     * The 1604E header carries only the withholding agent's TIN, branch and period
+     * end, so this needs far less of the company record than the RELIEF schedules.
+     */
+    private function downloadExpanded(
+        Carbon $period,
+        ReliefExpandedWtaxDatGenerator $generator,
+        BirExpandedWtaxRowValidator $validator
+    ) {
+        $records = ExpandedWtaxEntry::query()
+            ->whereBetween('reporting_period', [
+                $period->copy()->startOfMonth()->toDateString(),
+                $period->copy()->endOfMonth()->toDateString(),
+            ])
+            // Filed in payee order, the way the reference DAT is arranged.
+            ->orderBy('payee_name')
+            ->orderBy('tax_rate')
+            ->orderBy('id')
+            ->get();
+
+        if ($records->isEmpty()) {
+            return back()->with('error', 'No expanded withholding tax records found for the selected reporting month.');
+        }
+
+        $rowErrors = [];
+        foreach ($records as $index => $record) {
+            foreach ($validator->validate($record->toBirExpandedRow(), $index + 2) as $error) {
+                $rowErrors[] = "Record #{$record->id} {$record->payee_name}: {$error}";
+            }
+        }
+
+        if ($rowErrors !== []) {
+            return back()->with('error', 'Cannot generate DAT. Fix these expanded withholding tax rows first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
+        }
+
+        // Head office unless config/bir.php ever carries a branch of its own.
+        $company = config('bir.companies.008791976') + ['branch_code' => '0000'];
+
+        $content = $generator->generate(
+            $company,
+            $records->map(fn (ExpandedWtaxEntry $record) => $record->toBirExpandedRow()),
+            $period
         );
 
         $fileName = $generator->filename($company, $period);

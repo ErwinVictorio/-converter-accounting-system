@@ -12,8 +12,8 @@ export default function MainLayout({ children, title = "Dashboard" }) {
       <SidebarProvider>
         <AppSidebar />
 
-        <SidebarInset className="flex flex-col min-w-0">
-          <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between border-b bg-white px-4 md:px-6">
+        <SidebarInset className="flex min-w-0 flex-col overflow-x-hidden">
+          <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between border-b bg-white px-3 sm:px-4 lg:px-5 xl:px-6">
             <div className="flex items-center gap-2 sm:gap-4 min-w-0">
               <SidebarTrigger className="-ml-1" />
               <Separator orientation="vertical" className="h-4" />
@@ -40,11 +40,12 @@ export default function MainLayout({ children, title = "Dashboard" }) {
             </div>
           </header>
 
-          <main className="flex-1 p-4 md:p-6 bg-slate-50/50 overflow-y-auto">
-            <div className="max-w-7xl mx-auto space-y-6">
+          {/* Hindi <main> ito: <main> na mismo ang SidebarInset, kaya mag-nest sana. */}
+          <div className="min-w-0 flex-1 bg-slate-50/50 p-3 sm:p-4 lg:p-5 xl:p-6">
+            <div className="mx-auto w-full min-w-0 max-w-7xl space-y-6">
               {children}
             </div>
-          </main>
+          </div>
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>

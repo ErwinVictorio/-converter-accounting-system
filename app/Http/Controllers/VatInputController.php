@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Imports\ExpandedWtaxImport;
 use App\Imports\VatInputImport;
 use App\Imports\SalesVatInputImport;
 use App\Models\Brokers;
+use App\Models\ExpandedWtaxEntry;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use Carbon\Carbon;
@@ -80,9 +82,24 @@ class VatInputController extends Controller
             ->paginate(15, ['*'], 'sales_page')
             ->withQueryString();
 
+        $expandedWtaxEntries = ExpandedWtaxEntry::query()
+            ->when($search, function ($query, $search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('payee_name', 'LIKE', "%{$search}%")
+                        ->orWhere('payee_tin', 'LIKE', "%{$search}%")
+                        ->orWhere('atc_code', 'LIKE', "%{$search}%");
+                });
+            })
+            ->orderByDesc('reporting_period')
+            ->orderBy('payee_name')
+            ->orderBy('tax_rate')
+            ->paginate(15, ['*'], 'expanded_page')
+            ->withQueryString();
+
         return Inertia::render('RecordEntry', [
             'vatInputs' => $vatInputs,
             'salesVatInputs' => $salesVatInputs,
+            'expandedWtaxEntries' => $expandedWtaxEntries,
             'filters'   => [
                 'search' => $search,
             ],
@@ -93,7 +110,7 @@ class VatInputController extends Controller
         $request->validate([
             'excel_file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
             'reporting_month' => ['required', 'date'],
-            'record_type' => ['required', 'in:purchase,sales'],
+            'record_type' => ['required', 'in:purchase,sales,expanded'],
         ]);
 
         try {
@@ -104,6 +121,22 @@ class VatInputController extends Controller
                 Excel::import(new SalesVatInputImport($reportingPeriod), $file);
 
                 return back()->with('success', 'Sales VAT report successfully imported!');
+            }
+
+            if ($request->input('record_type') === 'expanded') {
+                /*
+                 * The workbook covers a whole month, totals row included, so
+                 * re-uploading a month replaces it instead of adding to it.
+                 * Appending would double the tax withheld and file twice the real
+                 * figure, which is worse than losing a manual correction.
+                 */
+                DB::transaction(function () use ($reportingPeriod, $file) {
+                    ExpandedWtaxEntry::where('reporting_period', $reportingPeriod)->delete();
+
+                    Excel::import(new ExpandedWtaxImport($reportingPeriod), $file);
+                });
+
+                return back()->with('success', 'Expanded withholding tax report successfully imported!');
             }
 
             Excel::import(new VatInputImport($reportingPeriod), $file);

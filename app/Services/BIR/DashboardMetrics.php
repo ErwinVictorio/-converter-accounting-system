@@ -2,6 +2,7 @@
 
 namespace App\Services\BIR;
 
+use App\Models\ExpandedWtaxEntry;
 use App\Models\ImportationEntry;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
@@ -10,20 +11,27 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
- * Dashboard aggregates across the three BIR data sources this system files:
- * Sales, Purchases and Importation.
+ * Dashboard aggregates across the four BIR data sources this system files:
+ * Sales, Purchases, Importation and Expanded Withholding Tax.
  *
  * Every figure comes from columns that already exist:
  *
- *   Sales        sales_vatsinputs      reporting_period  net_amount          output_vat
- *   Purchases    vat_inputs            date_uploaded     total_purchases     input_vat
- *   Importation  importation_entries   tax_month         total_landed_cost   vat_payable
+ *   Sales        sales_vatsinputs        reporting_period  net_amount        output_vat
+ *   Purchases    vat_inputs              date_uploaded     total_purchases   input_vat
+ *   Importation  importation_entries     tax_month         total_landed_cost vat_payable
+ *   Expanded     expanded_wtax_entries   reporting_period  income_payment    tax_withheld
  *
  * Purchases read through VatInput::excludingImportationMirrors(). Each manual
  * importation entry is mirrored into vat_inputs by ImportationController so the
  * purchase DAT generator can emit it, so without that scope every importation
  * would be counted twice -- once as a purchase and once as an importation -- and
  * its VAT twice over. The purchase DAT download applies the same scope.
+ *
+ * The fourth figure of each source is named 'tax' rather than 'vat' because the
+ * expanded module's is tax withheld under 1604E, not VAT. It is reported on its
+ * own card and its own chart series, and vatBreakdown() deliberately never reads
+ * it: withholding tax is not creditable against output VAT, so folding it into
+ * the input side would understate what the company owes.
  *
  * The SQL stays portable (COUNT/SUM/COALESCE and whereBetween on a month range,
  * the idiom DatFileController already uses) rather than MySQL's DATE_FORMAT: the
@@ -39,19 +47,25 @@ class DashboardMetrics
             'model' => SalesVatInput::class,
             'date' => 'reporting_period',
             'amount' => 'net_amount',
-            'vat' => 'output_vat',
+            'tax' => 'output_vat',
         ],
         'purchases' => [
             'model' => VatInput::class,
             'date' => 'date_uploaded',
             'amount' => 'total_purchases',
-            'vat' => 'input_vat',
+            'tax' => 'input_vat',
         ],
         'importation' => [
             'model' => ImportationEntry::class,
             'date' => 'tax_month',
             'amount' => 'total_landed_cost',
-            'vat' => 'vat_payable',
+            'tax' => 'vat_payable',
+        ],
+        'expanded' => [
+            'model' => ExpandedWtaxEntry::class,
+            'date' => 'reporting_period',
+            'amount' => 'income_payment',
+            'tax' => 'tax_withheld',
         ],
     ];
 
@@ -85,7 +99,8 @@ class DashboardMetrics
     }
 
     /**
-     * Record count, amount and VAT for each module in one month.
+     * Record count, amount and the second figure (VAT, or tax withheld for the
+     * expanded module) for each module in one month.
      */
     private function totals(Carbon $month): array
     {
@@ -95,13 +110,13 @@ class DashboardMetrics
             $row = $this->scopedToMonth($this->baseQuery($key), $source['date'], $month)
                 ->selectRaw('COUNT(*) as records')
                 ->selectRaw("COALESCE(SUM({$source['amount']}), 0) as amount")
-                ->selectRaw("COALESCE(SUM({$source['vat']}), 0) as vat")
+                ->selectRaw("COALESCE(SUM({$source['tax']}), 0) as tax")
                 ->first();
 
             $totals[$key] = [
                 'records' => (int) ($row->records ?? 0),
                 'amount' => $this->money($row->amount ?? 0),
-                'vat' => $this->money($row->vat ?? 0),
+                'tax' => $this->money($row->tax ?? 0),
             ];
         }
 
@@ -109,14 +124,14 @@ class DashboardMetrics
     }
 
     /**
-     * The four summary cards. Deltas compare the selected month with the one
+     * The summary cards. Deltas compare the selected month with the one
      * immediately before it.
      */
     private function stats(array $current, array $previous, array $vat): array
     {
         $stats = [];
 
-        foreach (['sales', 'purchases', 'importation'] as $key) {
+        foreach (array_keys(self::SOURCES) as $key) {
             $stats[$key] = [
                 'amount' => $current[$key]['amount'],
                 'records' => $current[$key]['records'],
@@ -124,6 +139,12 @@ class DashboardMetrics
                 'previous_amount' => $previous[$key]['amount'],
             ];
         }
+
+        // The 1604E figures are reported on their own card, so it carries both:
+        // the income payments as the amount above, and the tax withheld here.
+        // The VAT modules' second figure is the monthly summary's job instead.
+        $stats['expanded']['tax_withheld'] = $current['expanded']['tax'];
+        $stats['expanded']['previous_tax_withheld'] = $previous['expanded']['tax'];
 
         // Only the net position and its baseline: the component figures are the
         // monthly summary's job, and shipping them twice invites the two to drift.
@@ -139,12 +160,15 @@ class DashboardMetrics
      * Net VAT for the month: output VAT less the input VAT the company may credit
      * against it, importation VAT included. Positive is payable, negative is
      * creditable -- both are normal, so the sign is reported rather than clamped.
+     *
+     * Expanded withholding tax is absent by design. It is a 1604E figure, not VAT,
+     * and is not creditable against output VAT.
      */
     private function vatBreakdown(array $totals): array
     {
-        $output = $totals['sales']['vat'];
-        $input = $totals['purchases']['vat'];
-        $importation = $totals['importation']['vat'];
+        $output = $totals['sales']['tax'];
+        $input = $totals['purchases']['tax'];
+        $importation = $totals['importation']['tax'];
         $totalInput = $this->money($input + $importation);
 
         return [
@@ -165,6 +189,7 @@ class DashboardMetrics
             'total_sales' => $current['sales']['amount'],
             'total_purchases' => $current['purchases']['amount'],
             'total_importation' => $current['importation']['amount'],
+            'total_expanded' => $current['expanded']['amount'],
             'vat' => $vat,
         ];
     }
@@ -220,7 +245,7 @@ class DashboardMetrics
 
     /**
      * Tax month options: a rolling two-year window, plus any month that actually
-     * holds data in any of the three modules (so older filings stay reachable),
+     * holds data in any of the four modules (so older filings stay reachable),
      * plus whatever is currently selected.
      */
     private function availableMonths(Carbon $selected): array

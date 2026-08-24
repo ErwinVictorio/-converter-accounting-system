@@ -38,8 +38,30 @@ import {
 } from "@/Components/ui/table";
 import DataTablePagination from "@/Layouts/Pagination";
 
+/**
+ * The upload type is always chosen explicitly -- it is never inferred from the
+ * workbook's shape, since the three layouts overlap enough to guess wrong.
+ */
+const RECORD_TYPES = {
+  purchase: {
+    label: "Purchase",
+    title: "VAT Input Records",
+    searchPlaceholder: "Search supplier or TIN...",
+  },
+  sales: {
+    label: "Sales",
+    title: "Sales VAT Records",
+    searchPlaceholder: "Search customer, TIN, or document...",
+  },
+  expanded: {
+    label: "Expanded WTAX",
+    title: "Expanded Withholding Tax Records",
+    searchPlaceholder: "Search payee, TIN, or ATC...",
+  },
+};
+
 function RecordEntry() {
-  const { flash, vatInputs, salesVatInputs, filters } = usePage().props;
+  const { flash, vatInputs, salesVatInputs, expandedWtaxEntries, filters } = usePage().props;
   const [isDragging, setIsDragging] = useState(false);
   const [searchTerm, setSearchTerm] = useState(filters?.search || "");
   const [selectedBirRecord, setSelectedBirRecord] = useState(null);
@@ -52,6 +74,8 @@ function RecordEntry() {
     record_type: "purchase",
   });
   const isSalesMode = data.record_type === "sales";
+  const isExpandedMode = data.record_type === "expanded";
+  const recordType = RECORD_TYPES[data.record_type] || RECORD_TYPES.purchase;
 
   const {
     data: birData,
@@ -103,6 +127,17 @@ function RecordEntry() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(val || 0);
+  };
+
+  // reporting_period arrives as a month-end date; only the month is meaningful.
+  const formatMonth = (value) => {
+    if (!value) return "—";
+
+    const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+
+    return Number.isNaN(date.getTime())
+      ? value
+      : date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
   };
 
   // Handle File Selection
@@ -271,9 +306,15 @@ function RecordEntry() {
                 >
                   <option value="purchase">Purchase</option>
                   <option value="sales">Sales</option>
+                  <option value="expanded">Expanded WTAX</option>
                 </select>
                 {errors.record_type && (
                   <p className="text-xs text-red-500 font-medium">{errors.record_type}</p>
+                )}
+                {isExpandedMode && (
+                  <p className="text-xs text-slate-500">
+                    Re-uploading a month replaces that month's expanded withholding tax rows.
+                  </p>
                 )}
               </div>
             </div>
@@ -337,7 +378,7 @@ function RecordEntry() {
                       {data.excel_file.name}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {(data.excel_file.size / (1024 * 1024)).toFixed(2)} MB - {data.record_type === "sales" ? "Sales" : "Purchase"}
+                      {(data.excel_file.size / (1024 * 1024)).toFixed(2)} MB - {recordType.label}
                     </p>
                   </div>
                 </div>
@@ -391,7 +432,7 @@ function RecordEntry() {
       <Card className="w-full shadow-sm border rounded-xl overflow-hidden bg-white">
         <CardHeader className="p-4 sm:p-6 border-b flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-gray-50/50">
           <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">
-            {isSalesMode ? "Sales VAT Records" : "VAT Input Records"}
+            {recordType.title}
           </CardTitle>
 
           {/* Search Input Filter */}
@@ -399,7 +440,7 @@ function RecordEntry() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input
               type="text"
-              placeholder={isSalesMode ? "Search customer, TIN, or document..." : "Search supplier or TIN..."}
+              placeholder={recordType.searchPlaceholder}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9 bg-white"
@@ -409,7 +450,74 @@ function RecordEntry() {
 
         {/* 1. DAGDAG: overflow-x-auto dito para pwedeng ma-scroll ang table horizontally nang hindi nasisira ang buong card */}
         <CardContent className="p-0 overflow-x-auto">
-          {isSalesMode ? (
+          {isExpandedMode ? (
+            <Table className="min-w-[1100px]">
+              <TableHeader>
+                <TableRow className="bg-slate-50 hover:bg-slate-50">
+                  <TableHead className="font-semibold text-slate-700">Payee</TableHead>
+                  <TableHead className="font-semibold text-slate-700">TIN</TableHead>
+                  <TableHead className="font-semibold text-slate-700">ATC</TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right">Rate</TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right">Income Payment</TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right">Tax Withheld</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Reporting Month</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Reference</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {expandedWtaxEntries?.data?.length > 0 ? (
+                  expandedWtaxEntries.data.map((item) => (
+                    <TableRow key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                      <TableCell className="font-medium text-slate-900 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span>{item.payee_name}</span>
+                          <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">
+                            {item.payee_type === "individual" ? "Individual" : "Company"}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
+                        {item.payee_tin || "No TIN"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {item.atc_code ? (
+                          <Badge className="bg-slate-100 font-mono text-slate-700 hover:bg-slate-100">
+                            {item.atc_code}
+                          </Badge>
+                        ) : (
+                          // Blocks DAT generation until a mapping is configured.
+                          <Badge className="border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                            No ATC
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                        {Number(item.tax_rate || 0).toFixed(2)}%
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                        {formatCurrency(item.income_payment)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(item.tax_withheld)}
+                      </TableCell>
+                      <TableCell className="text-slate-600 text-xs whitespace-nowrap">
+                        {formatMonth(item.reporting_period)}
+                      </TableCell>
+                      <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
+                        {[item.source_no, item.reference_no].filter(Boolean).join(" · ") || "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={8} className="h-32 text-center text-slate-500">
+                      No expanded withholding tax records found.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          ) : isSalesMode ? (
             <Table className="min-w-[1100px]">
               <TableHeader>
                 <TableRow className="bg-slate-50 hover:bg-slate-50">
@@ -582,7 +690,15 @@ function RecordEntry() {
           )}
         </CardContent>
 
-        <DataTablePagination links={isSalesMode ? salesVatInputs?.links : vatInputs?.links}/>
+        <DataTablePagination
+          links={
+            isExpandedMode
+              ? expandedWtaxEntries?.links
+              : isSalesMode
+                ? salesVatInputs?.links
+                : vatInputs?.links
+          }
+        />
       </Card>
 
       <Dialog open={Boolean(selectedBirRecord)} onOpenChange={(open) => !open && closeBirEditor()}>

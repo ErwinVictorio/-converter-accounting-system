@@ -2,6 +2,19 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Vendored from shadcn, then rewritten for Tailwind 3.4 -- the upstream file was
+ * v4 source, so `bg-card`, `shadow-xs`, `py-(--card-spacing)` and friends compiled
+ * to nothing and every card rendered transparent and unpadded.
+ *
+ * Two conventions this file now relies on:
+ *
+ * 1. No default padding. Every call site in the app already passes its own
+ *    (`p-5`, `p-4 sm:p-6`, `p-6`, `p-0`, `py-4`), so a base value would only
+ *    double up or fight tailwind-merge.
+ * 2. No default ring or border. Call sites pass `ring-1 ring-slate-950/5` or
+ *    `border border-slate-100`, whichever the page uses.
+ */
 function Card({
   className,
   size = "default",
@@ -12,7 +25,10 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground shadow-xs ring-1 ring-foreground/10 [--card-spacing:--spacing(6)] has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(4)] *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        // No `flex flex-col` here: several call sites lay their card out as a row
+        // (icon beside text) and a base flex-direction would override them,
+        // because tailwind-merge treats `flex` and `flex-col` as separate groups.
+        "group/card overflow-hidden rounded-xl bg-white text-sm shadow-sm",
         className
       )}
       {...props} />
@@ -27,7 +43,7 @@ function CardHeader({
     <div
       data-slot="card-header"
       className={cn(
-        "group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-(--card-spacing) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)",
+        "group/card-header grid auto-rows-min items-start gap-1 rounded-t-xl has-[[data-slot=card-action]]:grid-cols-[1fr_auto] has-[[data-slot=card-description]]:grid-rows-[auto_auto]",
         className
       )}
       {...props} />
@@ -42,7 +58,7 @@ function CardTitle({
     <div
       data-slot="card-title"
       className={cn(
-        "font-heading text-base leading-normal font-medium group-data-[size=sm]/card:text-sm",
+        "text-base font-medium leading-normal group-data-[size=sm]/card:text-sm",
         className
       )}
       {...props} />
@@ -56,7 +72,7 @@ function CardDescription({
   return (
     <div
       data-slot="card-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-sm text-slate-500", className)}
       {...props} />
   );
 }
@@ -83,7 +99,7 @@ function CardContent({
   return (
     <div
       data-slot="card-content"
-      className={cn("flex flex-col gap-3 px-(--card-spacing)", className)}
+      className={cn("flex flex-col gap-3", className)}
       {...props} />
   );
 }
@@ -95,10 +111,7 @@ function CardFooter({
   return (
     <div
       data-slot="card-footer"
-      className={cn(
-        "flex items-center rounded-b-xl px-(--card-spacing) [.border-t]:pt-(--card-spacing)",
-        className
-      )}
+      className={cn("flex items-center rounded-b-xl", className)}
       {...props} />
   );
 }
