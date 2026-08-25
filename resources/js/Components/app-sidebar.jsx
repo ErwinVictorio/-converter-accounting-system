@@ -15,54 +15,81 @@ import { Link, usePage } from "@inertiajs/react";
 import {
     LayoutDashboard,
     Building2,
-    DatabasePlus,
-    ChartNoAxesCombined,
+    Building,
     Briefcase,
-    Users,
+    FileDown,
+    FileUp,
     Ship,
+    Truck,
+    Users,
     LogOut
 } from "lucide-react";
 
 
-const navItems = [
+/*
+ * Grouped by what the screen is for, not by how often it is used:
+ *
+ *  - Main Menu           the overview.
+ *  - Data & Transactions the monthly work -- bring figures in, then take a DAT out.
+ *  - Master Data         the reference records those screens read from, set up once
+ *                        and revisited only when a customer, supplier, broker or
+ *                        withholding company changes.
+ *
+ * Every url here is an existing route; the labels are display text only.
+ */
+const mainItems = [
     {
         title: "Dashboard",
         url: "/",
         icon: LayoutDashboard,
     },
+];
+
+const transactionItems = [
     {
-        title: "Import Excell File",
+        title: "Import Data",
         url: "/records",
-        icon: DatabasePlus,
+        icon: FileUp,
     },
     {
         title: "Importation",
         url: "/importation",
         icon: Ship,
     },
-
     {
-        title: "Manage Brokers",
+        title: "Generate DAT File",
+        url: "/generate-datfile",
+        icon: FileDown,
+    },
+];
+
+const masterDataItems = [
+    {
+        title: "Customers",
+        url: "/customers",
+        icon: Users,
+    },
+    {
+        title: "Suppliers",
+        url: "/suppliers",
+        icon: Truck,
+    },
+    {
+        title: "Brokers",
         url: "/brokers",
         icon: Briefcase,
     },
     {
-        title: "Generate DatFile",
-        url: "/generate-datfile",
-        icon: ChartNoAxesCombined,
+        title: "Companies",
+        url: "/withholding-companies",
+        icon: Building,
     },
+];
 
-    {
-        title: "Manage Suppliers",
-        url: "/suppliers",
-        icon: Users,
-    },
-    {
-        title: "Manage Customers",
-        url: "/customers",
-        icon: Users,
-    },
-
+const menuGroups = [
+    { label: "Main Menu", items: mainItems },
+    { label: "Data & Transactions", items: transactionItems },
+    { label: "Master Data", items: masterDataItems },
 ];
 
 export function AppSidebar() {
@@ -100,42 +127,50 @@ export function AppSidebar() {
             </SidebarHeader>
 
             {/* Content Links */}
-            <SidebarContent className="bg-white px-2 py-4">
-                <SidebarGroup>
-                    <SidebarGroupLabel className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-2">
-                        Main Menu
-                    </SidebarGroupLabel>
-                    <SidebarGroupContent>
-                        <SidebarMenu className="space-y-1">
-                            {navItems.map((item) => {
-                                const IconComponent = item.icon;
-                                const isActive = isActiveUrl(item.url);
+            <SidebarContent className="bg-white px-2 py-3">
+                {menuGroups.map((group) => (
+                    // py-1 over the shipped p-2: three group labels instead of one, so
+                    // the tighter vertical padding keeps the whole list on screen at
+                    // 768px height without touching the horizontal rhythm.
+                    <SidebarGroup key={group.label} className="py-1">
+                        {/* mb-0 in the icon rail -- the label collapses to opacity-0
+                            with a negative top margin, so its bottom margin would
+                            otherwise leave a gap per group. */}
+                        <SidebarGroupLabel className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider text-gray-400 group-data-[collapsible=icon]:mb-0">
+                            {group.label}
+                        </SidebarGroupLabel>
+                        <SidebarGroupContent>
+                            <SidebarMenu className="space-y-1">
+                                {group.items.map((item) => {
+                                    const IconComponent = item.icon;
+                                    const isActive = isActiveUrl(item.url);
 
-                                return (
-                                    <SidebarMenuItem key={item.title}>
-                                        <SidebarMenuButton
-                                            asChild
-                                            isActive={isActive}
-                                            tooltip={item.title}
-                                            className="text-sm font-medium transition-colors hover:bg-gray-100 data-[active=true]:bg-blue-50 data-[active=true]:text-blue-600"
-                                        >
-                                            <Link
-                                                href={item.url}
-                                                onClick={handleNavClick}
-                                                className="flex items-center gap-3 w-full"
+                                    return (
+                                        <SidebarMenuItem key={item.title}>
+                                            <SidebarMenuButton
+                                                asChild
+                                                isActive={isActive}
+                                                tooltip={item.title}
+                                                className="text-sm font-medium transition-colors hover:bg-gray-100 data-[active=true]:bg-blue-50 data-[active=true]:text-blue-600"
                                             >
-                                                <IconComponent className="h-4 w-4 shrink-0" />
-                                                <span className="truncate group-data-[collapsible=icon]:hidden">
-                                                    {item.title}
-                                                </span>
-                                            </Link>
-                                        </SidebarMenuButton>
-                                    </SidebarMenuItem>
-                                );
-                            })}
-                        </SidebarMenu>
-                    </SidebarGroupContent>
-                </SidebarGroup>
+                                                <Link
+                                                    href={item.url}
+                                                    onClick={handleNavClick}
+                                                    className="flex items-center gap-3 w-full"
+                                                >
+                                                    <IconComponent className="h-4 w-4 shrink-0" />
+                                                    <span className="truncate group-data-[collapsible=icon]:hidden">
+                                                        {item.title}
+                                                    </span>
+                                                </Link>
+                                            </SidebarMenuButton>
+                                        </SidebarMenuItem>
+                                    );
+                                })}
+                            </SidebarMenu>
+                        </SidebarGroupContent>
+                    </SidebarGroup>
+                ))}
             </SidebarContent>
 
             {/* Footer */}

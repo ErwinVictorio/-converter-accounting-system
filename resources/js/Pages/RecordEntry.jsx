@@ -80,6 +80,16 @@ function RecordEntry() {
   const isExpandedMode = data.record_type === "expanded";
   const recordType = RECORD_TYPES[data.record_type] || RECORD_TYPES.purchase;
   const selectedBirCompanyKey = `${data.withholding_agent_tin}|${data.withholding_agent_branch_code}`;
+  /*
+   * The list comes from Master Data > Companies (with config and
+   * already-uploaded agents as fallbacks). The TIN and branch inputs below stay
+   * editable, so the typed pair can end up matching no option -- without an
+   * explicit entry for that the select would silently display the first company
+   * while a different TIN was about to be uploaded.
+   */
+  const isKnownBirCompany = birCompanies.some(
+    (company) => `${company.tin}|${company.branch_code}` === selectedBirCompanyKey
+  );
 
   const {
     data: birData,
@@ -355,7 +365,17 @@ function RecordEntry() {
                         {company.name} ({company.tin}-{company.branch_code})
                       </option>
                     ))}
+                    {!isKnownBirCompany && (
+                      <option value={selectedBirCompanyKey}>
+                        {birCompanies.length === 0
+                          ? "No companies yet -- add one in Master Data > Companies"
+                          : `Not listed (${data.withholding_agent_tin}-${data.withholding_agent_branch_code})`}
+                      </option>
+                    )}
                   </select>
+                  <p className="text-xs text-slate-400">
+                    Maintained in Master Data &gt; Companies.
+                  </p>
                 </div>
 
                 <div className="space-y-2">

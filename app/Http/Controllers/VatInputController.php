@@ -10,6 +10,7 @@ use App\Models\Brokers;
 use App\Models\ExpandedWtaxEntry;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
+use App\Services\BIR\WithholdingCompanyDirectory;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -19,6 +20,15 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class VatInputController extends Controller
 {
+    /**
+     * The Known Company dropdown and the withholding agent an Expanded WTAX upload
+     * is stored under both come from here, so this screen and the Generate DAT
+     * screen cannot end up offering different companies.
+     */
+    public function __construct(private WithholdingCompanyDirectory $companies)
+    {
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -129,7 +139,7 @@ class VatInputController extends Controller
             'vatInputs' => $vatInputs,
             'salesVatInputs' => $salesVatInputs,
             'expandedWtaxEntries' => $expandedWtaxEntries,
-            'birCompanies' => $this->birCompanies(),
+            'birCompanies' => $this->companies->activeCompanies(),
             'filters'   => [
                 'search' => $search,
             ],
@@ -201,54 +211,23 @@ class VatInputController extends Controller
         }
     }
 
-    private function birCompanies(): array
-    {
-        $configured = collect(config('bir.companies', []))
-            ->map(function (array $company) {
-                $tin = substr(preg_replace('/\D/', '', (string) ($company['tin'] ?? '')), 0, 9);
-                $branch = substr(preg_replace('/\D/', '', (string) ($company['branch_code'] ?? '0000')), 0, 4);
-
-                return [
-                    'tin' => $tin,
-                    'branch_code' => $branch === '' ? '0000' : str_pad($branch, 4, '0', STR_PAD_LEFT),
-                    'name' => $company['name'] ?? $company['registered_name'] ?? $tin,
-                ];
-            });
-
-        $uploaded = ExpandedWtaxEntry::query()
-            ->select([
-                'withholding_agent_tin',
-                'withholding_agent_branch_code',
-                'withholding_agent_name',
-            ])
-            ->distinct()
-            ->get()
-            ->map(fn (ExpandedWtaxEntry $entry) => [
-                'tin' => $entry->withholding_agent_tin,
-                'branch_code' => $entry->withholding_agent_branch_code,
-                'name' => $entry->withholding_agent_name,
-            ]);
-
-        return $configured
-            ->merge($uploaded)
-            ->filter(fn (array $company) => $company['tin'] !== '')
-            ->unique(fn (array $company) => $company['tin'] . '|' . $company['branch_code'])
-            ->values()
-            ->all();
-    }
-
+    /**
+     * The company an Expanded WTAX upload is filed under. Every row of the month
+     * stores it, and re-uploading is scoped to it, so a managed company's
+     * registered name is preferred over the raw TIN the request carried.
+     */
     private function withholdingAgentFromRequest(Request $request): array
     {
-        $tin = substr(preg_replace('/\D/', '', (string) $request->input('withholding_agent_tin')), 0, 9);
-        $branch = substr(preg_replace('/\D/', '', (string) $request->input('withholding_agent_branch_code', '0000')), 0, 4);
-        $branch = $branch === '' ? '0000' : str_pad($branch, 4, '0', STR_PAD_LEFT);
-        $company = config("bir.companies.{$tin}", []);
+        $agent = $this->companies->resolve(
+            $request->input('withholding_agent_tin'),
+            $request->input('withholding_agent_branch_code', '0000')
+        );
 
         return [
-            'tin' => $tin,
-            'branch_code' => $branch,
-            'name' => $company['name'] ?? $company['registered_name'] ?? $tin,
-            'registered_name' => $company['registered_name'] ?? $company['name'] ?? $tin,
+            'tin' => $agent['tin'],
+            'branch_code' => $agent['branch_code'],
+            'name' => $agent['name'],
+            'registered_name' => $agent['registered_name'] ?? $agent['name'],
         ];
     }
 

@@ -8,6 +8,7 @@ use App\Http\Controllers\ImportationController;
 use App\Http\Controllers\ManageBrokerController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\VatInputController;
+use App\Http\Controllers\WithholdingCompanyController;
 use Illuminate\Support\Facades\Route;
 
 
@@ -61,4 +62,17 @@ Route::middleware('auth')->group(function () {
     Route::post('/importation', [ImportationController::class, 'store']);
     Route::put('/importation/{importationEntry}', [ImportationController::class, 'update']);
     Route::delete('/importation/{importationEntry}', [ImportationController::class, 'destroy']);
+
+    /*
+     * Settings > Manage Companies: the withholding agent companies the Expanded
+     * WTAX upload and the 1601EQ DAT are filed for. Deactivation is a PATCH rather
+     * than the DELETE, because DELETE here means "remove a mistyped row" and is
+     * refused once a month has been filed under the company.
+     */
+    Route::get('/withholding-companies', [WithholdingCompanyController::class, 'index']);
+    Route::post('/withholding-companies', [WithholdingCompanyController::class, 'store']);
+    Route::put('/withholding-companies/{company}', [WithholdingCompanyController::class, 'update']);
+    Route::patch('/withholding-companies/{company}/deactivate', [WithholdingCompanyController::class, 'deactivate']);
+    Route::patch('/withholding-companies/{company}/activate', [WithholdingCompanyController::class, 'activate']);
+    Route::delete('/withholding-companies/{company}', [WithholdingCompanyController::class, 'destroy']);
 });

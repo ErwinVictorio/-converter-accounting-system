@@ -181,6 +181,46 @@ This means re-uploading Fortress Steel July 2026 does not delete another company
 
 DAT generation also filters by the selected withholding agent TIN and branch code. If two companies have Expanded WTAX rows in the same month, generate/download one DAT file per company.
 
+### Where the Known Company dropdown comes from
+
+`Settings > Manage Companies` (`/withholding-companies`) maintains the companies both
+`Known Company` dropdowns offer — the one on `Import Excell File` and the one on
+`Generate DatFile`. Both read the same list through
+`app/Services/BIR/WithholdingCompanyDirectory.php`, so they cannot disagree.
+
+Three sources, in priority order, uniqueness on `tin + branch_code`, first occurrence wins:
+
+1. Active rows in `withholding_companies`.
+2. `config('bir.companies')` — kept as a fallback, so a fresh install (or an empty table)
+   still offers Fortress Steel and still supplies the RDO code the header needs.
+3. Distinct withholding agents already present in `expanded_wtax_entries` — suggestions
+   only, so a month uploaded before this module existed does not vanish from the dropdown.
+
+Selecting a company fills the Company TIN and Branch Code fields; both stay editable, and a
+typed pair that matches no company shows as `Not listed (TIN-BRANCH)` rather than silently
+displaying the first company.
+
+Two rules the module enforces, because `expanded_wtax_entries` carries the agent TIN and
+branch on every row and has no foreign key to `withholding_companies`:
+
+- **The TIN and branch code are locked once a month has been filed under them.** Editing
+  them would disconnect every filed row from the company it was filed under. Add a new
+  company instead. Everything else — registered name, trade name, RDO, addresses — stays
+  editable, and a renamed company takes effect on the next generated DAT.
+- **Deactivate, not delete.** A deactivated company disappears from both dropdowns but is
+  still resolved for generation, so an already-filed month stays regenerable. Delete is
+  refused outright once rows exist and is only there to remove a mistyped row.
+
+`config/bir.php` is deliberately still read. To move the config company into the table so it
+becomes editable in the UI:
+
+```bash
+php artisan db:seed --class=WithholdingCompanySeeder
+```
+
+The seeder is `firstOrCreate` on `tin + branch_code`, so re-running it never overwrites an
+address or RDO corrected in the UI.
+
 ## Generated DAT Body Format
 
 The filename and the body must both be 1601EQ/QAP.
@@ -375,4 +415,15 @@ Expected current result:
 
 ```text
 101 passed
+```
+
+The company module has its own file, run alongside them when the dropdowns or the header
+company change:
+
+```bash
+php artisan test tests/Feature/WithholdingCompanyTest.php
+```
+
+```text
+23 passed
 ```

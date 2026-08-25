@@ -50,6 +50,16 @@ function GenerateDatFile() {
         errors: [],
     };
     const selectedBirCompanyKey = `${data.withholding_agent_tin}|${data.withholding_agent_branch_code}`;
+    /*
+     * The list is what Master Data > Companies keeps active (with config and
+     * already-uploaded agents as fallbacks). The TIN and branch inputs stay
+     * editable, so the pair can match no option -- a deactivated company whose
+     * month is being regenerated is the normal case. Without an explicit entry the
+     * select would display the first company while a different TIN was in effect.
+     */
+    const isKnownBirCompany = birCompanies.some(
+        (company) => `${company.tin}|${company.branch_code}` === selectedBirCompanyKey
+    );
 
     useEffect(() => {
         if (flash?.error) toast.error(flash.error);
@@ -230,9 +240,20 @@ function GenerateDatFile() {
                                             {company.name} ({company.tin}-{company.branch_code})
                                         </option>
                                     ))}
+                                    {!isKnownBirCompany && (
+                                        <option value={selectedBirCompanyKey}>
+                                            {birCompanies.length === 0
+                                                ? "No companies yet -- add one in Master Data > Companies"
+                                                : `Not listed (${data.withholding_agent_tin}-${data.withholding_agent_branch_code})`}
+                                        </option>
+                                    )}
                                 </select>
-                                {errors.withholding_agent_tin && (
+                                {errors.withholding_agent_tin ? (
                                     <p className="text-xs text-red-500">{errors.withholding_agent_tin}</p>
+                                ) : (
+                                    <p className="text-xs text-gray-400">
+                                        Maintained in Master Data &gt; Companies.
+                                    </p>
                                 )}
                             </div>
 

@@ -15,6 +15,7 @@ use App\Services\BIR\ReliefExpandedWtaxDatGenerator;
 use App\Services\BIR\ReliefImportationDatGenerator;
 use App\Services\BIR\ReliefPurchaseDatGenerator;
 use App\Services\BIR\ReliefSalesDatGenerator;
+use App\Services\BIR\WithholdingCompanyDirectory;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -22,6 +23,16 @@ use Inertia\Inertia;
 
 class DatFileController extends Controller
 {
+    /**
+     * Expanded WTAX is filed per withholding agent, so which company is selected
+     * decides which rows are listed and which TIN, branch, registered name and RDO
+     * reach the 1601EQ header. All of that comes from one directory, shared with the
+     * upload screen -- see WithholdingCompanyDirectory.
+     */
+    public function __construct(private WithholdingCompanyDirectory $companies)
+    {
+    }
+
     public function index(
         Request $request,
         BirPurchaseRowValidator $purchaseValidator,
@@ -52,7 +63,7 @@ class DatFileController extends Controller
             'recordType' => $recordType,
             'availablePeriods' => $availablePeriods,
             'periodIssues' => $periodIssues,
-            'birCompanies' => $this->expandedCompanies(),
+            'birCompanies' => $this->companies->activeCompanies(),
             'selectedWithholdingAgent' => $selectedWithholdingAgent,
         ]);
     }
@@ -438,75 +449,26 @@ class DatFileController extends Controller
             ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
     }
 
-    private function expandedCompanies(): array
-    {
-        $configured = collect(config('bir.companies', []))
-            ->map(fn (array $company) => $this->normaliseCompany($company));
-
-        $uploaded = ExpandedWtaxEntry::query()
-            ->select([
-                'withholding_agent_tin',
-                'withholding_agent_branch_code',
-                'withholding_agent_name',
-            ])
-            ->distinct()
-            ->get()
-            ->map(fn (ExpandedWtaxEntry $entry) => [
-                'tin' => $entry->withholding_agent_tin,
-                'branch_code' => $entry->withholding_agent_branch_code,
-                'name' => $entry->withholding_agent_name,
-            ]);
-
-        return $configured
-            ->merge($uploaded)
-            ->filter(fn (array $company) => $company['tin'] !== '')
-            ->unique(fn (array $company) => $company['tin'] . '|' . $company['branch_code'])
-            ->values()
-            ->all();
-    }
-
+    /**
+     * The withholding agent the request is about, defaulting to the first company
+     * the directory offers when the request names none.
+     */
     private function selectedWithholdingAgent(Request $request): array
     {
-        $default = $this->expandedCompanies()[0] ?? $this->normaliseCompany(config('bir.companies.008791976', []));
-        $tin = substr(preg_replace('/\D/', '', (string) $request->input('withholding_agent_tin', $default['tin'])), 0, 9);
-        $branch = substr(preg_replace('/\D/', '', (string) $request->input('withholding_agent_branch_code', $default['branch_code'])), 0, 4);
-        $branch = $branch === '' ? '0000' : str_pad($branch, 4, '0', STR_PAD_LEFT);
-        $company = collect($this->expandedCompanies())->first(
-            fn (array $item) => $item['tin'] === $tin && $item['branch_code'] === $branch
+        return $this->companies->resolve(
+            $request->input('withholding_agent_tin'),
+            $request->input('withholding_agent_branch_code')
         );
-
-        return $company ?: [
-            'tin' => $tin,
-            'branch_code' => $branch,
-            'name' => config("bir.companies.{$tin}.name", $tin),
-        ];
     }
 
+    /**
+     * The header and control record details for the selected agent. Goes through
+     * the directory rather than config so a managed company -- including a
+     * deactivated one -- can still regenerate a month filed under it.
+     */
     private function companyForExpandedDownload(array $withholdingAgent): array
     {
-        $configured = config("bir.companies.{$withholdingAgent['tin']}", []);
-
-        return [
-            'tin' => $withholdingAgent['tin'],
-            'branch_code' => $withholdingAgent['branch_code'],
-            'name' => $configured['name'] ?? $withholdingAgent['name'],
-            'registered_name' => $configured['registered_name'] ?? $withholdingAgent['name'],
-            'address1' => $configured['address1'] ?? '',
-            'address2' => $configured['address2'] ?? '',
-            'rdo_code' => $configured['rdo_code'] ?? '',
-        ];
-    }
-
-    private function normaliseCompany(array $company): array
-    {
-        $tin = substr(preg_replace('/\D/', '', (string) ($company['tin'] ?? '')), 0, 9);
-        $branch = substr(preg_replace('/\D/', '', (string) ($company['branch_code'] ?? '0000')), 0, 4);
-
-        return [
-            'tin' => $tin,
-            'branch_code' => $branch === '' ? '0000' : str_pad($branch, 4, '0', STR_PAD_LEFT),
-            'name' => $company['name'] ?? $company['registered_name'] ?? $tin,
-        ];
+        return $this->companies->companyForDat($withholdingAgent);
     }
 
     private function downloadSales(
