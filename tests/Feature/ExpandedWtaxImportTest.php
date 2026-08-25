@@ -499,12 +499,13 @@ class ExpandedWtaxImportTest extends TestCase
     {
         $this->upload($this->workbook(), '2025-12')->assertSessionHas('success');
 
-        // Seven stored rows, six listed: the two PRUDENTIAL rows share reporting
-        // month, TIN, ATC and rate, so they are one filing line.
+        // Seven stored rows, five listed. Two pairs merge: the two PRUDENTIAL rows,
+        // and the two ACERSTEEL WC158 rows at 1% whose TINs disagree -- one payee
+        // billed at one rate is one filing line either way.
         $this->get('/records')->assertOk()->assertInertia(
             fn ($page) => $page
                 ->component('RecordEntry')
-                ->has('expandedWtaxEntries.data', 6)
+                ->has('expandedWtaxEntries.data', 5)
         );
 
         $this->assertSame(7, ExpandedWtaxEntry::count());
@@ -519,7 +520,32 @@ class ExpandedWtaxImportTest extends TestCase
         );
 
         $this->get('/records?search=WC158')->assertOk()->assertInertia(
-            fn ($page) => $page->has('expandedWtaxEntries.data', 2)
+            fn ($page) => $page->has('expandedWtaxEntries.data', 1)
         );
+    }
+
+    public function test_the_records_page_flags_a_merged_group_whose_tins_disagree(): void
+    {
+        $this->upload($this->workbook(), '2025-12')->assertSessionHas('success');
+
+        $rows = collect(
+            $this->get('/records')->viewData('page')['props']['expandedWtaxEntries']['data']
+        );
+
+        // The workbook files ACERSTEEL under two TINs at the same 1% rate. The
+        // group keeps the first and says so, rather than filing the payee twice.
+        $acersteel = $rows->firstWhere('atc_code', 'WC158');
+
+        $this->assertSame('ACERSTEEL INDUSTRIAL SALES INC', $acersteel['company_name']);
+        $this->assertSame(2, $acersteel['merged_rows']);
+        $this->assertSame('007086184', $acersteel['payee_tin']);
+        $this->assertTrue($acersteel['has_multiple_payee_tins']);
+        $this->assertSame(['007086184', '009999999'], $acersteel['distinct_payee_tins']);
+
+        // The PRUDENTIAL pair agrees on its TIN, so it merges unflagged.
+        $prudential = $rows->firstWhere('payee_tin', '000491813');
+
+        $this->assertSame(2, $prudential['merged_rows']);
+        $this->assertFalse($prudential['has_multiple_payee_tins']);
     }
 }

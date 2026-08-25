@@ -44,9 +44,11 @@ use RuntimeException;
  *
  * One item in, one detail line out. The generator itself never merges anything --
  * grouping is ExpandedWtaxEntry::consolidate()'s job, and DatFileController calls it
- * before handing the collection over, so rows sharing reporting month, TIN, ATC and
- * rate arrive as a single item with their income payment and tax amount already
- * summed.
+ * before handing the collection over, so rows sharing reporting month, withholding
+ * agent, payee identity, ATC and rate arrive as a single item with their income
+ * payment and tax amount already summed. A group can only carry one payee TIN, and
+ * choosing it is consolidate()'s decision too: this generator writes whatever TIN the
+ * item hands it.
  *
  * That is a deliberate departure from the sample file, which lists PRUDENTIAL
  * GUARANTEE AND ASSURANCE INC twice under WC160 at 2%: the same month regenerated

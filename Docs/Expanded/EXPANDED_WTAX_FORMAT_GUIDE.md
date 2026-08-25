@@ -281,18 +281,73 @@ Rows with the same:
 - reporting month
 - withholding agent TIN
 - withholding agent branch code
-- payee TIN
+- payee identity
 - ATC
 - EWT rate
 
 become one DAT detail line.
+
+Same payee/company identity + same ATC + same EWT rate are filed as one detail line.
+Rows with the same payee/company but different EWT rates stay separate.
+
+Payee identity is the payee's name, not the payee's TIN:
+
+| Payee type | Identity |
+| --- | --- |
+| company | `company_name` |
+| individual | `last_name` + `first_name` + `middle_name` |
+| either, when those are blank | `payee_name` |
+
+The name is normalized for comparison only, never rewritten in storage:
+
+- uppercase
+- `&` becomes `AND`
+- commas and other punctuation dropped
+- runs of spaces collapsed
+- trimmed
+
+So `PRUDENTIAL GUARANTEE & ASSURANCE, INC.` and
+`Prudential Guarantee and Assurance Inc` are one payee. Two genuinely different
+names stay two lines even under one TIN.
 
 The app sums:
 
 - `income_payment`
 - `tax_withheld`
 
-The first row in the group supplies the name and branch code.
+The first row in the group supplies every field that is not summed, including the
+name that reaches the DAT.
+
+### When Merged Rows Disagree About the TIN
+
+A detail line can carry only one payee TIN. When merged rows have different TINs,
+the first valid TIN is used and the records screen flags the group.
+
+- Valid means at least nine digits and not `000000000` — the same two rules the row
+  validator enforces.
+- The payee branch code comes from the row that supplied that TIN.
+- When no row in the group has a valid TIN, the first row's value stays as uploaded
+  and DAT generation is blocked with the payee named. Nothing is invented.
+
+The consolidated row carries four extra fields for the records screen and for tests.
+They are never written to the DAT:
+
+```text
+distinct_payee_tins
+has_multiple_payee_tins
+distinct_payee_branch_codes
+has_multiple_payee_branch_codes
+```
+
+The records list shows two badges on such a group:
+
+```text
+4 rows merged
+Multiple TINs
+```
+
+Fix the conflicting TIN in the source workbook and re-upload the month if the merged
+group should carry the other one.
 
 ## Common Validation Blockers
 
@@ -319,5 +374,5 @@ php artisan test tests/Feature/ExpandedWtaxImportTest.php tests/Feature/Expanded
 Expected current result:
 
 ```text
-88 passed
+101 passed
 ```

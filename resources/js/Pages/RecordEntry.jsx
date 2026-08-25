@@ -653,9 +653,23 @@ function RecordEntry() {
                           {item.merged_rows > 1 && (
                             <Badge
                               className="border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-50"
-                              title={`${item.merged_rows} uploaded rows share this reporting month, TIN, ATC and rate, so they file as one line.`}
+                              title={`${item.merged_rows} uploaded rows share this reporting month, payee, ATC and rate, so they file as one line.`}
                             >
                               {item.merged_rows} rows merged
+                            </Badge>
+                          )}
+                          {/*
+                            The merged rows named one payee but disagreed about the TIN. A
+                            detail line carries only one, so the group keeps the first
+                            filable one and says so here -- the alternative is filing the
+                            same payee twice, which the BIR schedule does not want.
+                          */}
+                          {item.has_multiple_payee_tins && (
+                            <Badge
+                              className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50"
+                              title={`Rows share the same payee name and rate but have different TINs (${(item.distinct_payee_tins || []).join(", ")}). The DAT uses the first valid TIN in the group.`}
+                            >
+                              Multiple TINs
                             </Badge>
                           )}
                         </div>

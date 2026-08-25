@@ -122,7 +122,8 @@ class DashboardMetrics
 
         // The expanded module counts filing lines rather than uploaded rows, so the
         // card cannot disagree with the DAT it will produce: two rows sharing
-        // reporting month, TIN, ATC and rate are one 1601EQ/QAP detail line.
+        // reporting month, withholding agent, payee identity, ATC and rate are one
+        // 1601EQ/QAP detail line.
         // ExpandedWtaxEntry::consolidate() is the same rule the records list and the
         // generator apply. Only the count is re-read -- consolidation adds rows
         // together rather than dropping any, so the two sums above are unaffected.
@@ -353,9 +354,10 @@ class DashboardMetrics
      * How many 1601EQ/QAP detail lines a set of stored expanded rows becomes.
      *
      * Counted through ExpandedWtaxEntry::consolidate() rather than a DISTINCT over
-     * the four grouping columns, for two reasons: the count then matches the DAT's
-     * line count by construction, whatever shape the stored values are in, and
-     * COUNT(DISTINCT a,b,c,d) is MySQL-only -- the test suite runs on sqlite.
+     * the grouping columns, for three reasons: the count then matches the DAT's line
+     * count by construction, whatever shape the stored values are in; the payee
+     * identity the rule groups on is a normalised name that no single column holds;
+     * and COUNT(DISTINCT a,b,c,d) is MySQL-only -- the test suite runs on sqlite.
      *
      * @param  Collection<int, \App\Models\ExpandedWtaxEntry>  $rows
      */

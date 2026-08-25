@@ -86,8 +86,11 @@ class VatInputController extends Controller
 
         /*
          * Expanded WTAX is listed the way it is filed: rows sharing Reporting Month
-         * + TIN + ATC + EWT Rate are one line, with the income payment and the tax
-         * amount summed.
+         * + withholding agent + payee identity + ATC + EWT Rate are one line, with
+         * the income payment and the tax amount summed. Identity is the payee's
+         * name, so one payee at one rate is one row even when the uploaded TINs
+         * disagree; the group carries has_multiple_payee_tins so the screen can say
+         * which TIN reached the file.
          *
          * The grouping runs in PHP through ExpandedWtaxEntry::consolidate() rather
          * than as a SQL GROUP BY so this list, the Generate DAT screen's record

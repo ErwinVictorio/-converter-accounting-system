@@ -296,8 +296,8 @@ class DatFileController extends Controller
                 // The consolidated count, not the stored one, so the number on the
                 // Generate DAT screen is the number of detail lines the file will
                 // actually carry. Two uploaded lines for the same payee, ATC and rate
-                // are one line in the DAT, and the screen should say so before the
-                // file is downloaded rather than after.
+                // are one line in the DAT even when their TINs disagree, and the
+                // screen should say so before the file is downloaded rather than after.
                 'records_count' => ExpandedWtaxEntry::consolidate($records)->count(),
             ];
 
@@ -414,10 +414,11 @@ class DatFileController extends Controller
         }
 
         /*
-         * Validated as uploaded, then consolidated: rows sharing Reporting Month +
-         * TIN + ATC + EWT Rate become one detail line with the income payment and the
-         * tax amount summed. Checking the raw rows first means each row is measured
-         * against the figures the workbook actually stated.
+         * Validated as uploaded, then consolidated: rows sharing reporting month,
+         * withholding agent, payee identity, ATC and rate become one DAT line with
+         * the income payment and the tax amount summed. Checking the raw rows first
+         * means each row is measured against the figures the workbook actually
+         * stated.
          *
          * No re-sort afterwards, deliberately. consolidate() keeps the order rows
          * arrive in, so the payee_name / tax_rate ordering above carries through --

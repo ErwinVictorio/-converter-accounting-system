@@ -231,7 +231,7 @@ class ExpandedWtaxDatFileTest extends TestCase
     public function test_details_are_filed_in_payee_order(): void
     {
         // Inserted out of order on purpose. Every row here has a key of its own, so
-        // nothing merges and the three stay three: ZENITH carries its own TIN, and
+        // nothing merges and the three stay three: ZENITH is a different payee, and
         // the two ACERSTEEL rows differ by ATC and rate.
         $this->entry([
             'payee_name' => 'ZENITH HARDWARE',
@@ -372,8 +372,122 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->assertCount($count, array_slice($lines, 1, -1));
     }
 
-    public function test_only_the_selected_month_is_filed(): void
+    /**
+     * The rule this module was asked for, seen from the file: one payee at one rate
+     * is one detail line even when the uploaded rows disagree about the TIN.
+     */
+    public function test_one_payee_at_one_rate_files_as_one_detail_line(): void
     {
+        $this->entry();
+        $this->entry(['payee_tin' => '009999999', 'income_payment' => 1000.00, 'tax_withheld' => 10.00]);
+        $this->entry(['payee_tin' => '007-086-184-000', 'income_payment' => 500.00, 'tax_withheld' => 5.00]);
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+        );
+
+        // Three stored rows, one detail line: header + 1 detail + trailer.
+        $this->assertCount(3, $lines);
+
+        $detail = str_getcsv($lines[1]);
+
+        // Layout untouched: 14 fields, and none of the merge metadata the records
+        // screen reads is written into them.
+        $this->assertCount(14, $detail);
+        // The first filable TIN in the group, not the last and not a blend.
+        $this->assertSame('007086184', $detail[3]);
+        $this->assertSame('ACERSTEEL INDUSTRIAL SALES INC', $detail[5]);
+        $this->assertSame('1.00', $detail[11]);
+        $this->assertSame('3684216.00', $detail[12]);
+        $this->assertSame('36842.16', $detail[13]);
+        $this->assertSame('C1,1601EQ,008791976,0000,07/2026,3684216.00,36842.16', $lines[2]);
+    }
+
+    public function test_one_payee_at_two_rates_files_as_two_detail_lines(): void
+    {
+        $this->entry();
+        $this->entry(['atc_code' => 'WC160', 'tax_rate' => 2.00, 'income_payment' => 100000.00, 'tax_withheld' => 2000.00]);
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+        );
+
+        $this->assertCount(4, $lines);
+
+        $first = str_getcsv($lines[1]);
+        $second = str_getcsv($lines[2]);
+
+        $this->assertSame(['1', '2'], [$first[2], $second[2]]);
+        $this->assertSame(['ACERSTEEL INDUSTRIAL SALES INC', 'ACERSTEEL INDUSTRIAL SALES INC'], [$first[5], $second[5]]);
+        $this->assertSame(['1.00', '2.00'], [$first[11], $second[11]]);
+        $this->assertSame(['3682716.00', '100000.00'], [$first[12], $second[12]]);
+    }
+
+    public function test_a_name_based_merge_leaves_the_control_total_untouched(): void
+    {
+        $this->entry();
+        $this->entry(['payee_tin' => '009999999', 'income_payment' => 1000.00, 'tax_withheld' => 10.00]);
+        $this->individual();
+        $this->individual(['payee_tin' => '119999999', 'income_payment' => 100.00, 'tax_withheld' => 10.00]);
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+        );
+
+        // Four stored rows, two detail lines -- one per payee per rate.
+        $this->assertCount(4, $lines);
+
+        // Consolidation adds rows together rather than dropping any, so the trailer
+        // is still the sum of every stored row.
+        $control = str_getcsv($lines[3]);
+
+        $this->assertEqualsWithDelta(
+            (float) ExpandedWtaxEntry::sum('income_payment'),
+            (float) $control[5],
+            0.001
+        );
+        $this->assertEqualsWithDelta(
+            (float) ExpandedWtaxEntry::sum('tax_withheld'),
+            (float) $control[6],
+            0.001
+        );
+        $this->assertSame('C1,1601EQ,008791976,0000,07/2026,3689681.60,37433.72', $lines[3]);
+    }
+
+    /**
+     * The format is settled and validated, so a merge must not move a field. Every
+     * record type keeps its own field count and its own leading codes.
+     */
+    public function test_the_record_layout_survives_a_name_based_merge(): void
+    {
+        $this->entry();
+        $this->entry(['payee_tin' => '009999999', 'payee_branch_code' => '0002', 'income_payment' => 1000.00, 'tax_withheld' => 10.00]);
+        $this->individual();
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+        );
+
+        $this->assertCount(7, str_getcsv($lines[0]));
+        $this->assertCount(7, str_getcsv($lines[count($lines) - 1]));
+        $this->assertStringStartsWith('HQAP,H1601EQ,', $lines[0]);
+        $this->assertStringStartsWith('C1,1601EQ,', $lines[count($lines) - 1]);
+
+        foreach (array_slice($lines, 1, -1) as $line) {
+            $fields = str_getcsv($line);
+
+            $this->assertCount(14, $fields);
+            $this->assertSame('D1', $fields[0]);
+            $this->assertSame('1601EQ', $fields[1]);
+            $this->assertSame('07/2026', $fields[9]);
+        }
+
+        // Branch code 0002 belonged to the row whose TIN lost the tie-break, so it
+        // is recorded on the records screen and not in the file.
+        $this->assertStringNotContainsString('0002', implode('', $lines));
+    }
+
+    public function test_only_the_selected_month_is_filed(): void    {
         $this->entry();
         $this->entry(['reporting_period' => '2026-06-30', 'payee_name' => 'JUNE PAYEE INC', 'company_name' => 'JUNE PAYEE INC']);
 
