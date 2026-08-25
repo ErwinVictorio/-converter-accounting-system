@@ -61,7 +61,8 @@ const RECORD_TYPES = {
 };
 
 function RecordEntry() {
-  const { flash, vatInputs, salesVatInputs, expandedWtaxEntries, filters } = usePage().props;
+  const { flash, vatInputs, salesVatInputs, expandedWtaxEntries, birCompanies = [], filters } = usePage().props;
+  const defaultBirCompany = birCompanies[0] || { tin: "008791976", branch_code: "0000", name: "FORTRESS STEEL INC." };
   const [isDragging, setIsDragging] = useState(false);
   const [searchTerm, setSearchTerm] = useState(filters?.search || "");
   const [selectedBirRecord, setSelectedBirRecord] = useState(null);
@@ -72,10 +73,13 @@ function RecordEntry() {
     excel_file: null,
     reporting_month: new Date().toISOString().slice(0, 7),
     record_type: "purchase",
+    withholding_agent_tin: defaultBirCompany.tin,
+    withholding_agent_branch_code: defaultBirCompany.branch_code || "0000",
   });
   const isSalesMode = data.record_type === "sales";
   const isExpandedMode = data.record_type === "expanded";
   const recordType = RECORD_TYPES[data.record_type] || RECORD_TYPES.purchase;
+  const selectedBirCompanyKey = `${data.withholding_agent_tin}|${data.withholding_agent_branch_code}`;
 
   const {
     data: birData,
@@ -231,6 +235,15 @@ function RecordEntry() {
     });
   };
 
+  const handleWithholdingAgentChange = (value) => {
+    const [tin, branchCode] = value.split("|");
+    setData((current) => ({
+      ...current,
+      withholding_agent_tin: tin,
+      withholding_agent_branch_code: branchCode || "0000",
+    }));
+  };
+
   // Submit Form to Backend
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -311,13 +324,69 @@ function RecordEntry() {
                 {errors.record_type && (
                   <p className="text-xs text-red-500 font-medium">{errors.record_type}</p>
                 )}
-                {isExpandedMode && (
+                {false && isExpandedMode && (
                   <p className="text-xs text-slate-500">
                     Upload the BIR 1601EQ Schedule 1 workbook — layout below.
                   </p>
                 )}
               </div>
             </div>
+
+            {isExpandedMode && (
+              <div className="mb-5 grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Known Company
+                  </label>
+                  <select
+                    value={selectedBirCompanyKey}
+                    onChange={(e) => handleWithholdingAgentChange(e.target.value)}
+                    className={`flex h-10 w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-[3px] ${
+                      errors.withholding_agent_tin
+                        ? "border-red-500 focus-visible:ring-red-500/20"
+                        : "border-slate-300 focus-visible:border-blue-500 focus-visible:ring-blue-500/20"
+                    }`}
+                  >
+                    {birCompanies.map((company) => (
+                      <option
+                        key={`${company.tin}|${company.branch_code}`}
+                        value={`${company.tin}|${company.branch_code}`}
+                      >
+                        {company.name} ({company.tin}-{company.branch_code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Company TIN <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={data.withholding_agent_tin}
+                    onChange={(e) => setData("withholding_agent_tin", e.target.value.replace(/\D/g, "").slice(0, 9))}
+                    className={errors.withholding_agent_tin ? "border-red-500 focus-visible:ring-red-500" : ""}
+                  />
+                  {errors.withholding_agent_tin && (
+                    <p className="text-xs text-red-500 font-medium">{errors.withholding_agent_tin}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Branch Code <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={data.withholding_agent_branch_code}
+                    onChange={(e) => setData("withholding_agent_branch_code", e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    className={errors.withholding_agent_branch_code ? "border-red-500 focus-visible:ring-red-500" : ""}
+                  />
+                  {errors.withholding_agent_branch_code && (
+                    <p className="text-xs text-red-500 font-medium">{errors.withholding_agent_branch_code}</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/*
               The upload stores what the workbook says and recomputes nothing, so
@@ -326,6 +395,50 @@ function RecordEntry() {
               nobody opens mid-upload.
             */}
             {isExpandedMode && (
+              <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 text-xs leading-relaxed text-slate-600">
+                <p className="text-sm font-semibold text-slate-800">
+                  Expanded WTAX accepted file layouts
+                </p>
+                <ul className="mt-2 list-disc space-y-1.5 pl-4">
+                  <li>
+                    BIR 1601EQ Schedule 1: headings on{" "}
+                    <span className="font-medium text-slate-800">row 1</span>, data on row 2, with{" "}
+                    <span className="font-mono text-[11px] text-slate-800">
+                      Reporting_Month, Vendor_TIN, branchCode, companyName, surName, firstName,
+                      middleName, ATC, income_payment, ewt_rate, tax_amount
+                    </span>.
+                  </li>
+                  <li>
+                    System Expanded WTAX export: headings on{" "}
+                    <span className="font-medium text-slate-800">row 3</span>, data on row 4, with{" "}
+                    <span className="font-mono text-[11px] text-slate-800">
+                      No, Date, Supplier Name, TIN, Reference, (1%), (2%), (5%), (10%), (15%), Total
+                    </span>.
+                  </li>
+                  <li>
+                    For BIR Schedule 1, ATC and computed amounts are read from the workbook exactly as filed.
+                  </li>
+                  <li>
+                    For the system export, each non-zero rate column becomes one WTAX line; income payment
+                    is computed from tax withheld and rate because that export has no income-payment column.
+                  </li>
+                  <li>
+                    System export ATC codes come from the configured rate mapping: 1% WC158, 2% WC160,
+                    5% WC100, and 10% WC139 by default.
+                  </li>
+                  <li>
+                    The row Date or Reporting_Month must fall inside the selected month, and re-uploading
+                    a month replaces that month's rows.
+                  </li>
+                  <li>
+                    Rows sharing reporting month, TIN, ATC and rate are listed and filed as a single line,
+                    with their income payment and tax amount added together.
+                  </li>
+                </ul>
+              </div>
+            )}
+
+            {false && isExpandedMode && (
               <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 text-xs leading-relaxed text-slate-600">
                 <p className="text-sm font-semibold text-slate-800">
                   Expanded WTAX file layout — BIR 1601EQ Schedule 1
@@ -512,6 +625,7 @@ function RecordEntry() {
               <TableHeader>
                 <TableRow className="bg-slate-50 hover:bg-slate-50">
                   <TableHead className="font-semibold text-slate-700">Payee</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Agent TIN</TableHead>
                   <TableHead className="font-semibold text-slate-700">TIN</TableHead>
                   <TableHead className="font-semibold text-slate-700">Branch</TableHead>
                   <TableHead className="font-semibold text-slate-700">ATC</TableHead>
@@ -545,6 +659,9 @@ function RecordEntry() {
                             </Badge>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
+                        {item.withholding_agent_tin}-{item.withholding_agent_branch_code || "0000"}
                       </TableCell>
                       <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
                         {item.payee_tin || "No TIN"}
@@ -582,7 +699,7 @@ function RecordEntry() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-32 text-center text-slate-500">
+                    <TableCell colSpan={9} className="h-32 text-center text-slate-500">
                       No expanded withholding tax records found.
                     </TableCell>
                   </TableRow>

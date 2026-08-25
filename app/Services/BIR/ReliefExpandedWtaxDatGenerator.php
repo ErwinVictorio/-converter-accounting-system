@@ -7,13 +7,16 @@ use Illuminate\Support\Collection;
 use RuntimeException;
 
 /**
- * Builds the BIR form 1604E schedule of expanded withholding tax.
+ * Builds the BIR 1601EQ Quarterly Alphalist of Payees schedule.
  *
- * Shape (verified against Docs/Expanded/0087919760000123120251604E.dat):
+ * Shape required by the BIR Alphalist Validation System for 1601EQ/QAP:
  *
- *   H1604E,{agent tin},{agent branch},{m/d/Y}                        4 fields
- *   D3,1604E,{agent tin},{agent branch},{m/d/Y},{seq},...           16 fields
- *   C3,1604E,{agent tin},{agent branch},{m/d/Y},{total withheld}     6 fields
+ *   HQAP,H1601EQ,{agent tin},{agent branch},{m/d/Y},{agent name},{rdo} 7 fields
+ *   D1,1601EQ,{agent tin},{agent branch},{m/d/Y},{seq},{payee tin},
+ *      {payee branch},{company},{last},{first},{middle},{atc},
+ *      {income payment},{rate},{tax withheld}                         16 fields
+ *   C1,1601EQ,{agent tin},{agent branch},{m/d/Y},{total income},
+ *      {total withheld}                                                7 fields
  *
  * Two things differ from the RELIEF generators in this namespace and are
  * deliberate:
@@ -43,7 +46,7 @@ use RuntimeException;
  */
 class ReliefExpandedWtaxDatGenerator
 {
-    private const FORM_TYPE = '1604E';
+    private const FORM_TYPE = '1601EQ';
 
     /**
      * The longest company name in the reference file is exactly 50 characters.
@@ -67,29 +70,30 @@ class ReliefExpandedWtaxDatGenerator
     }
 
     /**
-     * e.g. 0087919760000123120251604E.dat for TIN 008791976, branch 0000,
-     * December 2025.
+     * The BIR 1601EQ validator expects TIN + branch + MMYYYY + 1601EQ.DAT.
      */
     public function filename(array $company, Carbon $period): string
     {
         return $this->birTin($this->companyTin($company))
             . $this->branch($company)
-            . $period->copy()->endOfMonth()->format('mdY')
-            . self::FORM_TYPE
-            . '.dat';
+            . $period->copy()->endOfMonth()->format('mY')
+            . '1601EQ.DAT';
     }
 
     private function header(array $company, Carbon $period): string
     {
         $fields = [
+            'HQAP',
             'H' . self::FORM_TYPE,
             $this->birTin($this->companyTin($company)),
             $this->branch($company),
             $period->format('m/d/Y'),
+            $this->birName($this->companyName($company)),
+            $this->rdoCode($company),
         ];
 
-        if (count($fields) !== 4) {
-            throw new RuntimeException('1604E Header must contain exactly 4 fields.');
+        if (count($fields) !== 7) {
+            throw new RuntimeException('1601EQ QAP header must contain exactly 7 fields.');
         }
 
         return implode(',', $fields);
@@ -100,7 +104,7 @@ class ReliefExpandedWtaxDatGenerator
         $row = $this->row($transaction);
 
         $fields = [
-            'D3',
+            'D1',
             self::FORM_TYPE,
             $this->birTin($this->companyTin($company)),
             $this->branch($company),
@@ -119,7 +123,7 @@ class ReliefExpandedWtaxDatGenerator
         ];
 
         if (count($fields) !== 16) {
-            throw new RuntimeException('1604E Detail must contain exactly 16 fields.');
+            throw new RuntimeException('1601EQ QAP detail must contain exactly 16 fields.');
         }
 
         return implode(',', $fields);
@@ -127,23 +131,27 @@ class ReliefExpandedWtaxDatGenerator
 
     private function trailer(array $company, Collection $transactions, Carbon $period): string
     {
-        $total = 0.0;
+        $totalIncome = 0.0;
+        $totalTax = 0.0;
 
         foreach ($transactions as $transaction) {
-            $total += $this->amount($this->row($transaction), 'tax_withheld');
+            $row = $this->row($transaction);
+            $totalIncome += $this->amount($row, 'income_payment');
+            $totalTax += $this->amount($row, 'tax_withheld');
         }
 
         $fields = [
-            'C3',
+            'C1',
             self::FORM_TYPE,
             $this->birTin($this->companyTin($company)),
             $this->branch($company),
             $period->format('m/d/Y'),
-            $this->number(round($total, 2)),
+            $this->number(round($totalIncome, 2)),
+            $this->number(round($totalTax, 2)),
         ];
 
-        if (count($fields) !== 6) {
-            throw new RuntimeException('1604E Control record must contain exactly 6 fields.');
+        if (count($fields) !== 7) {
+            throw new RuntimeException('1601EQ QAP control record must contain exactly 7 fields.');
         }
 
         return implode(',', $fields);
@@ -165,6 +173,16 @@ class ReliefExpandedWtaxDatGenerator
     private function companyTin(array $company): string
     {
         return (string) ($company['tin'] ?? '');
+    }
+
+    private function companyName(array $company): string
+    {
+        return (string) ($company['registered_name'] ?? $company['name'] ?? '');
+    }
+
+    private function rdoCode(array $company): string
+    {
+        return substr($this->digits((string) ($company['rdo_code'] ?? '')), 0, 3);
     }
 
     /**

@@ -3,7 +3,7 @@
 namespace App\Services\BIR;
 
 /**
- * Checks one stored expanded withholding tax row before it reaches the 1604E
+ * Checks one stored expanded withholding tax row before it reaches the 1601EQ/QAP
  * generator, so a bad row is reported on screen instead of silently producing a
  * DAT the BIR will bounce.
  *

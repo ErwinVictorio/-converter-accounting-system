@@ -269,7 +269,7 @@ class DashboardTest extends TestCase
     }
 
     /**
-     * Withholding tax is remitted on 1604E and cannot be credited against output
+     * Withholding tax is remitted on 1601EQ/QAP and cannot be credited against output
      * VAT, so an expanded row must move none of the VAT figures. Without this,
      * the obvious "one more input" refactor would silently understate the VAT
      * payable by the whole month's withholding.

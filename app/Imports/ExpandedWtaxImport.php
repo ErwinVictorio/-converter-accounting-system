@@ -7,7 +7,6 @@ use Illuminate\Support\Carbon;
 use Maatwebsite\Excel\Concerns\OnEachRow;
 use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
 use Maatwebsite\Excel\Concerns\WithCalculatedFormulas;
-use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Row;
 
 /**
@@ -44,7 +43,7 @@ use Maatwebsite\Excel\Row;
  * Header and reporting-month checks that must fail the whole file live in
  * ExpandedWtaxUploadPreflight, which runs before the month is replaced.
  */
-class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFormulas, WithHeadingRow
+class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFormulas
 {
     /**
      * The BIR heading as written in the template, mapped to the heading keys
@@ -70,33 +69,76 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
         'tax_amount' => ['tax_amount', 'taxamount'],
     ];
 
+    public const SYSTEM_COLUMNS = [
+        'No' => ['no'],
+        'Date' => ['date'],
+        'Supplier Name' => ['suppliername', 'supplier'],
+        'TIN' => ['tin'],
+        'Reference' => ['reference'],
+        '(1%)' => ['1', '1percent', 'onepercent'],
+        '(2%)' => ['2', '2percent', 'twopercent'],
+        '(5%)' => ['5', '5percent', 'fivepercent'],
+        '(10%)' => ['10', '10percent', 'tenpercent'],
+        '(15%)' => ['15', '15percent', 'fifteenpercent'],
+        'Total' => ['total'],
+    ];
+
+    private const SYSTEM_RATES = [
+        '(1%)' => 1.00,
+        '(2%)' => 2.00,
+        '(5%)' => 5.00,
+        '(10%)' => 10.00,
+        '(15%)' => 15.00,
+    ];
+
     /** The DAT's company-name field, and the reference file's longest entry. */
     private const COMPANY_NAME_LIMIT = 50;
 
     protected string $reportingPeriod;
 
-    public function __construct(?string $reportingPeriod = null)
+    private array $withholdingAgent;
+
+    /** @var 'bir'|'system'|null */
+    private ?string $layout = null;
+
+    /** @var array<string, int> */
+    private array $columnIndexes = [];
+
+    public function __construct(?string $reportingPeriod = null, ?array $withholdingAgent = null)
     {
         $this->reportingPeriod = Carbon::parse($reportingPeriod ?? now()->toDateString())
             ->endOfMonth()
             ->toDateString();
-    }
-
-    /**
-     * The BIR template puts its headings on row 1, unlike the in-house workbook
-     * this module first read, which had two title rows above them.
-     */
-    public function headingRow(): int
-    {
-        return 1;
+        $this->withholdingAgent = $this->normaliseWithholdingAgent($withholdingAgent);
     }
 
     public function onRow(Row $row): void
     {
         // true = resolve formulas. Column K is a formula in the BIR template, and
         // its computed value is the tax amount the file is stating.
-        $data = $row->toArray(null, true);
+        $data = array_values($row->toArray(null, true));
 
+        if ($this->layout === null) {
+            $this->detectHeadingRow($data);
+
+            return;
+        }
+
+        if ($this->isBlankRow($data)) {
+            return;
+        }
+
+        if ($this->layout === 'system') {
+            $this->importSystemRow($data);
+
+            return;
+        }
+
+        $this->importBirRow($data);
+    }
+
+    private function importBirRow(array $data): void
+    {
         $companyName = $this->birName($this->value($data, 'companyName'), self::COMPANY_NAME_LIMIT);
         $lastName = $this->birName($this->value($data, 'surName'));
         $firstName = $this->birName($this->value($data, 'firstName'));
@@ -115,6 +157,7 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
 
         ExpandedWtaxEntry::create([
             'reporting_period' => $this->reportingPeriod,
+            ...$this->withholdingAgent,
             'payee_name' => $isCompany
                 ? $companyName
                 : $this->individualName($lastName, $firstName, $middleName),
@@ -133,6 +176,70 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
             'tax_rate' => $this->parseNumber($this->value($data, 'ewt_rate')),
             'tax_withheld' => $this->parseNumber($this->value($data, 'tax_amount')),
         ]);
+    }
+
+    private function importSystemRow(array $data): void
+    {
+        $rawName = (string) $this->systemValue($data, 'Supplier Name');
+        [$payeeType, $companyName, $lastName, $firstName, $middleName, $payeeName] = $this->systemPayee($rawName);
+        $tin = $this->digits($this->systemValue($data, 'TIN'));
+
+        if ($payeeName === '' && $tin === '') {
+            return;
+        }
+
+        if (in_array($payeeName, ['TOTAL', 'GRAND TOTAL', 'SUBTOTAL'], true)) {
+            return;
+        }
+
+        foreach (self::SYSTEM_RATES as $column => $rate) {
+            $taxWithheld = $this->parseNumber($this->systemValue($data, $column));
+
+            if (abs($taxWithheld) < 0.005) {
+                continue;
+            }
+
+            $atcCode = $this->defaultAtcCode($tin, $payeeType, $rate);
+
+            ExpandedWtaxEntry::create([
+                'reporting_period' => $this->reportingPeriod,
+                ...$this->withholdingAgent,
+                'payee_name' => $payeeName,
+                'payee_type' => $payeeType,
+                'payee_tin' => substr($tin, 0, 9),
+                'payee_branch_code' => '0000',
+                'company_name' => $companyName ?: null,
+                'last_name' => $lastName ?: null,
+                'first_name' => $firstName ?: null,
+                'middle_name' => $middleName ?: null,
+                'atc_code' => $atcCode,
+                'income_payment' => round($taxWithheld / ($rate / 100), 2),
+                'tax_rate' => $rate,
+                'tax_withheld' => $taxWithheld,
+            ]);
+        }
+    }
+
+    private function detectHeadingRow(array $data): void
+    {
+        $headings = $this->headingMap($data);
+
+        $birIndexes = $this->indexesFor($headings, self::COLUMNS);
+        if (count($birIndexes) === count(self::COLUMNS)) {
+            $this->layout = 'bir';
+            $this->columnIndexes = $birIndexes;
+
+            return;
+        }
+
+        $systemIndexes = $this->indexesFor($headings, self::SYSTEM_COLUMNS);
+        if (count($systemIndexes) >= 10
+            && isset($systemIndexes['Supplier Name'], $systemIndexes['TIN'])
+            && $this->hasAnySystemRateColumn($systemIndexes)
+        ) {
+            $this->layout = 'system';
+            $this->columnIndexes = $systemIndexes;
+        }
     }
 
     /**
@@ -214,17 +321,166 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
      */
     private function value(array $data, string $column): mixed
     {
-        foreach (self::COLUMNS[$column] as $key) {
-            if (array_key_exists($key, $data)) {
-                return $data[$key];
-            }
-        }
+        $index = $this->columnIndexes[$column] ?? null;
 
-        return null;
+        return $index === null ? null : ($data[$index] ?? null);
+    }
+
+    private function systemValue(array $data, string $column): mixed
+    {
+        $index = $this->columnIndexes[$column] ?? null;
+
+        return $index === null ? null : ($data[$index] ?? null);
     }
 
     private function digits($value): string
     {
         return preg_replace('/\D/', '', (string) $value);
+    }
+
+    private function defaultAtcCode(string $tin, string $payeeType, float $rate): ?string
+    {
+        $rateKey = number_format($rate, 2, '.', '');
+        $tinKey = substr($this->digits($tin), 0, 9);
+        $overrides = (array) config('bir.expanded_wtax.payee_atc_overrides', []);
+
+        if (isset($overrides[$tinKey][$rateKey])) {
+            return strtoupper(trim((string) $overrides[$tinKey][$rateKey]));
+        }
+
+        $defaultRateCodes = (array) config('bir.expanded_wtax.default_rate_codes', []);
+        $mapping = $defaultRateCodes[$rateKey][$payeeType] ?? null;
+
+        return $mapping ? strtoupper(trim((string) $mapping)) : null;
+    }
+
+    /**
+     * The system export has one payee-name column. Names shaped as "SURNAME,
+     * FIRST MIDDLE" are individuals unless they also carry a company suffix.
+     *
+     * @return array{0: string, 1: string, 2: string, 3: string, 4: string, 5: string}
+     */
+    private function systemPayee(string $rawName): array
+    {
+        $rawName = trim($rawName);
+
+        if ($rawName === '') {
+            return ['company', '', '', '', '', ''];
+        }
+
+        if (str_contains($rawName, ',') && ! $this->looksLikeCompany($rawName)) {
+            [$last, $given] = array_pad(explode(',', $rawName, 2), 2, '');
+            $parts = preg_split('/\s+/', trim($given)) ?: [];
+            $first = array_shift($parts) ?? '';
+            $middle = implode(' ', $parts);
+            $lastName = $this->birName($last);
+            $firstName = $this->birName($first);
+            $middleName = $this->birName($middle);
+
+            return [
+                'individual',
+                '',
+                $lastName,
+                $firstName,
+                $middleName,
+                $this->individualName($lastName, $firstName, $middleName),
+            ];
+        }
+
+        $companyName = $this->birName($rawName, self::COMPANY_NAME_LIMIT);
+
+        return ['company', $companyName, '', '', '', $companyName];
+    }
+
+    private function looksLikeCompany(string $name): bool
+    {
+        return preg_match('/\b(INC|INCORPORATED|CORP|CORPORATION|COMPANY|CO|OPC|SERVICES|AGENCY|SUPPLY|SALES|HARDWARE|TRADING)\b/i', $name) === 1;
+    }
+
+    /**
+     * @param  array<int, mixed>  $data
+     * @return array<string, int>
+     */
+    private function headingMap(array $data): array
+    {
+        $headings = [];
+
+        foreach ($data as $index => $value) {
+            $key = $this->normaliseHeading($value);
+
+            if ($key !== '') {
+                $headings[$key] = $index;
+            }
+        }
+
+        return $headings;
+    }
+
+    /**
+     * @param  array<string, int>  $headings
+     * @param  array<string, array<int, string>>  $columns
+     * @return array<string, int>
+     */
+    private function indexesFor(array $headings, array $columns): array
+    {
+        $indexes = [];
+
+        foreach ($columns as $column => $acceptedKeys) {
+            foreach ($acceptedKeys as $key) {
+                $normalised = $this->normaliseHeading($key);
+
+                if (array_key_exists($normalised, $headings)) {
+                    $indexes[$column] = $headings[$normalised];
+
+                    break;
+                }
+            }
+        }
+
+        return $indexes;
+    }
+
+    /**
+     * @param  array<string, int>  $indexes
+     */
+    private function hasAnySystemRateColumn(array $indexes): bool
+    {
+        foreach (array_keys(self::SYSTEM_RATES) as $column) {
+            if (array_key_exists($column, $indexes)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normaliseHeading($value): string
+    {
+        return strtolower(preg_replace('/[^a-z0-9]/i', '', trim((string) $value)));
+    }
+
+    private function isBlankRow(array $data): bool
+    {
+        foreach ($data as $value) {
+            if (trim((string) $value) !== '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function normaliseWithholdingAgent(?array $agent): array
+    {
+        $default = config('bir.companies.008791976', []);
+        $agent = $agent ?: $default;
+        $tin = substr($this->digits($agent['tin'] ?? $default['tin'] ?? '008791976'), 0, 9);
+        $branch = substr($this->digits($agent['branch_code'] ?? '0000'), 0, 4);
+
+        return [
+            'withholding_agent_tin' => $tin === '' ? '008791976' : $tin,
+            'withholding_agent_branch_code' => $branch === '' ? '0000' : str_pad($branch, 4, '0', STR_PAD_LEFT),
+            'withholding_agent_name' => (string) ($agent['name'] ?? $agent['registered_name'] ?? $default['name'] ?? 'FORTRESS STEEL INC.'),
+        ];
     }
 }

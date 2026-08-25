@@ -71,7 +71,7 @@ const MODULES = [
 ];
 
 /**
- * Expanded withholding tax is filed on 1604E, not on a VAT return, so it stays
+ * Expanded withholding tax is filed on 1601EQ/QAP, not on a VAT return, so it stays
  * out of the VAT card row and gets its own panel. It is still a monthly figure
  * per payee, so it does belong in both trend charts.
  */
@@ -466,7 +466,7 @@ export default function Dashboard({
   ];
 
   /**
-   * The 1604E panel. Tax withheld leads because that is the amount remitted;
+   * The 1601EQ/QAP panel. Tax withheld leads because that is the amount remitted;
    * the income payments it was computed from and the line count follow. None of
    * these figures touch the VAT breakdown above -- withholding tax is not
    * creditable against output VAT.
@@ -626,7 +626,7 @@ export default function Dashboard({
 
           {/*
             Expanded withholding tax sits below the VAT cards rather than among
-            them: it is remitted on 1604E, so folding it into that row would read
+            them: it is remitted on 1601EQ/QAP, so folding it into that row would read
             as though it were part of the VAT position.
           */}
           <motion.div variants={item} className="min-w-0">
@@ -643,7 +643,7 @@ export default function Dashboard({
                   <h2 className="text-xs font-bold uppercase tracking-[0.1em] text-slate-700">
                     Expanded Withholding Tax
                     <span className="ml-1.5 font-medium normal-case text-slate-400">
-                      (1604E · {monthLabel})
+                      (1601EQ · {monthLabel})
                     </span>
                   </h2>
                 </div>

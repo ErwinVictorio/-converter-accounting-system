@@ -1,0 +1,292 @@
+TIN of Withholding Agent TIN: 008791976-0000
+Alphalist Form              : 1601EQ
+Taxable Month                : 04/2026
+
+LINE NUM       SCHEDULE     ERROR DESCRIPTION
+----------     --------     ------------------------------------------------------------
+0000000001     1.0          Invalid Form Type Code.
+0000000001     1.0          Specified Month End Date not the same!
+0000000002     1.0          Invalid Payees TIN
+0000000002     1.0          Invalid Characters in TIN of Payee
+0000000002     1.0          ATC is invalid
+0000000002     1.0          Amount of Income Payment is empty or zero
+0000000002     1.0          Amount of Tax Withheld is empty or zero
+0000000002     1.0          Detail Insufficient Column
+0000000003     1.0          Invalid Payees TIN
+0000000003     1.0          Invalid Characters in TIN of Payee
+0000000003     1.0          ATC is invalid
+0000000003     1.0          Amount of Income Payment is empty or zero
+0000000003     1.0          Amount of Tax Withheld is empty or zero
+0000000003     1.0          Detail Insufficient Column
+0000000004     1.0          Invalid Payees TIN
+0000000004     1.0          Invalid Characters in TIN of Payee
+0000000004     1.0          ATC is invalid
+0000000004     1.0          Amount of Income Payment is empty or zero
+0000000004     1.0          Amount of Tax Withheld is empty or zero
+0000000004     1.0          Detail Insufficient Column
+0000000005     1.0          Invalid Payees TIN
+0000000005     1.0          Invalid Characters in TIN of Payee
+0000000005     1.0          ATC is invalid
+0000000005     1.0          Amount of Income Payment is empty or zero
+0000000005     1.0          Amount of Tax Withheld is empty or zero
+0000000005     1.0          Detail Insufficient Column
+0000000006     1.0          Invalid Payees TIN
+0000000006     1.0          Invalid Characters in TIN of Payee
+0000000006     1.0          ATC is invalid
+0000000006     1.0          Amount of Income Payment is empty or zero
+0000000006     1.0          Amount of Tax Withheld is empty or zero
+0000000006     1.0          Detail Insufficient Column
+0000000007     1.0          Invalid Payees TIN
+0000000007     1.0          Invalid Characters in TIN of Payee
+0000000007     1.0          ATC is invalid
+0000000007     1.0          Amount of Income Payment is empty or zero
+0000000007     1.0          Amount of Tax Withheld is empty or zero
+0000000007     1.0          Detail Insufficient Column
+0000000008     1.0          Invalid Payees TIN
+0000000008     1.0          Invalid Characters in TIN of Payee
+0000000008     1.0          ATC is invalid
+0000000008     1.0          Amount of Income Payment is empty or zero
+0000000008     1.0          Amount of Tax Withheld is empty or zero
+0000000008     1.0          Detail Insufficient Column
+0000000009     1.0          Invalid length of Payees Branch Code
+0000000009     1.0          Invalid Characters in Branch Code of Payee
+0000000009     1.0          ATC is invalid
+0000000009     1.0          Amount of Income Payment is empty or zero
+0000000009     1.0          Amount of Tax Withheld is empty or zero
+0000000009     1.0          Detail Insufficient Column
+0000000010     1.0          Invalid Payees TIN
+0000000010     1.0          Invalid Characters in TIN of Payee
+0000000010     1.0          ATC is invalid
+0000000010     1.0          Amount of Income Payment is empty or zero
+0000000010     1.0          Amount of Tax Withheld is empty or zero
+0000000010     1.0          Detail Insufficient Column
+0000000011     1.0          Invalid Payees TIN
+0000000011     1.0          Invalid Characters in TIN of Payee
+0000000011     1.0          ATC is invalid
+0000000011     1.0          Amount of Income Payment is empty or zero
+0000000011     1.0          Amount of Tax Withheld is empty or zero
+0000000011     1.0          Detail Insufficient Column
+0000000012     1.0          Invalid Payees TIN
+0000000012     1.0          Invalid Characters in TIN of Payee
+0000000012     1.0          ATC is invalid
+0000000012     1.0          Amount of Income Payment is empty or zero
+0000000012     1.0          Amount of Tax Withheld is empty or zero
+0000000012     1.0          Detail Insufficient Column
+0000000013     1.0          Invalid Payees TIN
+0000000013     1.0          Invalid Characters in TIN of Payee
+0000000013     1.0          ATC is invalid
+0000000013     1.0          Amount of Income Payment is empty or zero
+0000000013     1.0          Amount of Tax Withheld is empty or zero
+0000000013     1.0          Detail Insufficient Column
+0000000014     1.0          Invalid length of Payees Branch Code
+0000000014     1.0          Invalid Characters in Branch Code of Payee
+0000000014     1.0          ATC is invalid
+0000000014     1.0          Amount of Income Payment is empty or zero
+0000000014     1.0          Amount of Tax Withheld is empty or zero
+0000000014     1.0          Detail Insufficient Column
+0000000015     1.0          Invalid Payees TIN
+0000000015     1.0          Invalid Characters in TIN of Payee
+0000000015     1.0          ATC is invalid
+0000000015     1.0          Amount of Income Payment is empty or zero
+0000000015     1.0          Amount of Tax Withheld is empty or zero
+0000000015     1.0          Detail Insufficient Column
+0000000016     1.0          Invalid Payees TIN
+0000000016     1.0          Invalid Characters in TIN of Payee
+0000000016     1.0          ATC is invalid
+0000000016     1.0          Amount of Income Payment is empty or zero
+0000000016     1.0          Amount of Tax Withheld is empty or zero
+0000000016     1.0          Detail Insufficient Column
+0000000017     1.0          Invalid Payees TIN
+0000000017     1.0          Invalid Characters in TIN of Payee
+0000000017     1.0          ATC is invalid
+0000000017     1.0          Amount of Income Payment is empty or zero
+0000000017     1.0          Amount of Tax Withheld is empty or zero
+0000000017     1.0          Detail Insufficient Column
+0000000018     1.0          Invalid Payees TIN
+0000000018     1.0          Invalid Characters in TIN of Payee
+0000000018     1.0          ATC is invalid
+0000000018     1.0          Amount of Income Payment is empty or zero
+0000000018     1.0          Amount of Tax Withheld is empty or zero
+0000000018     1.0          Detail Insufficient Column
+0000000019     1.0          Invalid Payees TIN
+0000000019     1.0          Invalid Characters in TIN of Payee
+0000000019     1.0          ATC is invalid
+0000000019     1.0          Amount of Income Payment is empty or zero
+0000000019     1.0          Amount of Tax Withheld is empty or zero
+0000000019     1.0          Detail Insufficient Column
+0000000020     1.0          Invalid Payees TIN
+0000000020     1.0          Invalid Characters in TIN of Payee
+0000000020     1.0          ATC is invalid
+0000000020     1.0          Amount of Income Payment is empty or zero
+0000000020     1.0          Amount of Tax Withheld is empty or zero
+0000000020     1.0          Detail Insufficient Column
+0000000021     1.0          Invalid Payees TIN
+0000000021     1.0          Invalid Characters in TIN of Payee
+0000000021     1.0          ATC is invalid
+0000000021     1.0          Amount of Income Payment is empty or zero
+0000000021     1.0          Amount of Tax Withheld is empty or zero
+0000000021     1.0          Detail Insufficient Column
+0000000022     1.0          Invalid Payees TIN
+0000000022     1.0          Invalid Characters in TIN of Payee
+0000000022     1.0          ATC is invalid
+0000000022     1.0          Amount of Income Payment is empty or zero
+0000000022     1.0          Amount of Tax Withheld is empty or zero
+0000000022     1.0          Detail Insufficient Column
+0000000023     1.0          Invalid Payees TIN
+0000000023     1.0          Invalid Characters in TIN of Payee
+0000000023     1.0          ATC is invalid
+0000000023     1.0          Amount of Income Payment is empty or zero
+0000000023     1.0          Amount of Tax Withheld is empty or zero
+0000000023     1.0          Detail Insufficient Column
+0000000024     1.0          Invalid length of Payees Branch Code
+0000000024     1.0          Invalid Characters in Branch Code of Payee
+0000000024     1.0          ATC is invalid
+0000000024     1.0          Amount of Income Payment is empty or zero
+0000000024     1.0          Amount of Tax Withheld is empty or zero
+0000000024     1.0          Detail Insufficient Column
+0000000025     1.0          Invalid Payees TIN
+0000000025     1.0          Invalid Characters in TIN of Payee
+0000000025     1.0          ATC is invalid
+0000000025     1.0          Amount of Income Payment is empty or zero
+0000000025     1.0          Amount of Tax Withheld is empty or zero
+0000000025     1.0          Detail Insufficient Column
+0000000026     1.0          Invalid Payees TIN
+0000000026     1.0          Invalid Characters in TIN of Payee
+0000000026     1.0          ATC is invalid
+0000000026     1.0          Amount of Income Payment is empty or zero
+0000000026     1.0          Amount of Tax Withheld is empty or zero
+0000000026     1.0          Detail Insufficient Column
+0000000027     1.0          Invalid Payees TIN
+0000000027     1.0          Invalid Characters in TIN of Payee
+0000000027     1.0          ATC is invalid
+0000000027     1.0          Amount of Income Payment is empty or zero
+0000000027     1.0          Amount of Tax Withheld is empty or zero
+0000000027     1.0          Detail Insufficient Column
+0000000028     1.0          Invalid Payees TIN
+0000000028     1.0          Invalid Characters in TIN of Payee
+0000000028     1.0          ATC is invalid
+0000000028     1.0          Amount of Income Payment is empty or zero
+0000000028     1.0          Amount of Tax Withheld is empty or zero
+0000000028     1.0          Detail Insufficient Column
+0000000029     1.0          Invalid Payees TIN
+0000000029     1.0          Invalid Characters in TIN of Payee
+0000000029     1.0          ATC is invalid
+0000000029     1.0          Amount of Income Payment is empty or zero
+0000000029     1.0          Amount of Tax Withheld is empty or zero
+0000000029     1.0          Detail Insufficient Column
+0000000030     1.0          Invalid Payees TIN
+0000000030     1.0          Invalid Characters in TIN of Payee
+0000000030     1.0          ATC is invalid
+0000000030     1.0          Amount of Income Payment is empty or zero
+0000000030     1.0          Amount of Tax Withheld is empty or zero
+0000000030     1.0          Detail Insufficient Column
+0000000031     1.0          Invalid Payees TIN
+0000000031     1.0          Invalid Characters in TIN of Payee
+0000000031     1.0          ATC is invalid
+0000000031     1.0          Amount of Income Payment is empty or zero
+0000000031     1.0          Amount of Tax Withheld is empty or zero
+0000000031     1.0          Detail Insufficient Column
+0000000032     1.0          Invalid Payees TIN
+0000000032     1.0          Invalid Characters in TIN of Payee
+0000000032     1.0          ATC is invalid
+0000000032     1.0          Amount of Income Payment is empty or zero
+0000000032     1.0          Amount of Tax Withheld is empty or zero
+0000000032     1.0          Detail Insufficient Column
+0000000033     1.0          Invalid Payees TIN
+0000000033     1.0          Invalid Characters in TIN of Payee
+0000000033     1.0          ATC is invalid
+0000000033     1.0          Amount of Income Payment is empty or zero
+0000000033     1.0          Amount of Tax Withheld is empty or zero
+0000000033     1.0          Detail Insufficient Column
+0000000034     1.0          Invalid Payees TIN
+0000000034     1.0          Invalid Characters in TIN of Payee
+0000000034     1.0          ATC is invalid
+0000000034     1.0          Amount of Income Payment is empty or zero
+0000000034     1.0          Amount of Tax Withheld is empty or zero
+0000000034     1.0          Detail Insufficient Column
+0000000035     1.0          Invalid Payees TIN
+0000000035     1.0          Invalid Characters in TIN of Payee
+0000000035     1.0          ATC is invalid
+0000000035     1.0          Amount of Income Payment is empty or zero
+0000000035     1.0          Amount of Tax Withheld is empty or zero
+0000000035     1.0          Detail Insufficient Column
+0000000036     1.0          Invalid length of Payees Branch Code
+0000000036     1.0          Invalid Characters in Branch Code of Payee
+0000000036     1.0          ATC is invalid
+0000000036     1.0          Amount of Income Payment is empty or zero
+0000000036     1.0          Amount of Tax Withheld is empty or zero
+0000000036     1.0          Detail Insufficient Column
+0000000037     1.0          Invalid length of Payees Branch Code
+0000000037     1.0          Invalid Characters in Branch Code of Payee
+0000000037     1.0          ATC is invalid
+0000000037     1.0          Amount of Income Payment is empty or zero
+0000000037     1.0          Amount of Tax Withheld is empty or zero
+0000000037     1.0          Detail Insufficient Column
+0000000038     1.0          Invalid Payees TIN
+0000000038     1.0          Invalid Characters in TIN of Payee
+0000000038     1.0          ATC is invalid
+0000000038     1.0          Amount of Income Payment is empty or zero
+0000000038     1.0          Amount of Tax Withheld is empty or zero
+0000000038     1.0          Detail Insufficient Column
+0000000039     1.0          Invalid Payees TIN
+0000000039     1.0          Invalid Characters in TIN of Payee
+0000000039     1.0          ATC is invalid
+0000000039     1.0          Amount of Income Payment is empty or zero
+0000000039     1.0          Amount of Tax Withheld is empty or zero
+0000000039     1.0          Detail Insufficient Column
+0000000040     1.0          Invalid Payees TIN
+0000000040     1.0          Invalid Characters in TIN of Payee
+0000000040     1.0          ATC is invalid
+0000000040     1.0          Amount of Income Payment is empty or zero
+0000000040     1.0          Amount of Tax Withheld is empty or zero
+0000000040     1.0          Detail Insufficient Column
+0000000041     1.0          Invalid Payees TIN
+0000000041     1.0          Invalid Characters in TIN of Payee
+0000000041     1.0          ATC is invalid
+0000000041     1.0          Amount of Income Payment is empty or zero
+0000000041     1.0          Amount of Tax Withheld is empty or zero
+0000000041     1.0          Detail Insufficient Column
+0000000042     1.0          Invalid Payees TIN
+0000000042     1.0          Invalid Characters in TIN of Payee
+0000000042     1.0          ATC is invalid
+0000000042     1.0          Amount of Income Payment is empty or zero
+0000000042     1.0          Amount of Tax Withheld is empty or zero
+0000000042     1.0          Detail Insufficient Column
+0000000043     1.0          Invalid Payees TIN
+0000000043     1.0          Invalid Characters in TIN of Payee
+0000000043     1.0          ATC is invalid
+0000000043     1.0          Amount of Income Payment is empty or zero
+0000000043     1.0          Amount of Tax Withheld is empty or zero
+0000000043     1.0          Detail Insufficient Column
+0000000044     1.0          Invalid Payees TIN
+0000000044     1.0          Invalid Characters in TIN of Payee
+0000000044     1.0          ATC is invalid
+0000000044     1.0          Amount of Income Payment is empty or zero
+0000000044     1.0          Amount of Tax Withheld is empty or zero
+0000000044     1.0          Detail Insufficient Column
+0000000045     1.0          Invalid Payees TIN
+0000000045     1.0          Invalid Characters in TIN of Payee
+0000000045     1.0          ATC is invalid
+0000000045     1.0          Amount of Income Payment is empty or zero
+0000000045     1.0          Amount of Tax Withheld is empty or zero
+0000000045     1.0          Detail Insufficient Column
+0000000046     1.0          Invalid length of Payees Branch Code
+0000000046     1.0          Invalid Characters in Branch Code of Payee
+0000000046     1.0          ATC is invalid
+0000000046     1.0          Amount of Income Payment is empty or zero
+0000000046     1.0          Amount of Tax Withheld is empty or zero
+0000000046     1.0          Detail Insufficient Column
+0000000047     1.0          Invalid Payees TIN
+0000000047     1.0          Invalid Characters in TIN of Payee
+0000000047     1.0          ATC is invalid
+0000000047     1.0          Amount of Income Payment is empty or zero
+0000000047     1.0          Amount of Tax Withheld is empty or zero
+0000000047     1.0          Detail Insufficient Column
+0000000048     1.0          Invalid Payees TIN
+0000000048     1.0          Invalid Characters in TIN of Payee
+0000000048     1.0          ATC is invalid
+0000000048     1.0          Amount of Income Payment is empty or zero
+0000000048     1.0          Amount of Tax Withheld is empty or zero
+0000000048     1.0          Detail Insufficient Column
+0000000049     1.0          Control Insufficient Column
+----------     --------     ------------------------------------------------------------

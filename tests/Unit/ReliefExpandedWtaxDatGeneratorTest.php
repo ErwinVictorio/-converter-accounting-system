@@ -7,7 +7,9 @@ use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 /**
- * The reference file Docs/Expanded/0087919760000123120251604E.dat is the spec.
+ * The reference file Docs/Expanded/0087919760000123120251604E.dat is still useful
+ * sample data, but it is the old annual 1604E body. The generator now emits the
+ * 1601EQ/QAP body required by the Alphalist Validation System.
  *
  * The main test reads its 59 detail rows back into plain field values and asks
  * the generator to rebuild the file. That is not circular: the generator has to
@@ -86,15 +88,23 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         );
     }
 
-    public function test_it_reproduces_the_reference_file_byte_for_byte(): void
+    public function test_it_generates_a_1601eq_qap_file_from_the_reference_rows(): void
     {
-        $this->assertSame($this->reference(), $this->generate());
+        $lines = explode("\r\n", rtrim($this->generate(), "\r\n"));
+
+        $this->assertCount(61, $lines);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,12/31/2025,FORTRESS STEEL INC,045', $lines[0]);
+        $this->assertSame(
+            'D1,1601EQ,008791976,0000,12/31/2025,1,007086184,0000,"ACERSTEEL INDUSTRIAL SALES INC",,,,WC158,3682716.00,1.00,36827.16',
+            $lines[1]
+        );
+        $this->assertSame('C1,1601EQ,008791976,0000,12/31/2025,14284247.61,241326.68', $lines[60]);
     }
 
     public function test_the_filename_matches_the_reference_file(): void
     {
         $this->assertSame(
-            '0087919760000123120251604E.dat',
+            '00879197600001220251601EQ.DAT',
             (new ReliefExpandedWtaxDatGenerator())->filename($this->company(), $this->period())
         );
     }
@@ -113,46 +123,55 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
     {
         $lines = explode("\r\n", rtrim($this->generate(), "\r\n"));
 
-        $this->assertCount(4, str_getcsv($lines[0]));
-        $this->assertCount(6, str_getcsv($lines[count($lines) - 1]));
+        $this->assertCount(7, str_getcsv($lines[0]));
+        $this->assertCount(7, str_getcsv($lines[count($lines) - 1]));
 
         foreach (array_slice($lines, 1, -1) as $line) {
             $this->assertCount(16, str_getcsv($line));
         }
     }
 
-    public function test_the_header_carries_the_agent_tin_branch_and_period_end(): void
+    public function test_the_header_carries_the_agent_tin_branch_name_return_period_and_rdo(): void
     {
         $header = explode("\r\n", $this->generate())[0];
 
-        $this->assertSame('H1604E,008791976,0000,12/31/2025', $header);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,12/31/2025,FORTRESS STEEL INC,045', $header);
     }
 
-    public function test_the_control_record_totals_the_detail_tax_withheld(): void
+    public function test_the_control_record_totals_the_detail_amounts(): void
     {
         $lines = explode("\r\n", rtrim($this->generate(), "\r\n"));
         $control = str_getcsv(array_pop($lines));
         array_shift($lines);
 
-        $expected = 0.0;
+        $expectedIncome = 0.0;
+        $expectedTax = 0.0;
         foreach ($lines as $line) {
-            $expected += (float) str_getcsv($line)[15];
+            $expectedIncome += (float) str_getcsv($line)[13];
+            $expectedTax += (float) str_getcsv($line)[15];
         }
 
-        $this->assertSame('C3', $control[0]);
-        $this->assertSame('1604E', $control[1]);
+        $this->assertSame('C1', $control[0]);
+        $this->assertSame('1601EQ', $control[1]);
+        $this->assertSame('008791976', $control[2]);
+        $this->assertSame('0000', $control[3]);
         $this->assertSame('12/31/2025', $control[4]);
-        $this->assertSame(number_format(round($expected, 2), 2, '.', ''), $control[5]);
-        $this->assertSame('241326.68', $control[5]);
+        $this->assertSame(number_format(round($expectedIncome, 2), 2, '.', ''), $control[5]);
+        $this->assertSame(number_format(round($expectedTax, 2), 2, '.', ''), $control[6]);
+        $this->assertSame('14284247.61', $control[5]);
+        $this->assertSame('241326.68', $control[6]);
     }
 
-    public function test_sequence_numbers_run_from_one_in_generation_order(): void
+    public function test_every_detail_line_uses_schedule_one(): void
     {
         $lines = explode("\r\n", rtrim($this->generate(), "\r\n"));
         $details = array_slice($lines, 1, -1);
 
         foreach ($details as $index => $line) {
-            $this->assertSame((string) ($index + 1), str_getcsv($line)[5]);
+            $fields = str_getcsv($line);
+
+            $this->assertSame('D1', $fields[0]);
+            $this->assertSame((string) ($index + 1), $fields[5]);
         }
     }
 
@@ -165,7 +184,7 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $line = explode("\r\n", $this->generate())[1];
 
         $this->assertSame(
-            'D3,1604E,008791976,0000,12/31/2025,1,007086184,0000,'
+            'D1,1601EQ,008791976,0000,12/31/2025,1,007086184,0000,'
             . '"ACERSTEEL INDUSTRIAL SALES INC",,,,WC158,3682716.00,1.00,36827.16',
             $line
         );
@@ -176,7 +195,7 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $line = explode("\r\n", $this->generate())[7];
 
         $this->assertSame(
-            'D3,1604E,008791976,0000,12/31/2025,7,220052738,0000,,'
+            'D1,1601EQ,008791976,0000,12/31/2025,7,220052738,0000,,'
             . '"BANSIL","ANNIE",,WI516,5865.60,10.00,586.56',
             $line
         );
@@ -246,8 +265,8 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $lines = explode("\r\n", rtrim($this->generate([]), "\r\n"));
 
         $this->assertCount(2, $lines);
-        $this->assertSame('H1604E,008791976,0000,12/31/2025', $lines[0]);
-        $this->assertSame('C3,1604E,008791976,0000,12/31/2025,0.00', $lines[1]);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,12/31/2025,FORTRESS STEEL INC,045', $lines[0]);
+        $this->assertSame('C1,1601EQ,008791976,0000,12/31/2025,0.00,0.00', $lines[1]);
     }
 
     /**

@@ -11,8 +11,8 @@ use Tests\TestCase;
  * Covers the generate half of the Expanded WTAX module: the reporting-month
  * listing on /generate-datfile and the file that /download-datfile hands back.
  *
- * The byte-for-byte comparison against Docs/Expanded/0087919760000123120251604E.dat
- * lives in tests/Unit/ReliefExpandedWtaxDatGeneratorTest.php. What matters here is
+ * The 1601EQ/QAP shape lives in tests/Unit/ReliefExpandedWtaxDatGeneratorTest.php.
+ * What matters here is
  * the wiring: the right rows for the right month, consolidated the way the BIR
  * format requires, in payee order, blocked when a row is unfilable, and kept out of
  * the RELIEF schedules.
@@ -114,7 +114,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->assertStringContainsString('ATC is blank', $issues['errors'][0]);
     }
 
-    public function test_it_downloads_a_1604e_dat_for_the_selected_month(): void
+    public function test_it_downloads_a_1601eq_qap_dat_for_the_selected_month(): void
     {
         $this->entry();
         $this->individual();
@@ -123,22 +123,22 @@ class ExpandedWtaxDatFileTest extends TestCase
 
         $response->assertOk();
         $response->assertHeader('content-type', 'text/plain; charset=UTF-8');
-        // Company TIN + branch + month end + form type, the same shape as the
-        // reference file 0087919760000123120251604E.dat.
+        // Company TIN + branch + month/year + form type, the naming shape the
+        // BIR 1601EQ validator requires.
         $response->assertHeader(
             'content-disposition',
-            'attachment; filename="0087919760000073120261604E.dat"'
+            'attachment; filename="00879197600000720261601EQ.DAT"'
         );
 
         $lines = $this->lines($response->getContent());
 
         $this->assertCount(4, $lines); // header + 2 details + trailer
-        $this->assertSame('H1604E,008791976,0000,07/31/2026', $lines[0]);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,07/31/2026,FORTRESS STEEL INC,045', $lines[0]);
 
         $first = str_getcsv($lines[1]);
 
-        $this->assertSame('D3', $first[0]);
-        $this->assertSame('1604E', $first[1]);
+        $this->assertSame('D1', $first[0]);
+        $this->assertSame('1601EQ', $first[1]);
         $this->assertSame('008791976', $first[2]);
         $this->assertSame('07/31/2026', $first[4]);
         $this->assertSame('1', $first[5]); // sequence starts at 1
@@ -153,6 +153,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         // An individual payee fills last/first/middle instead of company_name.
         $second = str_getcsv($lines[2]);
 
+        $this->assertSame('D1', $second[0]);
         $this->assertSame('2', $second[5]);
         $this->assertSame('', $second[8]);
         $this->assertSame('BANSIL', $second[9]);
@@ -161,7 +162,43 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->assertSame('WI516', $second[12]);
 
         // Trailer carries the exact sum of the detail rows.
-        $this->assertSame('C3,1604E,008791976,0000,07/31/2026,37413.72', $lines[3]);
+        $this->assertSame('C1,1601EQ,008791976,0000,07/31/2026,3688581.60,37413.72', $lines[3]);
+    }
+
+    public function test_it_downloads_expanded_dat_per_withholding_agent(): void
+    {
+        $this->entry();
+        $this->entry([
+            'withholding_agent_tin' => '123456789',
+            'withholding_agent_branch_code' => '0002',
+            'withholding_agent_name' => 'OTHER COMPANY INC',
+            'payee_name' => 'OTHER COMPANY PAYEE',
+            'company_name' => 'OTHER COMPANY PAYEE',
+            'payee_tin' => '111222333',
+            'income_payment' => 100000.00,
+            'tax_withheld' => 1000.00,
+        ]);
+
+        $first = $this->lines($this->get(
+            '/download-datfile?period=2026-07-31&record_type=expanded&withholding_agent_tin=008791976&withholding_agent_branch_code=0000'
+        )->getContent());
+
+        $secondResponse = $this->get(
+            '/download-datfile?period=2026-07-31&record_type=expanded&withholding_agent_tin=123456789&withholding_agent_branch_code=0002'
+        );
+        $second = $this->lines($secondResponse->getContent());
+
+        $secondResponse->assertHeader(
+            'content-disposition',
+            'attachment; filename="12345678900020720261601EQ.DAT"'
+        );
+
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,07/31/2026,FORTRESS STEEL INC,045', $first[0]);
+        $this->assertSame('HQAP,H1601EQ,123456789,0002,07/31/2026,OTHER COMPANY INC,', $second[0]);
+        $this->assertStringContainsString('ACERSTEEL INDUSTRIAL SALES INC', $first[1]);
+        $this->assertStringNotContainsString('OTHER COMPANY PAYEE', implode('', $first));
+        $this->assertStringContainsString('OTHER COMPANY PAYEE', $second[1]);
+        $this->assertStringNotContainsString('ACERSTEEL INDUSTRIAL SALES INC', implode('', $second));
     }
 
     public function test_the_trailer_total_nets_out_a_reversal(): void
@@ -183,7 +220,7 @@ class ExpandedWtaxDatFileTest extends TestCase
 
         // Negative amounts keep their sign and their two decimals.
         $this->assertStringContainsString(',-51600.00,5.00,-2580.00', $lines[2]);
-        $this->assertSame('34247.16', str_getcsv($lines[3])[5]);
+        $this->assertSame('34247.16', str_getcsv($lines[3])[6]);
     }
 
     public function test_details_are_filed_in_payee_order(): void
@@ -246,7 +283,7 @@ class ExpandedWtaxDatFileTest extends TestCase
 
         $detail = str_getcsv($lines[1]);
 
-        $this->assertSame('1', $detail[5]);
+        $this->assertSame('D1', $detail[0]);
         $this->assertSame('000491813', $detail[6]);
         $this->assertSame('PRUDENTIAL GUARANTEE AND ASSURANCE INC', $detail[8]);
         $this->assertSame('WC160', $detail[12]);
@@ -274,7 +311,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $stored = ExpandedWtaxEntry::sum('tax_withheld');
 
         $this->assertEqualsWithDelta(41247.40, (float) $stored, 0.001);
-        $this->assertSame('41247.40', str_getcsv($lines[3])[5]);
+        $this->assertSame('41247.40', str_getcsv($lines[3])[6]);
     }
 
     public function test_payee_order_survives_consolidation(): void
@@ -341,7 +378,7 @@ class ExpandedWtaxDatFileTest extends TestCase
 
         // Any day inside the month resolves to the same month-end file.
         $this->assertCount(3, $lines);
-        $this->assertSame('H1604E,008791976,0000,07/31/2026', $lines[0]);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,07/31/2026,FORTRESS STEEL INC,045', $lines[0]);
         $this->assertStringNotContainsString('JUNE PAYEE INC', implode('', $lines));
     }
 
@@ -352,7 +389,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $response = $this->get('/download-datfile?period=2026-05-31&record_type=expanded');
 
         $response->assertRedirect();
-        $response->assertSessionHas('error', 'No expanded withholding tax records found for the selected reporting month.');
+        $response->assertSessionHas('error', 'No expanded withholding tax records found for the selected company and reporting month.');
     }
 
     public function test_an_unfilable_row_blocks_the_download_and_names_the_payee(): void
@@ -385,7 +422,7 @@ class ExpandedWtaxDatFileTest extends TestCase
     {
         $this->entry();
 
-        // Expanded withholding tax is a 1604E matter. It has no place in the
+        // Expanded withholding tax is a 1601EQ/QAP matter. It has no place in the
         // RELIEF purchase, sales or importation files, and no VAT rows exist to
         // put there anyway.
         foreach (['purchase', 'sales', 'importation'] as $recordType) {

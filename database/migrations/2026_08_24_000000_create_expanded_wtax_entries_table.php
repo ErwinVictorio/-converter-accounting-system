@@ -20,6 +20,9 @@ return new class extends Migration
         Schema::create('expanded_wtax_entries', function (Blueprint $table) {
             $table->id();
             $table->date('reporting_period');
+            $table->string('withholding_agent_tin', 9)->default('008791976');
+            $table->string('withholding_agent_branch_code', 4)->default('0000');
+            $table->string('withholding_agent_name')->default('FORTRESS STEEL INC.');
             $table->date('transaction_date')->nullable();
             // Excel "No" (payment voucher) and "Reference" (invoice), kept for tracing
             // a generated line back to the spreadsheet row it came from.
@@ -45,6 +48,10 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index('reporting_period');
+            $table->index(
+                ['withholding_agent_tin', 'withholding_agent_branch_code', 'reporting_period'],
+                'expanded_wtax_agent_period_index'
+            );
             $table->index('payee_tin');
             $table->index('atc_code');
         });

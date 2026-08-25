@@ -27,7 +27,7 @@ return [
     ],
 
     /*
-     * Expanded withholding tax (form 1604E).
+     * Expanded withholding tax (form 1601EQ/QAP).
      *
      * The BIR-format workbook (Docs/Expanded/BIR_Excel_Guide_Analysis.md) carries an
      * ATC column of its own, so the code is read from the file rather than worked out

@@ -126,6 +126,7 @@ class VatInputController extends Controller
             'vatInputs' => $vatInputs,
             'salesVatInputs' => $salesVatInputs,
             'expandedWtaxEntries' => $expandedWtaxEntries,
+            'birCompanies' => $this->birCompanies(),
             'filters'   => [
                 'search' => $search,
             ],
@@ -137,6 +138,8 @@ class VatInputController extends Controller
             'excel_file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
             'reporting_month' => ['required', 'date'],
             'record_type' => ['required', 'in:purchase,sales,expanded'],
+            'withholding_agent_tin' => ['nullable', 'required_if:record_type,expanded', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
+            'withholding_agent_branch_code' => ['nullable', 'required_if:record_type,expanded', 'regex:/^\d{1,4}$/'],
         ]);
 
         try {
@@ -150,6 +153,8 @@ class VatInputController extends Controller
             }
 
             if ($request->input('record_type') === 'expanded') {
+                $withholdingAgent = $this->withholdingAgentFromRequest($request);
+
                 /*
                  * Checked before anything is deleted, so a workbook with a missing
                  * column or the wrong reporting month cannot cost the user the month
@@ -172,10 +177,14 @@ class VatInputController extends Controller
                  * and file twice the real figure, which is worse than losing a manual
                  * correction.
                  */
-                DB::transaction(function () use ($reportingPeriod, $file) {
-                    ExpandedWtaxEntry::where('reporting_period', $reportingPeriod)->delete();
+                DB::transaction(function () use ($reportingPeriod, $file, $withholdingAgent) {
+                    ExpandedWtaxEntry::query()
+                        ->where('reporting_period', $reportingPeriod)
+                        ->where('withholding_agent_tin', $withholdingAgent['tin'])
+                        ->where('withholding_agent_branch_code', $withholdingAgent['branch_code'])
+                        ->delete();
 
-                    Excel::import(new ExpandedWtaxImport($reportingPeriod), $file);
+                    Excel::import(new ExpandedWtaxImport($reportingPeriod, $withholdingAgent), $file);
                 });
 
                 return back()->with('success', 'Expanded withholding tax report successfully imported!');
@@ -187,6 +196,57 @@ class VatInputController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Import failed: ' . $e->getMessage());
         }
+    }
+
+    private function birCompanies(): array
+    {
+        $configured = collect(config('bir.companies', []))
+            ->map(function (array $company) {
+                $tin = substr(preg_replace('/\D/', '', (string) ($company['tin'] ?? '')), 0, 9);
+                $branch = substr(preg_replace('/\D/', '', (string) ($company['branch_code'] ?? '0000')), 0, 4);
+
+                return [
+                    'tin' => $tin,
+                    'branch_code' => $branch === '' ? '0000' : str_pad($branch, 4, '0', STR_PAD_LEFT),
+                    'name' => $company['name'] ?? $company['registered_name'] ?? $tin,
+                ];
+            });
+
+        $uploaded = ExpandedWtaxEntry::query()
+            ->select([
+                'withholding_agent_tin',
+                'withholding_agent_branch_code',
+                'withholding_agent_name',
+            ])
+            ->distinct()
+            ->get()
+            ->map(fn (ExpandedWtaxEntry $entry) => [
+                'tin' => $entry->withholding_agent_tin,
+                'branch_code' => $entry->withholding_agent_branch_code,
+                'name' => $entry->withholding_agent_name,
+            ]);
+
+        return $configured
+            ->merge($uploaded)
+            ->filter(fn (array $company) => $company['tin'] !== '')
+            ->unique(fn (array $company) => $company['tin'] . '|' . $company['branch_code'])
+            ->values()
+            ->all();
+    }
+
+    private function withholdingAgentFromRequest(Request $request): array
+    {
+        $tin = substr(preg_replace('/\D/', '', (string) $request->input('withholding_agent_tin')), 0, 9);
+        $branch = substr(preg_replace('/\D/', '', (string) $request->input('withholding_agent_branch_code', '0000')), 0, 4);
+        $branch = $branch === '' ? '0000' : str_pad($branch, 4, '0', STR_PAD_LEFT);
+        $company = config("bir.companies.{$tin}", []);
+
+        return [
+            'tin' => $tin,
+            'branch_code' => $branch,
+            'name' => $company['name'] ?? $company['registered_name'] ?? $tin,
+            'registered_name' => $company['registered_name'] ?? $company['name'] ?? $tin,
+        ];
     }
 
     public function edit(VatInput $vatInput)

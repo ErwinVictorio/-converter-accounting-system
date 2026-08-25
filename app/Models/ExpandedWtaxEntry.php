@@ -36,6 +36,9 @@ class ExpandedWtaxEntry extends Model
 
     protected $fillable = [
         'reporting_period',
+        'withholding_agent_tin',
+        'withholding_agent_branch_code',
+        'withholding_agent_name',
         'payee_name',
         'payee_type',
         'payee_tin',
@@ -66,6 +69,9 @@ class ExpandedWtaxEntry extends Model
     {
         return [
             'payee_name' => $this->payee_name,
+            'withholding_agent_tin' => (string) $this->withholding_agent_tin,
+            'withholding_agent_branch_code' => (string) $this->withholding_agent_branch_code,
+            'withholding_agent_name' => (string) $this->withholding_agent_name,
             'payee_type' => $this->payee_type,
             'payee_tin' => (string) $this->payee_tin,
             'payee_branch_code' => (string) $this->payee_branch_code,
@@ -115,6 +121,9 @@ class ExpandedWtaxEntry extends Model
                     // a paginator identity without an autoincrement id.
                     'id' => $key,
                     'reporting_period' => $row->reporting_period?->toDateString(),
+                    'withholding_agent_tin' => $row->withholding_agent_tin,
+                    'withholding_agent_branch_code' => $row->withholding_agent_branch_code,
+                    'withholding_agent_name' => $row->withholding_agent_name,
                     'merged_rows' => 0,
                 ];
 
@@ -149,6 +158,8 @@ class ExpandedWtaxEntry extends Model
     {
         return implode('|', [
             $row->reporting_period?->format('Y-m') ?? '',
+            substr(preg_replace('/\D/', '', (string) $row->withholding_agent_tin), 0, 9),
+            str_pad(substr(preg_replace('/\D/', '', (string) $row->withholding_agent_branch_code), 0, 4), 4, '0', STR_PAD_LEFT),
             substr(preg_replace('/\D/', '', (string) $row->payee_tin), 0, 9),
             strtoupper(trim((string) $row->atc_code)),
             number_format((float) $row->tax_rate, 2, '.', ''),

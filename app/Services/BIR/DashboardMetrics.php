@@ -28,7 +28,7 @@ use Illuminate\Support\Collection;
  * its VAT twice over. The purchase DAT download applies the same scope.
  *
  * The fourth figure of each source is named 'tax' rather than 'vat' because the
- * expanded module's is tax withheld under 1604E, not VAT. It is reported on its
+ * expanded module's is tax withheld under 1601EQ/QAP, not VAT. It is reported on its
  * own card and its own chart series, and vatBreakdown() deliberately never reads
  * it: withholding tax is not creditable against output VAT, so folding it into
  * the input side would understate what the company owes.
@@ -122,7 +122,7 @@ class DashboardMetrics
 
         // The expanded module counts filing lines rather than uploaded rows, so the
         // card cannot disagree with the DAT it will produce: two rows sharing
-        // reporting month, TIN, ATC and rate are one 1604E detail line.
+        // reporting month, TIN, ATC and rate are one 1601EQ/QAP detail line.
         // ExpandedWtaxEntry::consolidate() is the same rule the records list and the
         // generator apply. Only the count is re-read -- consolidation adds rows
         // together rather than dropping any, so the two sums above are unaffected.
@@ -150,7 +150,7 @@ class DashboardMetrics
             ];
         }
 
-        // The 1604E figures are reported on their own card, so it carries both:
+        // The 1601EQ/QAP figures are reported on their own card, so it carries both:
         // the income payments as the amount above, and the tax withheld here.
         // The VAT modules' second figure is the monthly summary's job instead.
         $stats['expanded']['tax_withheld'] = $current['expanded']['tax'];
@@ -171,7 +171,7 @@ class DashboardMetrics
      * against it, importation VAT included. Positive is payable, negative is
      * creditable -- both are normal, so the sign is reported rather than clamped.
      *
-     * Expanded withholding tax is absent by design. It is a 1604E figure, not VAT,
+     * Expanded withholding tax is absent by design. It is a 1601EQ/QAP figure, not VAT,
      * and is not creditable against output VAT.
      */
     private function vatBreakdown(array $totals): array
@@ -350,7 +350,7 @@ class DashboardMetrics
     }
 
     /**
-     * How many 1604E detail lines a set of stored expanded rows becomes.
+     * How many 1601EQ/QAP detail lines a set of stored expanded rows becomes.
      *
      * Counted through ExpandedWtaxEntry::consolidate() rather than a DISTINCT over
      * the four grouping columns, for two reasons: the count then matches the DAT's

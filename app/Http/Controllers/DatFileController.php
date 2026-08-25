@@ -32,14 +32,17 @@ class DatFileController extends Controller
     {
         $recordType = $request->validate([
             'record_type' => ['nullable', 'in:purchase,sales,importation,expanded'],
+            'withholding_agent_tin' => ['nullable', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
+            'withholding_agent_branch_code' => ['nullable', 'regex:/^\d{1,4}$/'],
         ])['record_type'] ?? 'purchase';
+        $selectedWithholdingAgent = $this->selectedWithholdingAgent($request);
 
         if ($recordType === 'sales') {
             [$availablePeriods, $periodIssues] = $this->salesPeriods($salesValidator);
         } elseif ($recordType === 'importation') {
             [$availablePeriods, $periodIssues] = $this->importationPeriods($importationValidator);
         } elseif ($recordType === 'expanded') {
-            [$availablePeriods, $periodIssues] = $this->expandedPeriods($expandedValidator);
+            [$availablePeriods, $periodIssues] = $this->expandedPeriods($expandedValidator, $selectedWithholdingAgent);
         } else {
             [$availablePeriods, $periodIssues] = $this->purchasePeriods($purchaseValidator);
         }
@@ -49,6 +52,8 @@ class DatFileController extends Controller
             'recordType' => $recordType,
             'availablePeriods' => $availablePeriods,
             'periodIssues' => $periodIssues,
+            'birCompanies' => $this->expandedCompanies(),
+            'selectedWithholdingAgent' => $selectedWithholdingAgent,
         ]);
     }
 
@@ -116,6 +121,8 @@ class DatFileController extends Controller
         $validated = $request->validate([
             'period' => ['required', 'date'],
             'record_type' => ['nullable', 'in:purchase,sales,importation,expanded'],
+            'withholding_agent_tin' => ['nullable', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
+            'withholding_agent_branch_code' => ['nullable', 'regex:/^\d{1,4}$/'],
         ]);
 
         $period = Carbon::parse($validated['period'])->endOfMonth();
@@ -130,7 +137,12 @@ class DatFileController extends Controller
         }
 
         if ($recordType === 'expanded') {
-            return $this->downloadExpanded($period, $expandedGenerator, $expandedValidator);
+            return $this->downloadExpanded(
+                $period,
+                $expandedGenerator,
+                $expandedValidator,
+                $this->selectedWithholdingAgent($request)
+            );
         }
 
         return $this->downloadPurchase($period, $purchaseGenerator, $purchaseValidator);
@@ -259,12 +271,14 @@ class DatFileController extends Controller
      * covered by the test suite, which runs on sqlite. It costs nothing extra: the
      * rows have to be loaded anyway to validate them.
      */
-    private function expandedPeriods(BirExpandedWtaxRowValidator $validator): array
+    private function expandedPeriods(BirExpandedWtaxRowValidator $validator, array $withholdingAgent): array
     {
         $availablePeriods = [];
         $periodIssues = [];
 
         $months = ExpandedWtaxEntry::query()
+            ->where('withholding_agent_tin', $withholdingAgent['tin'])
+            ->where('withholding_agent_branch_code', $withholdingAgent['branch_code'])
             ->orderByDesc('reporting_period')
             ->orderBy('payee_name')
             ->orderBy('tax_rate')
@@ -276,6 +290,9 @@ class DatFileController extends Controller
             $availablePeriods[] = [
                 'value' => $period,
                 'label' => $records->first()->reporting_period->format('F Y'),
+                'withholding_agent_tin' => $withholdingAgent['tin'],
+                'withholding_agent_branch_code' => $withholdingAgent['branch_code'],
+                'withholding_agent_name' => $withholdingAgent['name'],
                 // The consolidated count, not the stored one, so the number on the
                 // Generate DAT screen is the number of detail lines the file will
                 // actually carry. Two uploaded lines for the same payee, ATC and rate
@@ -359,15 +376,18 @@ class DatFileController extends Controller
     }
 
     /**
-     * The 1604E header carries only the withholding agent's TIN, branch and period
-     * end, so this needs far less of the company record than the RELIEF schedules.
+     * The 1601EQ/QAP header carries withholding-agent identity plus return period
+     * and RDO, so this needs less of the company record than the RELIEF schedules.
      */
     private function downloadExpanded(
         Carbon $period,
         ReliefExpandedWtaxDatGenerator $generator,
-        BirExpandedWtaxRowValidator $validator
+        BirExpandedWtaxRowValidator $validator,
+        array $withholdingAgent
     ) {
         $records = ExpandedWtaxEntry::query()
+            ->where('withholding_agent_tin', $withholdingAgent['tin'])
+            ->where('withholding_agent_branch_code', $withholdingAgent['branch_code'])
             ->whereBetween('reporting_period', [
                 $period->copy()->startOfMonth()->toDateString(),
                 $period->copy()->endOfMonth()->toDateString(),
@@ -379,7 +399,7 @@ class DatFileController extends Controller
             ->get();
 
         if ($records->isEmpty()) {
-            return back()->with('error', 'No expanded withholding tax records found for the selected reporting month.');
+            return back()->with('error', 'No expanded withholding tax records found for the selected company and reporting month.');
         }
 
         $rowErrors = [];
@@ -406,8 +426,7 @@ class DatFileController extends Controller
          */
         $records = ExpandedWtaxEntry::consolidate($records);
 
-        // Head office unless config/bir.php ever carries a branch of its own.
-        $company = config('bir.companies.008791976') + ['branch_code' => '0000'];
+        $company = $this->companyForExpandedDownload($withholdingAgent);
 
         $content = $generator->generate($company, $records, $period);
 
@@ -416,6 +435,77 @@ class DatFileController extends Controller
         return response($content)
             ->header('Content-Type', 'text/plain')
             ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+    }
+
+    private function expandedCompanies(): array
+    {
+        $configured = collect(config('bir.companies', []))
+            ->map(fn (array $company) => $this->normaliseCompany($company));
+
+        $uploaded = ExpandedWtaxEntry::query()
+            ->select([
+                'withholding_agent_tin',
+                'withholding_agent_branch_code',
+                'withholding_agent_name',
+            ])
+            ->distinct()
+            ->get()
+            ->map(fn (ExpandedWtaxEntry $entry) => [
+                'tin' => $entry->withholding_agent_tin,
+                'branch_code' => $entry->withholding_agent_branch_code,
+                'name' => $entry->withholding_agent_name,
+            ]);
+
+        return $configured
+            ->merge($uploaded)
+            ->filter(fn (array $company) => $company['tin'] !== '')
+            ->unique(fn (array $company) => $company['tin'] . '|' . $company['branch_code'])
+            ->values()
+            ->all();
+    }
+
+    private function selectedWithholdingAgent(Request $request): array
+    {
+        $default = $this->expandedCompanies()[0] ?? $this->normaliseCompany(config('bir.companies.008791976', []));
+        $tin = substr(preg_replace('/\D/', '', (string) $request->input('withholding_agent_tin', $default['tin'])), 0, 9);
+        $branch = substr(preg_replace('/\D/', '', (string) $request->input('withholding_agent_branch_code', $default['branch_code'])), 0, 4);
+        $branch = $branch === '' ? '0000' : str_pad($branch, 4, '0', STR_PAD_LEFT);
+        $company = collect($this->expandedCompanies())->first(
+            fn (array $item) => $item['tin'] === $tin && $item['branch_code'] === $branch
+        );
+
+        return $company ?: [
+            'tin' => $tin,
+            'branch_code' => $branch,
+            'name' => config("bir.companies.{$tin}.name", $tin),
+        ];
+    }
+
+    private function companyForExpandedDownload(array $withholdingAgent): array
+    {
+        $configured = config("bir.companies.{$withholdingAgent['tin']}", []);
+
+        return [
+            'tin' => $withholdingAgent['tin'],
+            'branch_code' => $withholdingAgent['branch_code'],
+            'name' => $configured['name'] ?? $withholdingAgent['name'],
+            'registered_name' => $configured['registered_name'] ?? $withholdingAgent['name'],
+            'address1' => $configured['address1'] ?? '',
+            'address2' => $configured['address2'] ?? '',
+            'rdo_code' => $configured['rdo_code'] ?? '',
+        ];
+    }
+
+    private function normaliseCompany(array $company): array
+    {
+        $tin = substr(preg_replace('/\D/', '', (string) ($company['tin'] ?? '')), 0, 9);
+        $branch = substr(preg_replace('/\D/', '', (string) ($company['branch_code'] ?? '0000')), 0, 4);
+
+        return [
+            'tin' => $tin,
+            'branch_code' => $branch === '' ? '0000' : str_pad($branch, 4, '0', STR_PAD_LEFT),
+            'name' => $company['name'] ?? $company['registered_name'] ?? $tin,
+        ];
     }
 
     private function downloadSales(

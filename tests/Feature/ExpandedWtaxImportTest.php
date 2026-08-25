@@ -30,6 +30,8 @@ class ExpandedWtaxImportTest extends TestCase
 
     private const WORKBOOK = 'Docs/Expanded/EXPANDED_WTAX_BIR_FORMAT_SAMPLE.xlsx';
 
+    private const SYSTEM_WORKBOOK = 'Docs/Expanded/EXPANDED WTAX.xlsx';
+
     /** The BIR template's own headings, in the template's own order. */
     private const HEADINGS = 'Reporting_Month,Vendor_TIN,branchCode,companyName,surName,'
         . 'firstName,middleName,ATC,income_payment,ewt_rate,tax_amount';
@@ -86,6 +88,23 @@ class ExpandedWtaxImportTest extends TestCase
             'excel_file' => $file,
             'reporting_month' => $month,
             'record_type' => 'expanded',
+            'withholding_agent_tin' => '008791976',
+            'withholding_agent_branch_code' => '0000',
+        ]);
+    }
+
+    private function uploadForAgent(
+        UploadedFile $file,
+        string $month,
+        string $tin,
+        string $branch = '0000'
+    ): \Illuminate\Testing\TestResponse {
+        return $this->post('/vat-import', [
+            'excel_file' => $file,
+            'reporting_month' => $month,
+            'record_type' => 'expanded',
+            'withholding_agent_tin' => $tin,
+            'withholding_agent_branch_code' => $branch,
         ]);
     }
 
@@ -98,6 +117,17 @@ class ExpandedWtaxImportTest extends TestCase
         }
 
         return new UploadedFile($path, 'EXPANDED_WTAX_BIR_FORMAT_SAMPLE.xlsx', null, null, true);
+    }
+
+    private function systemWorkbook(): UploadedFile
+    {
+        $path = base_path(self::SYSTEM_WORKBOOK);
+
+        if (! is_file($path)) {
+            $this->markTestSkipped(self::SYSTEM_WORKBOOK . ' is not present in this checkout.');
+        }
+
+        return new UploadedFile($path, 'EXPANDED WTAX.xlsx', null, null, true);
     }
 
     public function test_one_worksheet_row_becomes_one_stored_row_with_the_uploaded_amounts(): void
@@ -290,6 +320,32 @@ class ExpandedWtaxImportTest extends TestCase
         $this->assertSame(2, ExpandedWtaxEntry::count());
     }
 
+    public function test_re_uploading_a_month_replaces_only_the_selected_withholding_agent(): void
+    {
+        $file = fn (string $income, string $withheld) => $this->csv([
+            $this->row([8 => $income, 10 => $withheld]),
+        ]);
+
+        $this->uploadForAgent($file('100000.00', '1000.00'), '2026-07', '008791976')
+            ->assertSessionHas('success');
+        $this->uploadForAgent($file('200000.00', '2000.00'), '2026-07', '123456789')
+            ->assertSessionHas('success');
+        $this->uploadForAgent($file('300000.00', '3000.00'), '2026-07', '008791976')
+            ->assertSessionHas('success');
+
+        $this->assertSame(2, ExpandedWtaxEntry::count());
+        $this->assertEqualsWithDelta(
+            3000.00,
+            (float) ExpandedWtaxEntry::where('withholding_agent_tin', '008791976')->firstOrFail()->tax_withheld,
+            0.001
+        );
+        $this->assertEqualsWithDelta(
+            2000.00,
+            (float) ExpandedWtaxEntry::where('withholding_agent_tin', '123456789')->firstOrFail()->tax_withheld,
+            0.001
+        );
+    }
+
     public function test_a_missing_column_rejects_the_upload_and_leaves_the_month_alone(): void
     {
         $this->upload($this->csv([$this->row()]))->assertSessionHas('success');
@@ -385,6 +441,58 @@ class ExpandedWtaxImportTest extends TestCase
                 "Worksheet row {$index} of the fixture is unfilable as imported."
             );
         }
+    }
+
+    public function test_it_reads_the_system_expanded_wtax_export(): void
+    {
+        $this->upload($this->systemWorkbook(), '2026-07')->assertSessionHas('success');
+
+        $entries = ExpandedWtaxEntry::orderBy('id')->get();
+
+        $this->assertGreaterThan(0, $entries->count());
+
+        $first = $entries->first();
+
+        $this->assertSame('2026-07-31', $first->reporting_period->toDateString());
+        $this->assertSame('PIONEER INSURANCE AND SURETY CORPORATION', $first->company_name);
+        $this->assertSame('000541177', $first->payee_tin);
+        $this->assertSame('WC160', $first->atc_code);
+        $this->assertEqualsWithDelta(2.00, (float) $first->tax_rate, 0.001);
+        $this->assertEqualsWithDelta(53.50, (float) $first->tax_withheld, 0.001);
+        $this->assertEqualsWithDelta(2675.00, (float) $first->income_payment, 0.001);
+
+        $worldBest = $entries->firstWhere('company_name', 'WORLD BEST IND L SALES INC');
+
+        $this->assertNotNull($worldBest);
+        $this->assertSame('WC158', $worldBest->atc_code);
+        $this->assertEqualsWithDelta(1.00, (float) $worldBest->tax_rate, 0.001);
+        $this->assertEqualsWithDelta(1340.13, (float) $worldBest->tax_withheld, 0.001);
+        $this->assertEqualsWithDelta(134013.00, (float) $worldBest->income_payment, 0.001);
+
+        $individual = $entries->firstWhere('payee_tin', '122086868');
+
+        $this->assertNotNull($individual);
+        $this->assertSame('individual', $individual->payee_type);
+        $this->assertSame('RAMORES', $individual->last_name);
+        $this->assertSame('CARMEN', $individual->first_name);
+        $this->assertSame('WI516', $individual->atc_code);
+        $this->assertEqualsWithDelta(10.00, (float) $individual->tax_rate, 0.001);
+    }
+
+    public function test_system_export_from_the_wrong_month_is_rejected_before_replacing_rows(): void
+    {
+        $this->upload($this->csv([$this->row()]))->assertSessionHas('success');
+
+        $response = $this->upload($this->systemWorkbook(), '2026-08');
+
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
+
+        $error = session('error');
+
+        $this->assertStringContainsString('Row 4: Reporting_Month is 07/09/2026', $error);
+        $this->assertStringContainsString('but this upload is for August 2026', $error);
+        $this->assertSame(1, ExpandedWtaxEntry::count());
     }
 
     public function test_the_records_page_lists_the_consolidated_rows(): void

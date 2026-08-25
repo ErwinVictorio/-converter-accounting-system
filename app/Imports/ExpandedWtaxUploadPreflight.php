@@ -5,9 +5,7 @@ namespace App\Imports;
 use Illuminate\Support\Carbon;
 use Maatwebsite\Excel\Concerns\ToArray;
 use Maatwebsite\Excel\Concerns\WithCalculatedFormulas;
-use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Facades\Excel;
-use Maatwebsite\Excel\HeadingRowImport;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use Throwable;
 
@@ -33,7 +31,7 @@ use Throwable;
  * formula settings the real importer uses. Anything it disagreed with would be a
  * check against a file the importer never sees.
  */
-class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas, WithHeadingRow
+class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas
 {
     /** Offending rows are named individually up to this many, then counted. */
     private const ROWS_NAMED = 8;
@@ -41,10 +39,13 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas, Wi
     /** @var array<int, array<string, mixed>> */
     private array $rows = [];
 
-    public function headingRow(): int
-    {
-        return 1;
-    }
+    /** @var 'bir'|'system'|null */
+    private ?string $layout = null;
+
+    /** @var array<string, int> */
+    private array $columnIndexes = [];
+
+    private int $headingRow = 0;
 
     /**
      * The maatwebsite ToArray hook. Deliberately not SkipsEmptyRows: keeping every
@@ -63,7 +64,10 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas, Wi
      */
     public function check($file, string $reportingPeriod): array
     {
-        $missing = $this->missingColumns($file);
+        Excel::import($this, $file);
+        $this->detectLayout();
+
+        $missing = $this->missingColumns();
 
         if ($missing !== []) {
             return [
@@ -72,27 +76,32 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas, Wi
             ];
         }
 
-        return $this->monthMismatches($file, Carbon::parse($reportingPeriod));
+        return $this->monthMismatches(Carbon::parse($reportingPeriod));
     }
 
     /**
      * @return string[] the template's own header names, for the ones not found
      */
-    private function missingColumns($file): array
+    private function missingColumns(): array
     {
-        $sheets = Excel::toArray(new HeadingRowImport($this->headingRow()), $file);
+        if ($this->layout === null) {
+            return array_keys(ExpandedWtaxImport::COLUMNS);
+        }
 
-        $headings = array_map(
-            fn ($heading) => strtolower(trim((string) $heading)),
-            (array) ($sheets[0][0] ?? [])
-        );
+        $columns = $this->layout === 'system'
+            ? ExpandedWtaxImport::SYSTEM_COLUMNS
+            : ExpandedWtaxImport::COLUMNS;
 
         $missing = [];
 
-        foreach (ExpandedWtaxImport::COLUMNS as $header => $acceptedKeys) {
-            if (array_intersect($acceptedKeys, $headings) === []) {
+        foreach ($columns as $header => $acceptedKeys) {
+            if (! array_key_exists($header, $this->columnIndexes)) {
                 $missing[] = $header;
             }
+        }
+
+        if ($this->layout === 'system') {
+            $missing = array_values(array_diff($missing, ['No', 'Reference', 'Total']));
         }
 
         return $missing;
@@ -101,20 +110,25 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas, Wi
     /**
      * @return string[]
      */
-    private function monthMismatches($file, Carbon $month): array
+    private function monthMismatches(Carbon $month): array
     {
-        Excel::import($this, $file);
-
         $errors = [];
         $extra = 0;
 
         foreach ($this->rows as $index => $row) {
+            if ($index <= $this->headingRow) {
+                continue;
+            }
+
             if ($this->isBlank($row)) {
                 continue;
             }
 
-            // Heading row 1, so the first data row is worksheet row 2.
-            $worksheetRow = $index + $this->headingRow() + 1;
+            if ($this->isSystemSummaryRow($row)) {
+                continue;
+            }
+
+            $worksheetRow = $index + 1;
             $rowMonth = $this->rowMonth($row);
 
             if ($rowMonth !== null && $rowMonth->isSameMonth($month)) {
@@ -150,7 +164,9 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas, Wi
      */
     private function rowMonth(array $row): ?Carbon
     {
-        $value = $this->value($row, 'Reporting_Month');
+        $value = $this->layout === 'system'
+            ? $this->value($row, 'Date')
+            : $this->value($row, 'Reporting_Month');
 
         if ($value instanceof \DateTimeInterface) {
             return Carbon::instance($value);
@@ -176,7 +192,11 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas, Wi
      */
     private function isBlank(array $row): bool
     {
-        foreach (array_keys(ExpandedWtaxImport::COLUMNS) as $header) {
+        $columns = $this->layout === 'system'
+            ? ExpandedWtaxImport::SYSTEM_COLUMNS
+            : ExpandedWtaxImport::COLUMNS;
+
+        foreach (array_keys($columns) as $header) {
             if (trim((string) $this->value($row, $header)) !== '') {
                 return false;
             }
@@ -187,18 +207,142 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas, Wi
 
     private function value(array $row, string $column): mixed
     {
-        foreach (ExpandedWtaxImport::COLUMNS[$column] as $key) {
-            if (array_key_exists($key, $row)) {
-                return $row[$key];
-            }
-        }
+        $index = $this->columnIndexes[$column] ?? null;
 
-        return null;
+        return $index === null ? null : ($row[$index] ?? null);
     }
 
     private function layoutHint(): string
     {
-        return 'The Expanded WTAX upload uses the BIR 1601EQ Schedule 1 layout, with headings on row 1: '
-            . implode(', ', array_keys(ExpandedWtaxImport::COLUMNS)) . '.';
+        return 'Use either the BIR 1601EQ Schedule 1 layout with headings '
+            . implode(', ', array_keys(ExpandedWtaxImport::COLUMNS))
+            . ', or the system Expanded WTAX layout with headings '
+            . implode(', ', array_keys(ExpandedWtaxImport::SYSTEM_COLUMNS)) . '.';
+    }
+
+    private function detectLayout(): void
+    {
+        $this->layout = null;
+        $this->columnIndexes = [];
+        $this->headingRow = 0;
+        $bestLayout = null;
+        $bestIndexes = [];
+        $bestHeadingRow = 0;
+
+        foreach ($this->rows as $index => $row) {
+            $headings = $this->headingMap($row);
+
+            $birIndexes = $this->indexesFor($headings, ExpandedWtaxImport::COLUMNS);
+            if (count($birIndexes) === count(ExpandedWtaxImport::COLUMNS)) {
+                $this->layout = 'bir';
+                $this->columnIndexes = $birIndexes;
+                $this->headingRow = $index;
+
+                return;
+            }
+
+            $systemIndexes = $this->indexesFor($headings, ExpandedWtaxImport::SYSTEM_COLUMNS);
+            if (count($systemIndexes) >= 10
+                && isset($systemIndexes['Supplier Name'], $systemIndexes['TIN'], $systemIndexes['Date'])
+                && $this->hasAnySystemRateColumn($systemIndexes)
+            ) {
+                $this->layout = 'system';
+                $this->columnIndexes = $systemIndexes;
+                $this->headingRow = $index;
+
+                return;
+            }
+
+            if (count($birIndexes) > count($bestIndexes)) {
+                $bestLayout = 'bir';
+                $bestIndexes = $birIndexes;
+                $bestHeadingRow = $index;
+            }
+
+            if (count($systemIndexes) > count($bestIndexes)) {
+                $bestLayout = 'system';
+                $bestIndexes = $systemIndexes;
+                $bestHeadingRow = $index;
+            }
+        }
+
+        if ($bestLayout !== null && count($bestIndexes) >= 2) {
+            $this->layout = $bestLayout;
+            $this->columnIndexes = $bestIndexes;
+            $this->headingRow = $bestHeadingRow;
+        }
+    }
+
+    /**
+     * @param  array<int, mixed>  $row
+     * @return array<string, int>
+     */
+    private function headingMap(array $row): array
+    {
+        $headings = [];
+
+        foreach (array_values($row) as $index => $value) {
+            $key = $this->normaliseHeading($value);
+
+            if ($key !== '') {
+                $headings[$key] = $index;
+            }
+        }
+
+        return $headings;
+    }
+
+    /**
+     * @param  array<string, int>  $headings
+     * @param  array<string, array<int, string>>  $columns
+     * @return array<string, int>
+     */
+    private function indexesFor(array $headings, array $columns): array
+    {
+        $indexes = [];
+
+        foreach ($columns as $column => $acceptedKeys) {
+            foreach ($acceptedKeys as $key) {
+                $normalised = $this->normaliseHeading($key);
+
+                if (array_key_exists($normalised, $headings)) {
+                    $indexes[$column] = $headings[$normalised];
+
+                    break;
+                }
+            }
+        }
+
+        return $indexes;
+    }
+
+    /**
+     * @param  array<string, int>  $indexes
+     */
+    private function hasAnySystemRateColumn(array $indexes): bool
+    {
+        foreach (['(1%)', '(2%)', '(5%)', '(10%)', '(15%)'] as $column) {
+            if (array_key_exists($column, $indexes)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normaliseHeading($value): string
+    {
+        return strtolower(preg_replace('/[^a-z0-9]/i', '', trim((string) $value)));
+    }
+
+    private function isSystemSummaryRow(array $row): bool
+    {
+        if ($this->layout !== 'system') {
+            return false;
+        }
+
+        $label = strtoupper(trim((string) ($this->value($row, 'No') ?: $this->value($row, 'Supplier Name'))));
+
+        return in_array($label, ['TOTAL', 'TOTAL:', 'SUBTOTAL', 'SUBTOTAL:', 'GRAND TOTAL', 'GRAND TOTAL:'], true);
     }
 }

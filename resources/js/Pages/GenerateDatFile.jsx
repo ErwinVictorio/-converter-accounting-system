@@ -11,18 +11,32 @@ const DAT_TYPES = {
     purchase: { heading: "RELIEF Purchases", rows: "VAT input" },
     sales: { heading: "RELIEF Sales", rows: "Sales VAT" },
     importation: { heading: "RELIEF Importations", rows: "importation" },
-    // 1604E rather than RELIEF: a different form, and a different file layout.
-    expanded: { heading: "1604E Expanded WTAX", rows: "expanded withholding tax" },
+    // 1601EQ/QAP rather than RELIEF: a different form, and a different file layout.
+    expanded: { heading: "1601EQ Expanded WTAX", rows: "expanded withholding tax" },
 };
 
 function GenerateDatFile() {
-    const { flash, recordType = "purchase", availablePeriods = [], periodIssues = {} } = usePage().props;
+    const {
+        flash,
+        recordType = "purchase",
+        availablePeriods = [],
+        periodIssues = {},
+        birCompanies = [],
+        selectedWithholdingAgent = null,
+    } = usePage().props;
     const currentMonth = new Date().toISOString().slice(0, 7);
     const defaultPeriod = availablePeriods[0]?.value || currentMonth;
+    const defaultAgent = selectedWithholdingAgent || birCompanies[0] || {
+        tin: "008791976",
+        branch_code: "0000",
+        name: "FORTRESS STEEL INC.",
+    };
 
     const { data, setData, processing, errors } = useForm({
         period: defaultPeriod,
         record_type: recordType,
+        withholding_agent_tin: defaultAgent.tin,
+        withholding_agent_branch_code: defaultAgent.branch_code || "0000",
     });
 
     const datType = DAT_TYPES[data.record_type] || DAT_TYPES.purchase;
@@ -35,6 +49,7 @@ function GenerateDatFile() {
         invalid_count: 0,
         errors: [],
     };
+    const selectedBirCompanyKey = `${data.withholding_agent_tin}|${data.withholding_agent_branch_code}`;
 
     useEffect(() => {
         if (flash?.error) toast.error(flash.error);
@@ -44,7 +59,9 @@ function GenerateDatFile() {
     useEffect(() => {
         setData("record_type", recordType);
         setData("period", availablePeriods[0]?.value || currentMonth);
-    }, [recordType, availablePeriods]);
+        setData("withholding_agent_tin", defaultAgent.tin);
+        setData("withholding_agent_branch_code", defaultAgent.branch_code || "0000");
+    }, [recordType, availablePeriods, selectedWithholdingAgent]);
 
     const handleRecordTypeChange = (value) => {
         setData("record_type", value);
@@ -52,6 +69,29 @@ function GenerateDatFile() {
         router.get(
             "/generate-datfile",
             { record_type: value },
+            {
+                preserveScroll: true,
+                replace: true,
+            }
+        );
+    };
+
+    const handleWithholdingAgentChange = (value) => {
+        const [tin, branchCode] = value.split("|");
+        setData((current) => ({
+            ...current,
+            withholding_agent_tin: tin,
+            withholding_agent_branch_code: branchCode || "0000",
+            period: currentMonth,
+        }));
+
+        router.get(
+            "/generate-datfile",
+            {
+                record_type: "expanded",
+                withholding_agent_tin: tin,
+                withholding_agent_branch_code: branchCode || "0000",
+            },
             {
                 preserveScroll: true,
                 replace: true,
@@ -86,6 +126,11 @@ function GenerateDatFile() {
             period: data.period,
             record_type: data.record_type,
         });
+
+        if (data.record_type === "expanded") {
+            params.set("withholding_agent_tin", data.withholding_agent_tin);
+            params.set("withholding_agent_branch_code", data.withholding_agent_branch_code);
+        }
 
         window.location.href = `/download-datfile?${params.toString()}`;
     };
@@ -161,6 +206,66 @@ function GenerateDatFile() {
                             )}
                         </div>
                     </div>
+
+                    {data.record_type === "expanded" && (
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-gray-600">
+                                    Known Company
+                                </label>
+                                <select
+                                    value={selectedBirCompanyKey}
+                                    onChange={(e) => handleWithholdingAgentChange(e.target.value)}
+                                    className={`flex h-11 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-700 shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-[3px] ${
+                                        errors.withholding_agent_tin
+                                            ? "border-red-500 focus-visible:ring-red-500/20"
+                                            : "border-slate-300 focus-visible:border-ring focus-visible:ring-ring/50"
+                                    }`}
+                                >
+                                    {birCompanies.map((company) => (
+                                        <option
+                                            key={`${company.tin}|${company.branch_code}`}
+                                            value={`${company.tin}|${company.branch_code}`}
+                                        >
+                                            {company.name} ({company.tin}-{company.branch_code})
+                                        </option>
+                                    ))}
+                                </select>
+                                {errors.withholding_agent_tin && (
+                                    <p className="text-xs text-red-500">{errors.withholding_agent_tin}</p>
+                                )}
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-gray-600">
+                                    Company TIN
+                                </label>
+                                <Input
+                                    value={data.withholding_agent_tin}
+                                    onChange={(e) => setData("withholding_agent_tin", e.target.value.replace(/\D/g, "").slice(0, 9))}
+                                    className={`h-11 rounded-lg border-slate-300 text-gray-700 ${
+                                        errors.withholding_agent_tin ? "border-red-500 focus-visible:ring-red-500" : ""
+                                    }`}
+                                />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-gray-600">
+                                    Branch Code
+                                </label>
+                                <Input
+                                    value={data.withholding_agent_branch_code}
+                                    onChange={(e) => setData("withholding_agent_branch_code", e.target.value.replace(/\D/g, "").slice(0, 4))}
+                                    className={`h-11 rounded-lg border-slate-300 text-gray-700 ${
+                                        errors.withholding_agent_branch_code ? "border-red-500 focus-visible:ring-red-500" : ""
+                                    }`}
+                                />
+                                {errors.withholding_agent_branch_code && (
+                                    <p className="text-xs text-red-500">{errors.withholding_agent_branch_code}</p>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="space-y-1.5">
                         {selectedPeriod && (
