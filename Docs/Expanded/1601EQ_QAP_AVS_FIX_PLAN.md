@@ -1,5 +1,11 @@
 # 1601EQ QAP AVS Fix Plan
 
+> **Status: closed, and its candidate layouts were wrong.** The layout the generator now
+> writes is at the end of this file under Execution Note, and was taken from the
+> BIR-generated reference file rather than inferred from the AVS messages. Read this
+> document as the record of the diagnosis; read
+> `Docs/Expanded/COMPARE_DAT_FORMAT_FIX_PLAN.md` for the format that shipped.
+
 This plan is based on the AVS error file:
 
 - `Docs/Expanded/error/00879197600000720261601EQ.TXT`
@@ -250,15 +256,33 @@ This fix is complete when:
 
 ## Execution Note
 
-Implemented layout candidate:
+**Superseded.** Steps 2 to 4 above were hypotheses, and the layout they produced was still
+rejected. The layout below was then read off the BIR-generated file
+`Docs/Expanded/compareDatFile/original/00879197600000320251601EQ.DAT` rather than guessed,
+and is what the generator now writes. See `Docs/Expanded/COMPARE_DAT_FORMAT_FIX_PLAN.md`
+for that comparison.
+
+Implemented layout:
 
 ```text
-HQAP,H1601EQ,{TIN},{BRANCH},{MM/DD/YYYY},{WITHHOLDING_AGENT_NAME},{RDO}
-D1,1601EQ,{TIN},{BRANCH},{MM/DD/YYYY},{SEQUENCE},{PAYEE_TIN},{PAYEE_BRANCH},{COMPANY_NAME},{SURNAME},{FIRST_NAME},{MIDDLE_NAME},{ATC},{INCOME_PAYMENT},{EWT_RATE},{TAX_AMOUNT}
-C1,1601EQ,{TIN},{BRANCH},{MM/DD/YYYY},{TOTAL_INCOME_PAYMENT},{TOTAL_TAX_AMOUNT}
+HQAP,H1601EQ,{TIN},{BRANCH},"{WA_NAME}",{MM/YYYY},{RDO}
+D1,1601EQ,{SEQ},{PAYEE_TIN},{PAYEE_BRANCH},{COMPANY},{SURNAME},{FIRST},{MIDDLE},{MM/YYYY},{ATC},{RATE},{INCOME},{TAX}
+C1,1601EQ,{TIN},{BRANCH},{MM/YYYY},{TOTAL_INCOME},{TOTAL_TAX}
 ```
 
-Reason for keeping `D1` and `C1`:
+Header 7 fields, detail 14 fields, control 7 fields.
 
-- The AVS error file already classified the rows as Schedule `1.0`.
-- The remaining repeated detail errors point to insufficient/misaligned columns, not an unrecognized schedule marker.
+Where the guesses above went wrong:
+
+- The header period is `MM/YYYY`, not a month-end date, and the agent name is quoted and
+  sits before the period. `Specified Month End Date not the same!` was the period format,
+  not a missing date.
+- Detail rows carry **no** agent TIN, agent branch or leading date. Writing them pushed the
+  payee TIN into the field AVS reads as the agent branch, which is what produced
+  `Detail Insufficient Column` plus `Invalid Payees TIN`, `ATC is invalid` and the two
+  empty-amount errors on every row at once.
+- The detail period repeats after the middle name, and the rate comes **before** the income
+  payment.
+- The control record needed the same `MM/YYYY` period as the header, not a month-end date.
+
+`D1` and `C1` were correct all along, as this plan's reasoning predicted.

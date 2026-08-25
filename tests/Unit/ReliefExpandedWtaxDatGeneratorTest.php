@@ -25,6 +25,16 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
 {
     private const REFERENCE = 'Docs/Expanded/0087919760000123120251604E.dat';
 
+    /**
+     * The BIR's own 1601EQ output, and the format authority for this file.
+     */
+    private const BIR_REFERENCE = 'Docs/Expanded/compareDatFile/original/00879197600000320251601EQ.DAT';
+
+    /**
+     * Where each stored value sits in a line of the sample file. That file is the
+     * old annual 1604E body, so its own column order is not the 1601EQ order this
+     * generator now writes -- this map exists only to read fixtures back out of it.
+     */
     private const DETAIL_COLUMNS = [
         6 => 'payee_tin',
         7 => 'payee_branch_code',
@@ -37,6 +47,24 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         14 => 'tax_rate',
         15 => 'tax_withheld',
     ];
+
+    /**
+     * Where each value sits in a generated 1601EQ detail line. Matches the
+     * BIR-generated reference
+     * Docs/Expanded/compareDatFile/original/00879197600000320251601EQ.DAT.
+     */
+    private const SEQUENCE = 2;
+    private const PAYEE_TIN = 3;
+    private const PAYEE_BRANCH = 4;
+    private const COMPANY_NAME = 5;
+    private const LAST_NAME = 6;
+    private const FIRST_NAME = 7;
+    private const MIDDLE_NAME = 8;
+    private const PERIOD = 9;
+    private const ATC = 10;
+    private const RATE = 11;
+    private const INCOME_PAYMENT = 12;
+    private const TAX_WITHHELD = 13;
 
     private function reference(): string
     {
@@ -93,12 +121,48 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $lines = explode("\r\n", rtrim($this->generate(), "\r\n"));
 
         $this->assertCount(61, $lines);
-        $this->assertSame('HQAP,H1601EQ,008791976,0000,12/31/2025,FORTRESS STEEL INC,045', $lines[0]);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",12/2025,045', $lines[0]);
         $this->assertSame(
-            'D1,1601EQ,008791976,0000,12/31/2025,1,007086184,0000,"ACERSTEEL INDUSTRIAL SALES INC",,,,WC158,3682716.00,1.00,36827.16',
+            'D1,1601EQ,1,007086184,0000,"ACERSTEEL INDUSTRIAL SALES INC",,,,12/2025,WC158,1.00,3682716.00,36827.16',
             $lines[1]
         );
-        $this->assertSame('C1,1601EQ,008791976,0000,12/31/2025,14284247.61,241326.68', $lines[60]);
+        $this->assertSame('C1,1601EQ,008791976,0000,12/2025,14284247.61,241326.68', $lines[60]);
+    }
+
+    /**
+     * The strongest check available: read the BIR-generated file's own field values
+     * back out, hand them to the generator, and require the bytes to match. March
+     * 2025 has no two rows sharing month, TIN, ATC and rate, so consolidation would
+     * not have merged anything and the comparison is fair.
+     */
+    public function test_it_reproduces_the_bir_generated_reference_file_byte_for_byte(): void
+    {
+        $expected = rtrim(file_get_contents(base_path(self::BIR_REFERENCE)), "\r\n");
+
+        $rows = array_map(function (string $line) {
+            $fields = str_getcsv($line);
+
+            return [
+                'payee_tin' => $fields[self::PAYEE_TIN],
+                'payee_branch_code' => $fields[self::PAYEE_BRANCH],
+                'company_name' => $fields[self::COMPANY_NAME],
+                'last_name' => $fields[self::LAST_NAME],
+                'first_name' => $fields[self::FIRST_NAME],
+                'middle_name' => $fields[self::MIDDLE_NAME],
+                'atc_code' => $fields[self::ATC],
+                'tax_rate' => $fields[self::RATE],
+                'income_payment' => $fields[self::INCOME_PAYMENT],
+                'tax_withheld' => $fields[self::TAX_WITHHELD],
+            ];
+        }, array_slice(explode("\r\n", $expected), 1, -1));
+
+        $actual = (new ReliefExpandedWtaxDatGenerator())->generate(
+            $this->company(),
+            collect($rows),
+            Carbon::parse('2025-03-01')
+        );
+
+        $this->assertSame($expected, rtrim($actual, "\r\n"));
     }
 
     public function test_the_filename_matches_the_reference_file(): void
@@ -106,6 +170,24 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $this->assertSame(
             '00879197600001220251601EQ.DAT',
             (new ReliefExpandedWtaxDatGenerator())->filename($this->company(), $this->period())
+        );
+    }
+
+    /**
+     * The month the AVS run in Docs/Expanded/error/ was made against, so the two
+     * strings the fix plan names are asserted verbatim.
+     */
+    public function test_july_2026_produces_the_header_and_filename_bir_expects(): void
+    {
+        $generator = new ReliefExpandedWtaxDatGenerator();
+        $july = Carbon::parse('2026-07-01');
+
+        $header = explode("\r\n", $generator->generate($this->company(), collect(), $july))[0];
+
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",07/2026,045', $header);
+        $this->assertSame(
+            '00879197600000720261601EQ.DAT',
+            $generator->filename($this->company(), $july)
         );
     }
 
@@ -127,7 +209,49 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $this->assertCount(7, str_getcsv($lines[count($lines) - 1]));
 
         foreach (array_slice($lines, 1, -1) as $line) {
-            $this->assertCount(16, str_getcsv($line));
+            $this->assertCount(14, str_getcsv($line));
+        }
+    }
+
+    /**
+     * The whole point of the fix: every value in the position the Alphalist
+     * Validation System reads it from.
+     */
+    public function test_detail_fields_sit_in_the_bir_positions(): void
+    {
+        $fields = str_getcsv(explode("\r\n", $this->generate())[7]);
+
+        $this->assertCount(14, $fields);
+        $this->assertSame('D1', $fields[0]);
+        $this->assertSame('1601EQ', $fields[1]);
+        $this->assertSame('7', $fields[self::SEQUENCE]);
+        $this->assertSame('220052738', $fields[self::PAYEE_TIN]);
+        $this->assertSame('0000', $fields[self::PAYEE_BRANCH]);
+        $this->assertSame('', $fields[self::COMPANY_NAME]);
+        $this->assertSame('BANSIL', $fields[self::LAST_NAME]);
+        $this->assertSame('ANNIE', $fields[self::FIRST_NAME]);
+        $this->assertSame('', $fields[self::MIDDLE_NAME]);
+        $this->assertSame('12/2025', $fields[self::PERIOD]);
+        $this->assertSame('WI516', $fields[self::ATC]);
+        $this->assertSame('10.00', $fields[self::RATE]);
+        $this->assertSame('5865.60', $fields[self::INCOME_PAYMENT]);
+        $this->assertSame('586.56', $fields[self::TAX_WITHHELD]);
+    }
+
+    /**
+     * The agent's TIN, branch and the month-end date used to lead every detail
+     * row. AVS read the first of them as the payee TIN, which is what produced
+     * "Invalid Payees TIN" on all 47 lines of the July 2026 run.
+     */
+    public function test_detail_rows_do_not_repeat_the_withholding_agent(): void
+    {
+        $lines = explode("\r\n", rtrim($this->generate(), "\r\n"));
+
+        foreach (array_slice($lines, 1, -1) as $line) {
+            $fields = str_getcsv($line);
+
+            $this->assertNotSame('008791976', $fields[self::SEQUENCE]);
+            $this->assertStringNotContainsString('/31/', $line);
         }
     }
 
@@ -135,7 +259,7 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
     {
         $header = explode("\r\n", $this->generate())[0];
 
-        $this->assertSame('HQAP,H1601EQ,008791976,0000,12/31/2025,FORTRESS STEEL INC,045', $header);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",12/2025,045', $header);
     }
 
     public function test_the_control_record_totals_the_detail_amounts(): void
@@ -147,15 +271,15 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $expectedIncome = 0.0;
         $expectedTax = 0.0;
         foreach ($lines as $line) {
-            $expectedIncome += (float) str_getcsv($line)[13];
-            $expectedTax += (float) str_getcsv($line)[15];
+            $expectedIncome += (float) str_getcsv($line)[self::INCOME_PAYMENT];
+            $expectedTax += (float) str_getcsv($line)[self::TAX_WITHHELD];
         }
 
         $this->assertSame('C1', $control[0]);
         $this->assertSame('1601EQ', $control[1]);
         $this->assertSame('008791976', $control[2]);
         $this->assertSame('0000', $control[3]);
-        $this->assertSame('12/31/2025', $control[4]);
+        $this->assertSame('12/2025', $control[4]);
         $this->assertSame(number_format(round($expectedIncome, 2), 2, '.', ''), $control[5]);
         $this->assertSame(number_format(round($expectedTax, 2), 2, '.', ''), $control[6]);
         $this->assertSame('14284247.61', $control[5]);
@@ -171,7 +295,7 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
             $fields = str_getcsv($line);
 
             $this->assertSame('D1', $fields[0]);
-            $this->assertSame((string) ($index + 1), $fields[5]);
+            $this->assertSame((string) ($index + 1), $fields[self::SEQUENCE]);
         }
     }
 
@@ -184,8 +308,8 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $line = explode("\r\n", $this->generate())[1];
 
         $this->assertSame(
-            'D1,1601EQ,008791976,0000,12/31/2025,1,007086184,0000,'
-            . '"ACERSTEEL INDUSTRIAL SALES INC",,,,WC158,3682716.00,1.00,36827.16',
+            'D1,1601EQ,1,007086184,0000,"ACERSTEEL INDUSTRIAL SALES INC"'
+            . ',,,,12/2025,WC158,1.00,3682716.00,36827.16',
             $line
         );
     }
@@ -195,8 +319,8 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $line = explode("\r\n", $this->generate())[7];
 
         $this->assertSame(
-            'D1,1601EQ,008791976,0000,12/31/2025,7,220052738,0000,,'
-            . '"BANSIL","ANNIE",,WI516,5865.60,10.00,586.56',
+            'D1,1601EQ,7,220052738,0000,,"BANSIL","ANNIE",'
+            . ',12/2025,WI516,10.00,5865.60,586.56',
             $line
         );
     }
@@ -209,9 +333,9 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $line = explode("\r\n", $this->generate())[19];
         $fields = str_getcsv($line);
 
-        $this->assertSame('-51600.00', $fields[13]);
-        $this->assertSame('5.00', $fields[14]);
-        $this->assertSame('-2580.00', $fields[15]);
+        $this->assertSame('5.00', $fields[self::RATE]);
+        $this->assertSame('-51600.00', $fields[self::INCOME_PAYMENT]);
+        $this->assertSame('-2580.00', $fields[self::TAX_WITHHELD]);
     }
 
     public function test_company_names_are_truncated_to_fifty_characters(): void
@@ -219,7 +343,7 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $rows = $this->rows();
         $rows[0]['company_name'] = 'ACERSTEEL INDUSTRIAL SALES INCORPORATED AND SUBSIDIARIES HOLDINGS';
 
-        $name = str_getcsv(explode("\r\n", $this->generate($rows))[1])[8];
+        $name = str_getcsv(explode("\r\n", $this->generate($rows))[1])[self::COMPANY_NAME];
 
         $this->assertSame(50, strlen($name));
         $this->assertSame('ACERSTEEL INDUSTRIAL SALES INCORPORATED AND SUBSID', $name);
@@ -234,7 +358,7 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $rows = $this->rows();
         $rows[0]['company_name'] = 'Acersteel Industrial, Sales & Supply';
 
-        $name = str_getcsv(explode("\r\n", $this->generate($rows))[1])[8];
+        $name = str_getcsv(explode("\r\n", $this->generate($rows))[1])[self::COMPANY_NAME];
 
         $this->assertStringNotContainsString(',', $name);
         $this->assertStringNotContainsString('&', $name);
@@ -243,7 +367,7 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
     }
 
     /**
-     * The reference file keeps a double space inside one payee name, so the
+     * The sample file keeps a double space inside one payee name, so the
      * generator must not tidy internal spacing on the way out. Normalisation is
      * the importer's job.
      */
@@ -251,7 +375,7 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
     {
         $names = collect(explode("\r\n", rtrim($this->generate(), "\r\n")))
             ->slice(1, 59)
-            ->map(fn (string $line) => str_getcsv($line)[8])
+            ->map(fn (string $line) => str_getcsv($line)[self::COMPANY_NAME])
             ->filter()
             ->values();
 
@@ -265,15 +389,15 @@ class ReliefExpandedWtaxDatGeneratorTest extends TestCase
         $lines = explode("\r\n", rtrim($this->generate([]), "\r\n"));
 
         $this->assertCount(2, $lines);
-        $this->assertSame('HQAP,H1601EQ,008791976,0000,12/31/2025,FORTRESS STEEL INC,045', $lines[0]);
-        $this->assertSame('C1,1601EQ,008791976,0000,12/31/2025,0.00,0.00', $lines[1]);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",12/2025,045', $lines[0]);
+        $this->assertSame('C1,1601EQ,008791976,0000,12/2025,0.00,0.00', $lines[1]);
     }
 
     /**
-     * The period is normalised to month end, so any day inside December 2025
+     * The period is written as a month and year, so any day inside December 2025
      * yields the same file.
      */
-    public function test_any_day_inside_the_month_yields_the_same_period_end(): void
+    public function test_any_day_inside_the_month_yields_the_same_period(): void
     {
         $generator = new ReliefExpandedWtaxDatGenerator();
         $rows = collect($this->rows());

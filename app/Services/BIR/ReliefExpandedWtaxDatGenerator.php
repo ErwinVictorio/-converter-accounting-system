@@ -9,25 +9,37 @@ use RuntimeException;
 /**
  * Builds the BIR 1601EQ Quarterly Alphalist of Payees schedule.
  *
- * Shape required by the BIR Alphalist Validation System for 1601EQ/QAP:
+ * Shape taken from the BIR-generated reference file
+ * Docs/Expanded/compareDatFile/original/00879197600000320251601EQ.DAT, which is what
+ * the Alphalist Validation System accepts for 1601EQ/QAP:
  *
- *   HQAP,H1601EQ,{agent tin},{agent branch},{m/d/Y},{agent name},{rdo} 7 fields
- *   D1,1601EQ,{agent tin},{agent branch},{m/d/Y},{seq},{payee tin},
- *      {payee branch},{company},{last},{first},{middle},{atc},
- *      {income payment},{rate},{tax withheld}                         16 fields
- *   C1,1601EQ,{agent tin},{agent branch},{m/d/Y},{total income},
- *      {total withheld}                                                7 fields
+ *   HQAP,H1601EQ,{agent tin},{agent branch},"{agent name}",{m/Y},{rdo}  7 fields
+ *   D1,1601EQ,{seq},{payee tin},{payee branch},{company},{last},
+ *      {first},{middle},{m/Y},{atc},{rate},{income payment},
+ *      {tax withheld}                                                  14 fields
+ *   C1,1601EQ,{agent tin},{agent branch},{m/Y},{total income},
+ *      {total withheld}                                                 7 fields
+ *
+ * The agent TIN, branch and period are header and control business only: detail rows
+ * carry the payee's identity from field 3 onwards, and the period repeats after the
+ * name columns. Writing the agent fields into the detail row instead -- which this
+ * generator used to do -- pushed the payee TIN into the slot AVS reads as the agent
+ * branch, so every line came back with "Detail Insufficient Column" and a cascade of
+ * "Invalid Payees TIN" / "ATC is invalid" / "Amount ... is empty or zero" errors.
+ * The period is a month-and-year, not a month-end date; the date form drew
+ * "Specified Month End Date not the same!" on line 1.
  *
  * Two things differ from the RELIEF generators in this namespace and are
- * deliberate:
+ * deliberate. Both were settled against the older sample payee data in
+ * Docs/Expanded/0087919760000123120251604E.dat, referred to below as the sample file:
  *
  * 1. Internal runs of spaces are left alone. The RELIEF generators collapse
- *    them, but the reference file contains "PRINTSCAPE  PRINTING SERVICES AND
+ *    them, but the sample file contains "PRINTSCAPE  PRINTING SERVICES AND
  *    BUSINESS SUPPLIE" with a double space, so collapsing here would rewrite
  *    stored data on the way out and make a byte-for-byte comparison impossible.
  *    Collapsing belongs in ExpandedWtaxImport, where messy spreadsheet text
  *    actually enters the system.
- * 2. Amounts always carry two decimals, including negatives. The reference file
+ * 2. Amounts always carry two decimals, including negatives. The sample file
  *    has -51600.00 / -2580.00 on a reversal row, so signs are passed through.
  *
  * One item in, one detail line out. The generator itself never merges anything --
@@ -36,7 +48,7 @@ use RuntimeException;
  * rate arrive as a single item with their income payment and tax amount already
  * summed.
  *
- * That is a deliberate departure from the reference file, which lists PRUDENTIAL
+ * That is a deliberate departure from the sample file, which lists PRUDENTIAL
  * GUARANTEE AND ASSURANCE INC twice under WC160 at 2%: the same month regenerated
  * from consolidated records produces **58 detail lines instead of 59**, with those
  * two becoming 221012.00 / 4420.24. The control total is unchanged at 241326.68,
@@ -61,7 +73,7 @@ class ReliefExpandedWtaxDatGenerator
 
         $sequence = 0;
         foreach ($transactions as $transaction) {
-            $lines[] = $this->detail($transaction, $company, $period, ++$sequence);
+            $lines[] = $this->detail($transaction, $period, ++$sequence);
         }
 
         $lines[] = $this->trailer($company, $transactions, $period);
@@ -87,8 +99,8 @@ class ReliefExpandedWtaxDatGenerator
             'H' . self::FORM_TYPE,
             $this->birTin($this->companyTin($company)),
             $this->branch($company),
-            $period->format('m/d/Y'),
-            $this->birName($this->companyName($company)),
+            $this->quote($this->birName($this->companyName($company))),
+            $period->format('m/Y'),
             $this->rdoCode($company),
         ];
 
@@ -99,16 +111,13 @@ class ReliefExpandedWtaxDatGenerator
         return implode(',', $fields);
     }
 
-    private function detail(array|object $transaction, array $company, Carbon $period, int $sequence): string
+    private function detail(array|object $transaction, Carbon $period, int $sequence): string
     {
         $row = $this->row($transaction);
 
         $fields = [
             'D1',
             self::FORM_TYPE,
-            $this->birTin($this->companyTin($company)),
-            $this->branch($company),
-            $period->format('m/d/Y'),
             (string) $sequence,
             $this->birTin($this->text($row, 'payee_tin')),
             $this->payeeBranch($this->text($row, 'payee_branch_code')),
@@ -116,14 +125,15 @@ class ReliefExpandedWtaxDatGenerator
             $this->optionalName($this->birName($this->text($row, 'last_name'))),
             $this->optionalName($this->birName($this->text($row, 'first_name'))),
             $this->optionalName($this->birName($this->text($row, 'middle_name'))),
+            $period->format('m/Y'),
             strtoupper(trim($this->text($row, 'atc_code'))),
-            $this->number($this->amount($row, 'income_payment')),
             $this->number($this->amount($row, 'tax_rate')),
+            $this->number($this->amount($row, 'income_payment')),
             $this->number($this->amount($row, 'tax_withheld')),
         ];
 
-        if (count($fields) !== 16) {
-            throw new RuntimeException('1601EQ QAP detail must contain exactly 16 fields.');
+        if (count($fields) !== 14) {
+            throw new RuntimeException('1601EQ QAP detail must contain exactly 14 fields.');
         }
 
         return implode(',', $fields);
@@ -145,7 +155,7 @@ class ReliefExpandedWtaxDatGenerator
             self::FORM_TYPE,
             $this->birTin($this->companyTin($company)),
             $this->branch($company),
-            $period->format('m/d/Y'),
+            $period->format('m/Y'),
             $this->number(round($totalIncome, 2)),
             $this->number(round($totalTax, 2)),
         ];

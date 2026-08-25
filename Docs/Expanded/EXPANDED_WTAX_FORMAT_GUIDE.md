@@ -185,7 +185,11 @@ DAT generation also filters by the selected withholding agent TIN and branch cod
 
 The filename and the body must both be 1601EQ/QAP.
 
-The old sample file:
+The body below is taken from the BIR-generated file:
+
+- `Docs/Expanded/compareDatFile/original/00879197600000320251601EQ.DAT`
+
+That file is the format reference. The older sample:
 
 - `Docs/Expanded/0087919760000123120251604E.dat`
 
@@ -197,47 +201,76 @@ Invalid Form Type Code.
 No Detail Record found in file!
 ```
 
+### Record Templates
+
+```text
+HQAP,H1601EQ,{TIN},{BRANCH},"{WA_NAME}",{MM/YYYY},{RDO}
+D1,1601EQ,{SEQ},{PAYEE_TIN},{PAYEE_BRANCH},{COMPANY},{SURNAME},{FIRST},{MIDDLE},{MM/YYYY},{ATC},{RATE},{INCOME},{TAX}
+C1,1601EQ,{TIN},{BRANCH},{MM/YYYY},{TOTAL_INCOME},{TOTAL_TAX}
+```
+
+Field counts are fixed: header 7, detail 14, control 7.
+
 ### Header
 
 ```text
-HQAP,H1601EQ,{WITHHOLDING_AGENT_TIN},{BRANCH_CODE},{MONTH_END_DATE},{WITHHOLDING_AGENT_NAME},{RDO_CODE}
+HQAP,H1601EQ,{WITHHOLDING_AGENT_TIN},{BRANCH_CODE},"{WITHHOLDING_AGENT_NAME}",{MM/YYYY},{RDO_CODE}
 ```
 
 Example:
 
 ```text
-HQAP,H1601EQ,008791976,0000,04/30/2026,FORTRESS STEEL INC,045
+HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",07/2026,045
 ```
+
+The agent name is quoted. The period is a month and year, not a month-end date.
 
 ### Detail
 
 ```text
-D1,1601EQ,{WITHHOLDING_AGENT_TIN},{BRANCH_CODE},{MONTH_END_DATE},{SEQUENCE},{PAYEE_TIN},{PAYEE_BRANCH},{COMPANY_NAME},{SURNAME},{FIRST_NAME},{MIDDLE_NAME},{ATC},{INCOME_PAYMENT},{EWT_RATE},{TAX_AMOUNT}
+D1,1601EQ,{SEQUENCE},{PAYEE_TIN},{PAYEE_BRANCH},{COMPANY_NAME},{SURNAME},{FIRST_NAME},{MIDDLE_NAME},{MM/YYYY},{ATC},{EWT_RATE},{INCOME_PAYMENT},{TAX_AMOUNT}
 ```
+
+Detail rows do not repeat the withholding agent TIN or branch code. The sequence number is field 3 and the payee TIN is field 4.
 
 Company example:
 
 ```text
-D1,1601EQ,008791976,0000,04/30/2026,1,007086184,0000,"ACERSTEEL INDUSTRIAL SALES INC",,,,WC158,3682716.00,1.00,36827.16
+D1,1601EQ,1,007086184,0000,"ACERSTEEL INDUSTRIAL SALES INC",,,,07/2026,WC158,1.00,3682716.00,36827.16
 ```
 
 Individual example:
 
 ```text
-D1,1601EQ,008791976,0000,04/30/2026,2,220052738,0000,,"BANSIL","ANNIE",,WI516,5865.60,10.00,586.56
+D1,1601EQ,2,220052738,0000,,"BANSIL","ANNIE",,07/2026,WI516,10.00,5865.60,586.56
 ```
+
+Note the rate comes before the income payment.
 
 ### Control Record
 
 ```text
-C1,1601EQ,{WITHHOLDING_AGENT_TIN},{BRANCH_CODE},{MONTH_END_DATE},{TOTAL_INCOME_PAYMENT},{TOTAL_TAX_AMOUNT}
+C1,1601EQ,{WITHHOLDING_AGENT_TIN},{BRANCH_CODE},{MM/YYYY},{TOTAL_INCOME_PAYMENT},{TOTAL_TAX_AMOUNT}
 ```
 
 Example:
 
 ```text
-C1,1601EQ,008791976,0000,04/30/2026,14284247.61,241326.68
+C1,1601EQ,008791976,0000,07/2026,9186973.40,127776.44
 ```
+
+### AVS Error Troubleshooting
+
+| AVS message | What it points at |
+| --- | --- |
+| `Invalid Type of Alpha List. Value must be HQAP.` | field 1 of the header |
+| `Invalid Form Type Code.` on line 1 | field 2 of the header, which must be `H1601EQ` |
+| `Specified Month End Date not the same!` | the header period is not `MM/YYYY` |
+| `Detail Insufficient Column` on every row | detail columns are shifted or miscounted |
+| `Invalid Payees TIN` plus `ATC is invalid` plus empty amounts on every row | the same shift, seen from the fields AVS lands on |
+| `Control Insufficient Column` | the control layout is short or its period is wrong |
+
+A whole-file cascade is a layout problem. Errors on only a few lines are data problems.
 
 ## Consolidation Rule
 
@@ -286,5 +319,5 @@ php artisan test tests/Feature/ExpandedWtaxImportTest.php tests/Feature/Expanded
 Expected current result:
 
 ```text
-84 passed
+88 passed
 ```

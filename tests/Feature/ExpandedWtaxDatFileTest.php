@@ -133,36 +133,41 @@ class ExpandedWtaxDatFileTest extends TestCase
         $lines = $this->lines($response->getContent());
 
         $this->assertCount(4, $lines); // header + 2 details + trailer
-        $this->assertSame('HQAP,H1601EQ,008791976,0000,07/31/2026,FORTRESS STEEL INC,045', $lines[0]);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",07/2026,045', $lines[0]);
 
         $first = str_getcsv($lines[1]);
 
+        // The 14 fields the BIR-generated reference file uses, in its order.
+        $this->assertCount(14, $first);
         $this->assertSame('D1', $first[0]);
         $this->assertSame('1601EQ', $first[1]);
-        $this->assertSame('008791976', $first[2]);
-        $this->assertSame('07/31/2026', $first[4]);
-        $this->assertSame('1', $first[5]); // sequence starts at 1
-        $this->assertSame('007086184', $first[6]);
-        $this->assertSame('0000', $first[7]);
-        $this->assertSame('ACERSTEEL INDUSTRIAL SALES INC', $first[8]);
-        $this->assertSame('WC158', $first[12]);
-        $this->assertSame('3682716.00', $first[13]);
-        $this->assertSame('1.00', $first[14]);
-        $this->assertSame('36827.16', $first[15]);
+        $this->assertSame('1', $first[2]); // sequence starts at 1
+        $this->assertSame('007086184', $first[3]);
+        $this->assertSame('0000', $first[4]);
+        $this->assertSame('ACERSTEEL INDUSTRIAL SALES INC', $first[5]);
+        $this->assertSame('', $first[6]);
+        $this->assertSame('', $first[7]);
+        $this->assertSame('', $first[8]);
+        $this->assertSame('07/2026', $first[9]);
+        $this->assertSame('WC158', $first[10]);
+        $this->assertSame('1.00', $first[11]);
+        $this->assertSame('3682716.00', $first[12]);
+        $this->assertSame('36827.16', $first[13]);
 
         // An individual payee fills last/first/middle instead of company_name.
         $second = str_getcsv($lines[2]);
 
+        $this->assertCount(14, $second);
         $this->assertSame('D1', $second[0]);
-        $this->assertSame('2', $second[5]);
+        $this->assertSame('2', $second[2]);
+        $this->assertSame('', $second[5]);
+        $this->assertSame('BANSIL', $second[6]);
+        $this->assertSame('ANNIE', $second[7]);
         $this->assertSame('', $second[8]);
-        $this->assertSame('BANSIL', $second[9]);
-        $this->assertSame('ANNIE', $second[10]);
-        $this->assertSame('', $second[11]);
-        $this->assertSame('WI516', $second[12]);
+        $this->assertSame('WI516', $second[10]);
 
         // Trailer carries the exact sum of the detail rows.
-        $this->assertSame('C1,1601EQ,008791976,0000,07/31/2026,3688581.60,37413.72', $lines[3]);
+        $this->assertSame('C1,1601EQ,008791976,0000,07/2026,3688581.60,37413.72', $lines[3]);
     }
 
     public function test_it_downloads_expanded_dat_per_withholding_agent(): void
@@ -193,8 +198,8 @@ class ExpandedWtaxDatFileTest extends TestCase
             'attachment; filename="12345678900020720261601EQ.DAT"'
         );
 
-        $this->assertSame('HQAP,H1601EQ,008791976,0000,07/31/2026,FORTRESS STEEL INC,045', $first[0]);
-        $this->assertSame('HQAP,H1601EQ,123456789,0002,07/31/2026,OTHER COMPANY INC,', $second[0]);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",07/2026,045', $first[0]);
+        $this->assertSame('HQAP,H1601EQ,123456789,0002,"OTHER COMPANY INC",07/2026,', $second[0]);
         $this->assertStringContainsString('ACERSTEEL INDUSTRIAL SALES INC', $first[1]);
         $this->assertStringNotContainsString('OTHER COMPANY PAYEE', implode('', $first));
         $this->assertStringContainsString('OTHER COMPANY PAYEE', $second[1]);
@@ -219,7 +224,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         );
 
         // Negative amounts keep their sign and their two decimals.
-        $this->assertStringContainsString(',-51600.00,5.00,-2580.00', $lines[2]);
+        $this->assertStringContainsString(',5.00,-51600.00,-2580.00', $lines[2]);
         $this->assertSame('34247.16', str_getcsv($lines[3])[6]);
     }
 
@@ -240,8 +245,8 @@ class ExpandedWtaxDatFileTest extends TestCase
             $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
         );
 
-        $names = array_map(fn ($line) => str_getcsv($line)[8], array_slice($lines, 1, 3));
-        $rates = array_map(fn ($line) => str_getcsv($line)[14], array_slice($lines, 1, 3));
+        $names = array_map(fn ($line) => str_getcsv($line)[5], array_slice($lines, 1, 3));
+        $rates = array_map(fn ($line) => str_getcsv($line)[11], array_slice($lines, 1, 3));
 
         $this->assertSame([
             'ACERSTEEL INDUSTRIAL SALES INC',
@@ -284,13 +289,13 @@ class ExpandedWtaxDatFileTest extends TestCase
         $detail = str_getcsv($lines[1]);
 
         $this->assertSame('D1', $detail[0]);
-        $this->assertSame('000491813', $detail[6]);
-        $this->assertSame('PRUDENTIAL GUARANTEE AND ASSURANCE INC', $detail[8]);
-        $this->assertSame('WC160', $detail[12]);
+        $this->assertSame('000491813', $detail[3]);
+        $this->assertSame('PRUDENTIAL GUARANTEE AND ASSURANCE INC', $detail[5]);
+        $this->assertSame('WC160', $detail[10]);
         // 219023.50 + 1988.50 and 4380.47 + 39.77, summed rather than replaced.
-        $this->assertSame('221012.00', $detail[13]);
-        $this->assertSame('2.00', $detail[14]);
-        $this->assertSame('4420.24', $detail[15]);
+        $this->assertSame('2.00', $detail[11]);
+        $this->assertSame('221012.00', $detail[12]);
+        $this->assertSame('4420.24', $detail[13]);
     }
 
     public function test_consolidation_leaves_the_control_total_untouched(): void
@@ -332,7 +337,7 @@ class ExpandedWtaxDatFileTest extends TestCase
 
         $this->assertCount(5, $lines); // 4 stored rows, 3 detail lines
 
-        $names = array_map(fn ($line) => str_getcsv($line)[8], array_slice($lines, 1, 3));
+        $names = array_map(fn ($line) => str_getcsv($line)[5], array_slice($lines, 1, 3));
 
         $this->assertSame([
             'ACERSTEEL INDUSTRIAL SALES INC',
@@ -341,7 +346,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         ], $names);
         // Sequence numbers close the gap the merge leaves behind.
         $this->assertSame(['1', '2', '3'], array_map(
-            fn ($line) => str_getcsv($line)[5],
+            fn ($line) => str_getcsv($line)[2],
             array_slice($lines, 1, 3)
         ));
     }
@@ -378,7 +383,7 @@ class ExpandedWtaxDatFileTest extends TestCase
 
         // Any day inside the month resolves to the same month-end file.
         $this->assertCount(3, $lines);
-        $this->assertSame('HQAP,H1601EQ,008791976,0000,07/31/2026,FORTRESS STEEL INC,045', $lines[0]);
+        $this->assertSame('HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",07/2026,045', $lines[0]);
         $this->assertStringNotContainsString('JUNE PAYEE INC', implode('', $lines));
     }
 
