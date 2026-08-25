@@ -116,18 +116,31 @@ export function AppSidebar() {
         <Sidebar collapsible="icon">
             {/* Header — bumabagay sa expanded rail at sa makitid na icon rail */}
             <SidebarHeader className="h-16 flex items-center border-b border-gray-200 bg-white px-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-                <div className="flex items-center gap-3 font-bold text-gray-800 text-base overflow-hidden">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
-                        <Building2 className="h-5 w-5" />
-                    </div>
-                    <span className="truncate group-data-[collapsible=icon]:hidden">
-                        Fortress Steel
-                    </span>
+                {/*
+                 * The horizontal lockup already contains the wordmark, so no text
+                 * label sits beside it. It is 1683x522 (~3.2:1), which cannot be read
+                 * in the 3rem icon rail -- hence the tower glyph below, shown only
+                 * when the rail is collapsed. The mobile drawer is wide, so it keeps
+                 * the full logo.
+                 */}
+                <img
+                    src="/images/fortress-steel-horizontal.png"
+                    alt="Fortress Steel Inc."
+                    className="h-10 w-auto max-w-full object-contain object-left group-data-[collapsible=icon]:hidden"
+                />
+                <div className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white group-data-[collapsible=icon]:flex">
+                    <Building2 className="h-5 w-5" />
                 </div>
             </SidebarHeader>
 
             {/* Content Links */}
-            <SidebarContent className="bg-white px-2 py-3">
+            {/*
+             * px-0 in the icon rail: the rail is 3rem, and this px-2 plus each
+             * SidebarGroup's own p-2 left only 1rem inside a 2rem button, so the
+             * icons were clipped by the button's overflow-hidden. Dropping this
+             * padding leaves the group's 2rem, which the button fills exactly.
+             */}
+            <SidebarContent className="bg-white px-2 py-3 group-data-[collapsible=icon]:px-0">
                 {menuGroups.map((group) => (
                     // py-1 over the shipped p-2: three group labels instead of one, so
                     // the tighter vertical padding keeps the whole list on screen at
@@ -156,7 +169,7 @@ export function AppSidebar() {
                                                 <Link
                                                     href={item.url}
                                                     onClick={handleNavClick}
-                                                    className="flex items-center gap-3 w-full"
+                                                    className="flex w-full items-center gap-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
                                                 >
                                                     <IconComponent className="h-4 w-4 shrink-0" />
                                                     <span className="truncate group-data-[collapsible=icon]:hidden">
@@ -189,7 +202,7 @@ export function AppSidebar() {
                                 as="button"
                                 type="button"
                                 onClick={handleNavClick}
-                                className="flex w-full items-center gap-3"
+                                className="flex w-full items-center gap-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
                             >
                                 <LogOut className="h-4 w-4 shrink-0" />
                                 <span className="truncate group-data-[collapsible=icon]:hidden">
