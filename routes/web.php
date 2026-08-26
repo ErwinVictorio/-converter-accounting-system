@@ -6,6 +6,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DatFileController;
 use App\Http\Controllers\ImportationController;
 use App\Http\Controllers\ManageBrokerController;
+use App\Http\Controllers\RecordController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\VatInputController;
 use App\Http\Controllers\WithholdingCompanyController;
@@ -29,6 +30,22 @@ Route::middleware('auth')->group(function () {
     //  for record entry
     Route::get('/records',[VatInputController::class,'index']);
     Route::post('/vat-import',[VatInputController::class,'import']);
+
+    /*
+     * Record: one page per data type, so no screen mixes four tables. Declared
+     * ahead of the /records/{vatInput}/... routes -- those are three segments and
+     * these are two, so they cannot collide, but keeping the literal paths first
+     * makes that independent of Laravel's matching order.
+     *
+     * Each listing reads only its own storage; nothing here touches upload
+     * parsing or DAT generation.
+     */
+    Route::get('/records/purchases', [RecordController::class, 'purchases'])->name('records.purchases.index');
+    Route::get('/records/sales', [RecordController::class, 'sales'])->name('records.sales.index');
+    Route::get('/records/expanded-wtax', [RecordController::class, 'expandedWtax'])->name('records.expanded-wtax.index');
+    // The manual-entry module owns this listing; the Record page is just its table.
+    Route::get('/records/importations', [ImportationController::class, 'records'])->name('records.importations.index');
+
     Route::get('/records/{vatInput}/adjusted-lookup', [VatInputController::class, 'adjustedLookup']);
     Route::get('/records/{vatInput}/edit', [VatInputController::class, 'edit']);
     Route::put('/records/{vatInput}', [VatInputController::class, 'update']);
@@ -64,7 +81,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/importation/{importationEntry}', [ImportationController::class, 'destroy']);
 
     /*
-     * Settings > Manage Companies: the withholding agent companies the Expanded
+     * Master Data > Companies: the withholding agent companies the Expanded
      * WTAX upload and the 1601EQ DAT are filed for. Deactivation is a PATCH rather
      * than the DELETE, because DELETE here means "remove a mistyped row" and is
      * refused once a month has been filed under the company.

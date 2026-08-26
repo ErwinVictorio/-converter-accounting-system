@@ -17,9 +17,13 @@ import {
     Building2,
     Building,
     Briefcase,
+    Container,
     FileDown,
     FileUp,
+    Percent,
+    Receipt,
     Ship,
+    ShoppingCart,
     Truck,
     Users,
     LogOut
@@ -31,6 +35,8 @@ import {
  *
  *  - Main Menu           the overview.
  *  - Data & Transactions the monthly work -- bring figures in, then take a DAT out.
+ *  - Record              browse and maintain the transaction rows already stored,
+ *                        one page per data type so no screen mixes four tables.
  *  - Master Data         the reference records those screens read from, set up once
  *                        and revisited only when a customer, supplier, broker or
  *                        withholding company changes.
@@ -63,6 +69,29 @@ const transactionItems = [
     },
 ];
 
+const recordItems = [
+    {
+        title: "Purchase Records",
+        url: "/records/purchases",
+        icon: ShoppingCart,
+    },
+    {
+        title: "Sales Records",
+        url: "/records/sales",
+        icon: Receipt,
+    },
+    {
+        title: "Expanded WTAX Records",
+        url: "/records/expanded-wtax",
+        icon: Percent,
+    },
+    {
+        title: "Importation Records",
+        url: "/records/importations",
+        icon: Container,
+    },
+];
+
 const masterDataItems = [
     {
         title: "Customers",
@@ -89,6 +118,7 @@ const masterDataItems = [
 const menuGroups = [
     { label: "Main Menu", items: mainItems },
     { label: "Data & Transactions", items: transactionItems },
+    { label: "Record", items: recordItems },
     { label: "Master Data", items: masterDataItems },
 ];
 
@@ -106,10 +136,23 @@ export function AppSidebar() {
 
     // Alisin ang query string, tapos tugma sa exact o parent na route
     const currentPath = currentUrl.split("?")[0];
-    const isActiveUrl = (url) =>
+    const matchesUrl = (url) =>
         url === "/"
             ? currentPath === "/"
             : currentPath === url || currentPath.startsWith(`${url}/`);
+
+    /*
+     * Longest match wins. "Import Data" is /records and the Record pages are
+     * /records/..., so a plain prefix test would light up two rows at once on
+     * every record page.
+     */
+    const activeUrl = menuGroups
+        .flatMap((group) => group.items)
+        .filter((item) => matchesUrl(item.url))
+        .reduce(
+            (best, item) => (best && best.url.length >= item.url.length ? best : item),
+            null
+        )?.url;
 
     return (
         // collapsible="icon" = nagko-collapse sa 3rem rail sa desktop, sheet drawer sa mobile
@@ -156,7 +199,7 @@ export function AppSidebar() {
                             <SidebarMenu className="space-y-1">
                                 {group.items.map((item) => {
                                     const IconComponent = item.icon;
-                                    const isActive = isActiveUrl(item.url);
+                                    const isActive = item.url === activeUrl;
 
                                     return (
                                         <SidebarMenuItem key={item.title}>

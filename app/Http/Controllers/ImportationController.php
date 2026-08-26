@@ -13,9 +13,20 @@ use Inertia\Inertia;
 class ImportationController extends Controller
 {
     /**
-     * List importation entries, optionally filtered by tax month.
+     * The manual-entry screen. Keying a new importation only, so it carries no
+     * listing -- the stored rows live on Record > Importation Records below.
      */
     public function index(Request $request)
+    {
+        return Inertia::render('Importation');
+    }
+
+    /**
+     * Record > Importation Records: the stored manual entries, optionally
+     * filtered by tax month. Kept on this controller rather than RecordController
+     * so it sits beside the store/update/destroy rules its table calls.
+     */
+    public function records(Request $request)
     {
         $taxMonth = $request->input('tax_month');
         $normalizedMonth = $taxMonth ? $this->normalizeTaxMonth($taxMonth) : null;
@@ -30,15 +41,23 @@ class ImportationController extends Controller
             ->paginate(15)
             ->withQueryString();
 
+        /*
+         * Grouped in PHP rather than with DATE_FORMAT so the listing runs on any
+         * driver. These are only the labels for the filter above the table, and
+         * there is one row per keyed importation, so the set stays small.
+         */
         $months = ImportationEntry::query()
-            ->selectRaw("DATE_FORMAT(tax_month, '%Y-%m') as value")
-            ->selectRaw("DATE_FORMAT(tax_month, '%M %Y') as label")
-            ->selectRaw('COUNT(*) as records_count')
-            ->groupBy('value', 'label')
-            ->orderByDesc('value')
-            ->get();
+            ->orderByDesc('tax_month')
+            ->pluck('tax_month')
+            ->groupBy(fn ($month) => Carbon::parse($month)->format('Y-m'))
+            ->map(fn ($group, string $value) => [
+                'value' => $value,
+                'label' => Carbon::parse($value . '-01')->format('F Y'),
+                'records_count' => $group->count(),
+            ])
+            ->values();
 
-        return Inertia::render('Importation', [
+        return Inertia::render('Records/ImportationRecords', [
             'entries' => $entries,
             'months' => $months,
             'filters' => [

@@ -502,24 +502,24 @@ class ExpandedWtaxImportTest extends TestCase
         // Seven stored rows, five listed. Two pairs merge: the two PRUDENTIAL rows,
         // and the two ACERSTEEL WC158 rows at 1% whose TINs disagree -- one payee
         // billed at one rate is one filing line either way.
-        $this->get('/records')->assertOk()->assertInertia(
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia(
             fn ($page) => $page
-                ->component('RecordEntry')
+                ->component('Records/ExpandedWtaxRecords')
                 ->has('expandedWtaxEntries.data', 5)
         );
 
         $this->assertSame(7, ExpandedWtaxEntry::count());
 
         // Search covers the payee, the TIN and the ATC code.
-        $this->get('/records?search=BANSIL')->assertOk()->assertInertia(
+        $this->get('/records/expanded-wtax?search=BANSIL')->assertOk()->assertInertia(
             fn ($page) => $page->has('expandedWtaxEntries.data', 1)
         );
 
-        $this->get('/records?search=000491813')->assertOk()->assertInertia(
+        $this->get('/records/expanded-wtax?search=000491813')->assertOk()->assertInertia(
             fn ($page) => $page->has('expandedWtaxEntries.data', 1)
         );
 
-        $this->get('/records?search=WC158')->assertOk()->assertInertia(
+        $this->get('/records/expanded-wtax?search=WC158')->assertOk()->assertInertia(
             fn ($page) => $page->has('expandedWtaxEntries.data', 1)
         );
     }
@@ -529,7 +529,7 @@ class ExpandedWtaxImportTest extends TestCase
         $this->upload($this->workbook(), '2025-12')->assertSessionHas('success');
 
         $rows = collect(
-            $this->get('/records')->viewData('page')['props']['expandedWtaxEntries']['data']
+            $this->get('/records/expanded-wtax')->viewData('page')['props']['expandedWtaxEntries']['data']
         );
 
         // The workbook files ACERSTEEL under two TINs at the same 1% rate. The

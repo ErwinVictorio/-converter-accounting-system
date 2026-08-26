@@ -8,12 +8,10 @@ use App\Imports\VatInputImport;
 use App\Imports\SalesVatInputImport;
 use App\Models\Brokers;
 use App\Models\ExpandedWtaxEntry;
-use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\WithholdingCompanyDirectory;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
@@ -30,121 +28,19 @@ class VatInputController extends Controller
     }
 
     /**
-     * Display a listing of the resource.
+     * Import Data: the upload workflow only.
+     *
+     * The stored rows moved to Record > Purchase / Sales / Expanded WTAX Records,
+     * each with its own listing on RecordController, so this screen sends nothing
+     * but the withholding agent companies its Expanded WTAX selector needs.
      */
     public function index(Request $request)
     {
-        $search = $request->input('search');
-
-        $vatInputs = VatInput::query()
-            ->select('vat_inputs.*')
-            ->selectRaw("case when vat_inputs.is_adjusted = 1 then 0 else exists(select 1 from brokers where LEFT(REPLACE(REPLACE(REPLACE(brokers.tin_number, '-', ''), ' ', ''), '.', ''), 9) = LEFT(REPLACE(REPLACE(REPLACE(vat_inputs.tin_number, '-', ''), ' ', ''), '.', ''), 9)) end as is_broker")
-            // Search Filter (Supplier Name or TIN)
-            ->when($search, function ($query, $search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('supplier_name', 'LIKE', "%{$search}%")
-                        ->orWhere('tin_number', 'LIKE', "%{$search}%");
-                });
-            })
-            // I-sort mula sa pinakahuling na-update o id
-            ->orderBy('id', 'asc')
-            // Standard Pagination
-            ->paginate(15)
-            ->withQueryString();
-
-        $salesVatInputs = SalesVatInput::query()
-            ->select([
-                'customer_name',
-                'customer_tin',
-                'customer_type',
-                'company_name',
-                'last_name',
-                'first_name',
-                'middle_name',
-                'address1',
-                'address2',
-            ])
-            ->selectRaw('MIN(id) as id')
-            ->selectRaw('COUNT(*) as records_count')
-            ->selectRaw('SUM(exempt_sales) as exempt_sales')
-            ->selectRaw('SUM(zero_rated_sales) as zero_rated_sales')
-            ->selectRaw('SUM(taxable_net_of_vat) as taxable_net_of_vat')
-            ->selectRaw('SUM(output_vat) as output_vat')
-            ->selectRaw('SUM(net_amount) as net_amount')
-            ->selectRaw('SUM(gross_amount) as gross_amount')
-            ->when($search, function ($query, $search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('customer_name', 'LIKE', "%{$search}%")
-                        ->orWhere('customer_tin', 'LIKE', "%{$search}%")
-                        ->orWhere('document_no', 'LIKE', "%{$search}%");
-                });
-            })
-            ->groupBy([
-                'customer_name',
-                'customer_tin',
-                'customer_type',
-                'company_name',
-                'last_name',
-                'first_name',
-                'middle_name',
-                'address1',
-                'address2',
-            ])
-            ->orderBy('customer_name')
-            ->paginate(15, ['*'], 'sales_page')
-            ->withQueryString();
-
-        /*
-         * Expanded WTAX is listed the way it is filed: rows sharing Reporting Month
-         * + withholding agent + payee identity + ATC + EWT Rate are one line, with
-         * the income payment and the tax amount summed. Identity is the payee's
-         * name, so one payee at one rate is one row even when the uploaded TINs
-         * disagree; the group carries has_multiple_payee_tins so the screen can say
-         * which TIN reached the file.
-         *
-         * The grouping runs in PHP through ExpandedWtaxEntry::consolidate() rather
-         * than as a SQL GROUP BY so this list, the Generate DAT screen's record
-         * count and the DAT download all share one rule and cannot drift apart.
-         * Search and ordering stay in SQL, and the consolidated collection is
-         * paginated afterwards -- the same trade-off DatFileController's expanded
-         * period listing already makes.
-         */
-        $expandedRows = ExpandedWtaxEntry::consolidate(
-            ExpandedWtaxEntry::query()
-                ->when($search, function ($query, $search) {
-                    $query->where(function ($q) use ($search) {
-                        $q->where('payee_name', 'LIKE', "%{$search}%")
-                            ->orWhere('payee_tin', 'LIKE', "%{$search}%")
-                            ->orWhere('atc_code', 'LIKE', "%{$search}%");
-                    });
-                })
-                ->orderByDesc('reporting_period')
-                ->orderBy('payee_name')
-                ->orderBy('tax_rate')
-                ->orderBy('id')
-                ->get()
-        );
-
-        $expandedPage = LengthAwarePaginator::resolveCurrentPage('expanded_page');
-
-        $expandedWtaxEntries = (new LengthAwarePaginator(
-            $expandedRows->forPage($expandedPage, 15)->values(),
-            $expandedRows->count(),
-            15,
-            $expandedPage,
-            ['path' => $request->url(), 'pageName' => 'expanded_page']
-        ))->withQueryString();
-
         return Inertia::render('RecordEntry', [
-            'vatInputs' => $vatInputs,
-            'salesVatInputs' => $salesVatInputs,
-            'expandedWtaxEntries' => $expandedWtaxEntries,
             'birCompanies' => $this->companies->activeCompanies(),
-            'filters'   => [
-                'search' => $search,
-            ],
         ]);
     }
+
     public function import(Request $request)
     {
         $request->validate([
