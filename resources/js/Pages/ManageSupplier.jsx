@@ -395,16 +395,16 @@ function ManageSupplier() {
                       className="hover:bg-slate-50/50 transition-colors"
                     >
                       <TableCell className="font-medium text-slate-900 pl-6 py-4 whitespace-nowrap">
-                        {supplier.tin}
+                        {supplier.tin || 'N/A'}
                       </TableCell>
                       <TableCell className="text-slate-700 min-w-[180px]">
-                        {supplier.name}
+                        {supplier.name || 'N/A'}
                       </TableCell>
                       <TableCell className="text-slate-600 min-w-[260px]">
-                        {supplier.addr}
+                        {supplier.addr || 'N/A'}
                       </TableCell>
                       <TableCell className="text-slate-600 whitespace-nowrap">
-                        {supplier.city}
+                        {supplier.city || 'N/A'}
                       </TableCell>
                       <TableCell className="text-right pr-6 py-4">
                         <Button

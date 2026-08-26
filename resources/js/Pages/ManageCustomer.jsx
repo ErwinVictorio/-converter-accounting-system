@@ -317,7 +317,7 @@ function ManageCustomer() {
                   customers.map((customer) => (
                     <TableRow key={customer.id} className="hover:bg-slate-50/50 transition-colors">
                       <TableCell className="font-medium text-slate-900 pl-6 py-4 whitespace-nowrap">
-                        {customer.tin}
+                        {customer.tin || 'N/A'}
                       </TableCell>
                       <TableCell className="text-slate-700 min-w-[220px]">
                         {customer.name}
@@ -326,7 +326,7 @@ function ManageCustomer() {
                         {customer.addr}
                       </TableCell>
                       <TableCell className="text-slate-600 whitespace-nowrap">
-                        {customer.city}
+                        {customer.city || 'N/A'}
                       </TableCell>
                       <TableCell className="text-right pr-6 py-4">
                         <Button
