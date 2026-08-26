@@ -33,7 +33,7 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 // Only what the sidebar needs to name the signed-in user; never
                 // the password hash or remember token.
-                'user' => fn() => $request->user()?->only('id', 'name', 'email'),
+                'user' => fn() => $request->user()?->only('id', 'name', 'username'),
             ],
             'flash' => [
                 'success' => fn() => $request->session()->get('success'),

@@ -16,23 +16,20 @@ use Illuminate\Database\Seeder;
  * Kept out of DatabaseSeeder on purpose -- a full `db:seed` also re-runs the
  * supplier and customer seeders, which is not what you want just to add a login.
  *
- * The username is matched against the users table's "name" column by
- * LoginController, so sign in with "admin" (or the email) and the password
- * below. Override either with ADMIN_USERNAME / ADMIN_EMAIL / ADMIN_PASSWORD in
- * .env, and change the password after the first sign-in.
+ * Sign in with the username below. Override either value with ADMIN_USERNAME /
+ * ADMIN_PASSWORD in .env, and change the password after the first sign-in.
  */
 class AdminUserSeeder extends Seeder
 {
     public function run(): void
     {
-        $username = env('ADMIN_USERNAME', 'admin');
-        $email = env('ADMIN_EMAIL', 'admin@fortresssteel.local');
-        $password = env('ADMIN_PASSWORD', 'Fortress@2026');
+        $username = env('ADMIN_USERNAME', 'BIR');
+        $password = env('ADMIN_PASSWORD', 'bir');
 
         // firstOrCreate, not updateOrCreate: re-running must never quietly reset
         // a password that has already been changed.
         $user = User::firstOrCreate(
-            ['email' => $email],
+            ['username' => $username],
             [
                 'name' => $username,
                 // The User model casts "password" => "hashed", so this is hashed on save.
@@ -47,6 +44,6 @@ class AdminUserSeeder extends Seeder
             return;
         }
 
-        $this->command->warn("{$email} already exists -- password left untouched.");
+        $this->command->warn("{$username} already exists -- password left untouched.");
     }
 }

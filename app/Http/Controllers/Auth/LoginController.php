@@ -24,17 +24,9 @@ class LoginController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        // The entry screen asks for a "Username", but accounts live in the stock
-        // users table which is keyed by email. Accept either: anything shaped
-        // like an email is matched on email, everything else on name.
-        $field = filter_var($credentials['username'], FILTER_VALIDATE_EMAIL) ? 'email' : 'name';
-
-        $attempt = Auth::attempt(
-            [$field => $credentials['username'], 'password' => $credentials['password']],
-            $request->boolean('remember')
-        );
-
-        if (! $attempt) {
+        // The users table is keyed by username, so the validated pair is already
+        // a usable credential set -- no field sniffing needed.
+        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             throw ValidationException::withMessages([
                 'username' => 'These credentials do not match our records.',
             ]);

@@ -8,11 +8,12 @@ use Tests\TestCase;
 
 /**
  * Covers the login screen this app actually ships: a "Username" field that
- * resolves against either the name or the email column.
+ * resolves against the users table's username column.
  *
  * (The sibling Breeze scaffold tests target a /login that posts "email" and
- * redirects to a "dashboard" named route -- neither exists here. They were
- * already failing before this screen was built.)
+ * redirects to a "dashboard" named route -- neither exists here, and neither
+ * does the email column any more. They were already failing before this screen
+ * was built.)
  */
 class LoginTest extends TestCase
 {
@@ -25,7 +26,7 @@ class LoginTest extends TestCase
 
     public function test_a_user_can_sign_in_with_their_username(): void
     {
-        $user = User::factory()->create(['name' => 'admin']);
+        $user = User::factory()->create(['username' => 'admin']);
 
         $response = $this->post('/login', [
             'username' => 'admin',
@@ -36,21 +37,22 @@ class LoginTest extends TestCase
         $response->assertRedirect('/');
     }
 
-    public function test_a_user_can_sign_in_with_their_email(): void
+    public function test_the_display_name_is_not_a_credential(): void
     {
-        $user = User::factory()->create(['email' => 'admin@example.com']);
+        // "name" is what the sidebar shows; only "username" signs anyone in.
+        User::factory()->create(['name' => 'Erwin Victorio', 'username' => 'admin']);
 
         $this->post('/login', [
-            'username' => 'admin@example.com',
+            'username' => 'Erwin Victorio',
             'password' => 'password',
-        ])->assertRedirect('/');
+        ])->assertSessionHasErrors('username');
 
-        $this->assertAuthenticatedAs($user);
+        $this->assertGuest();
     }
 
     public function test_a_wrong_password_is_rejected(): void
     {
-        User::factory()->create(['name' => 'admin']);
+        User::factory()->create(['username' => 'admin']);
 
         $this->post('/login', [
             'username' => 'admin',
@@ -86,7 +88,7 @@ class LoginTest extends TestCase
 
     public function test_signing_in_returns_the_user_to_the_page_they_wanted(): void
     {
-        User::factory()->create(['name' => 'admin']);
+        User::factory()->create(['username' => 'admin']);
 
         // The auth middleware stashes the blocked URL; redirect()->intended() uses it.
         $this->get('/importation')->assertRedirect('/login');
