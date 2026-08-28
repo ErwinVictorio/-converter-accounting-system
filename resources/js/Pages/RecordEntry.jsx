@@ -52,6 +52,9 @@ function RecordEntry() {
   const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
     excel_file: null,
     reporting_month: new Date().toISOString().slice(0, 7),
+    report_type: "quarterly",
+    start_date: `${new Date().getFullYear()}-01-01`,
+    end_date: `${new Date().getFullYear()}-12-31`,
     record_type: "purchase",
     withholding_agent_tin: defaultBirCompany.tin,
     withholding_agent_branch_code: defaultBirCompany.branch_code || "0000",
@@ -150,9 +153,21 @@ function RecordEntry() {
       return;
     }
 
-    if (!data.reporting_month) {
+    if (!(isExpandedMode && data.report_type === "annual") && !data.reporting_month) {
       toast.error("Please select the reporting month.");
       return;
+    }
+
+    if (isExpandedMode && data.report_type === "annual") {
+      if (!data.start_date || !data.end_date) {
+        toast.error("Please select the covered dates.");
+        return;
+      }
+
+      if (data.end_date < data.start_date) {
+        toast.error("End date cannot be earlier than start date.");
+        return;
+      }
     }
 
     if (!data.record_type) {
@@ -212,20 +227,43 @@ function RecordEntry() {
 
           <form id="record-upload-form" onSubmit={handleSubmit}>
             <div className="mb-5 grid max-w-xl grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">
-                  Reporting Month <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  type="month"
-                  value={data.reporting_month}
-                  onChange={(e) => setData("reporting_month", e.target.value)}
-                  className={errors.reporting_month ? "border-red-500 focus-visible:ring-red-500" : ""}
-                />
-                {errors.reporting_month && (
-                  <p className="text-xs text-red-500 font-medium">{errors.reporting_month}</p>
-                )}
-              </div>
+              {isExpandedMode ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Type of Report <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={data.report_type}
+                    onChange={(e) => setData("report_type", e.target.value)}
+                    className={`flex h-10 w-full rounded-md border bg-white px-3 py-2 text-sm text-slate-900 shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-[3px] ${
+                      errors.report_type
+                        ? "border-red-500 focus-visible:ring-red-500/20"
+                        : "border-slate-300 focus-visible:border-blue-500 focus-visible:ring-blue-500/20"
+                    }`}
+                  >
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                  {errors.report_type && (
+                    <p className="text-xs text-red-500 font-medium">{errors.report_type}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Reporting Month <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    type="month"
+                    value={data.reporting_month}
+                    onChange={(e) => setData("reporting_month", e.target.value)}
+                    className={errors.reporting_month ? "border-red-500 focus-visible:ring-red-500" : ""}
+                  />
+                  {errors.reporting_month && (
+                    <p className="text-xs text-red-500 font-medium">{errors.reporting_month}</p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">
@@ -252,6 +290,55 @@ function RecordEntry() {
 
             {isExpandedMode && (
               <div className="mb-5 grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-3">
+                {data.report_type === "quarterly" ? (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">
+                      Reporting Month <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                      type="month"
+                      value={data.reporting_month}
+                      onChange={(e) => setData("reporting_month", e.target.value)}
+                      className={errors.reporting_month ? "border-red-500 focus-visible:ring-red-500" : ""}
+                    />
+                    {errors.reporting_month && (
+                      <p className="text-xs text-red-500 font-medium">{errors.reporting_month}</p>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-slate-700">
+                        Start Date <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="date"
+                        value={data.start_date}
+                        onChange={(e) => setData("start_date", e.target.value)}
+                        className={errors.start_date ? "border-red-500 focus-visible:ring-red-500" : ""}
+                      />
+                      {errors.start_date && (
+                        <p className="text-xs text-red-500 font-medium">{errors.start_date}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-slate-700">
+                        End Date <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="date"
+                        value={data.end_date}
+                        onChange={(e) => setData("end_date", e.target.value)}
+                        className={errors.end_date ? "border-red-500 focus-visible:ring-red-500" : ""}
+                      />
+                      {errors.end_date && (
+                        <p className="text-xs text-red-500 font-medium">{errors.end_date}</p>
+                      )}
+                    </div>
+                  </>
+                )}
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">
                     Known Company
@@ -355,8 +442,8 @@ function RecordEntry() {
                     5% WC100, and 10% WC139 by default.
                   </li>
                   <li>
-                    The row Date or Reporting_Month must fall inside the selected month, and re-uploading
-                    a month replaces that month's rows.
+                    The row Date or Reporting_Month must fall inside the selected month or annual covered
+                    period, and re-uploading replaces rows in that selected scope.
                   </li>
                   <li>
                     Rows sharing reporting month, TIN, ATC and rate are listed and filed as a single line,
@@ -483,4 +570,3 @@ RecordEntry.layout = (page) => (
 );
 
 export default RecordEntry;
-

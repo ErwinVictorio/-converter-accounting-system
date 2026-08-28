@@ -108,6 +108,22 @@ class ExpandedWtaxImportTest extends TestCase
         ]);
     }
 
+    private function uploadAnnual(
+        UploadedFile $file,
+        string $startDate = '2026-01-01',
+        string $endDate = '2026-12-31'
+    ): \Illuminate\Testing\TestResponse {
+        return $this->post('/vat-import', [
+            'excel_file' => $file,
+            'record_type' => 'expanded',
+            'report_type' => 'annual',
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'withholding_agent_tin' => '008791976',
+            'withholding_agent_branch_code' => '0000',
+        ]);
+    }
+
     private function workbook(): UploadedFile
     {
         $path = base_path(self::WORKBOOK);
@@ -389,6 +405,68 @@ class ExpandedWtaxImportTest extends TestCase
 
         // Nothing was stored: the whole file is one month or it is not imported.
         $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
+    public function test_expanded_upload_defaults_to_quarterly_when_report_type_is_missing(): void
+    {
+        $this->upload($this->csv([$this->row()]))->assertSessionHas('success');
+
+        $this->assertSame(1, ExpandedWtaxEntry::count());
+        $this->assertSame('2026-07-31', ExpandedWtaxEntry::firstOrFail()->reporting_period->toDateString());
+    }
+
+    public function test_annual_upload_requires_covered_dates(): void
+    {
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->csv([$this->row()]),
+            'record_type' => 'expanded',
+            'report_type' => 'annual',
+            'withholding_agent_tin' => '008791976',
+            'withholding_agent_branch_code' => '0000',
+        ]);
+
+        $response->assertSessionHasErrors(['start_date', 'end_date']);
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
+    public function test_annual_upload_rejects_an_end_date_before_the_start_date(): void
+    {
+        $this->uploadAnnual($this->csv([$this->row()]), '2026-12-31', '2026-01-01')
+            ->assertSessionHasErrors('end_date');
+
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
+    public function test_annual_upload_rejects_rows_outside_the_selected_date_range(): void
+    {
+        $response = $this->uploadAnnual($this->csv([
+            $this->row([0 => '07/03/2026']),
+            $this->row([0 => '11/28/2026', 1 => '004703296']),
+        ]), '2026-01-01', '2026-09-30');
+
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
+
+        $error = session('error');
+
+        $this->assertStringContainsString('Row 3: Reporting_Month is 11/28/2026', $error);
+        $this->assertStringContainsString('but this annual upload is for 01/01/2026 to 09/30/2026', $error);
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
+    public function test_annual_upload_stores_each_row_under_its_own_reporting_month(): void
+    {
+        $this->uploadAnnual($this->csv([
+            $this->row([0 => '07/03/2026']),
+            $this->row([0 => '08/04/2026', 1 => '004703296', 8 => '100000.00', 10 => '1000.00']),
+        ]))->assertSessionHas('success');
+
+        $periods = ExpandedWtaxEntry::orderBy('reporting_period')
+            ->pluck('reporting_period')
+            ->map(fn ($date) => $date->toDateString())
+            ->all();
+
+        $this->assertSame(['2026-07-31', '2026-08-31'], $periods);
     }
 
     public function test_expanded_rows_stay_out_of_the_vat_tables(): void

@@ -8,6 +8,8 @@ use Maatwebsite\Excel\Concerns\OnEachRow;
 use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
 use Maatwebsite\Excel\Concerns\WithCalculatedFormulas;
 use Maatwebsite\Excel\Row;
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
+use Throwable;
 
 /**
  * Reads a BIR-format Expanded Withholding Tax workbook into expanded_wtax_entries.
@@ -98,18 +100,21 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
 
     private array $withholdingAgent;
 
+    private bool $useRowReportingPeriod;
+
     /** @var 'bir'|'system'|null */
     private ?string $layout = null;
 
     /** @var array<string, int> */
     private array $columnIndexes = [];
 
-    public function __construct(?string $reportingPeriod = null, ?array $withholdingAgent = null)
+    public function __construct(?string $reportingPeriod = null, ?array $withholdingAgent = null, bool $useRowReportingPeriod = false)
     {
         $this->reportingPeriod = Carbon::parse($reportingPeriod ?? now()->toDateString())
             ->endOfMonth()
             ->toDateString();
         $this->withholdingAgent = $this->normaliseWithholdingAgent($withholdingAgent);
+        $this->useRowReportingPeriod = $useRowReportingPeriod;
     }
 
     public function onRow(Row $row): void
@@ -156,7 +161,7 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
         $isCompany = $companyName !== '';
 
         ExpandedWtaxEntry::create([
-            'reporting_period' => $this->reportingPeriod,
+            'reporting_period' => $this->reportingPeriodForRow($data, 'Reporting_Month'),
             ...$this->withholdingAgent,
             'payee_name' => $isCompany
                 ? $companyName
@@ -202,7 +207,7 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
             $atcCode = $this->defaultAtcCode($tin, $payeeType, $rate);
 
             ExpandedWtaxEntry::create([
-                'reporting_period' => $this->reportingPeriod,
+                'reporting_period' => $this->reportingPeriodForRow($data, 'Date'),
                 ...$this->withholdingAgent,
                 'payee_name' => $payeeName,
                 'payee_type' => $payeeType,
@@ -313,6 +318,40 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
         $cleanValue = preg_replace('/[^\d.-]/', '', (string) $value);
 
         return is_numeric($cleanValue) ? round((float) $cleanValue, 2) : 0.00;
+    }
+
+    private function reportingPeriodForRow(array $data, string $dateColumn): string
+    {
+        if (! $this->useRowReportingPeriod) {
+            return $this->reportingPeriod;
+        }
+
+        $date = $this->dateValue(
+            $dateColumn === 'Date'
+                ? $this->systemValue($data, $dateColumn)
+                : $this->value($data, $dateColumn)
+        );
+
+        return ($date ?: Carbon::parse($this->reportingPeriod))->endOfMonth()->toDateString();
+    }
+
+    private function dateValue($value): ?Carbon
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return Carbon::instance($value);
+        }
+
+        if (is_null($value) || trim((string) $value) === '') {
+            return null;
+        }
+
+        try {
+            return is_numeric($value)
+                ? Carbon::instance(ExcelDate::excelToDateTimeObject((float) $value))
+                : Carbon::parse((string) $value);
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     /**

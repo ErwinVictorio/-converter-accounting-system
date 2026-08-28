@@ -90,6 +90,16 @@ class ExpandedWtaxDatFileTest extends TestCase
         );
     }
 
+    public function test_the_generate_page_accepts_the_expanded_annual_report_type(): void
+    {
+        $this->get('/generate-datfile?record_type=expanded&report_type=annual')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->component('GenerateDatFile')
+                ->where('recordType', 'expanded')
+                ->where('reportType', 'annual')
+        );
+    }
+
     public function test_the_generate_page_reports_unfilable_rows_for_the_month(): void
     {
         $this->entry();
@@ -509,6 +519,27 @@ class ExpandedWtaxDatFileTest extends TestCase
 
         $response->assertRedirect();
         $response->assertSessionHas('error', 'No expanded withholding tax records found for the selected company and reporting month.');
+    }
+
+    public function test_annual_generation_is_guarded_until_the_bir_layout_is_confirmed(): void
+    {
+        $this->entry();
+        $this->entry([
+            'reporting_period' => '2026-08-31',
+            'payee_name' => 'AUGUST PAYEE INC',
+            'company_name' => 'AUGUST PAYEE INC',
+            'payee_tin' => '004703296',
+        ]);
+
+        $response = $this->get(
+            '/download-datfile?record_type=expanded&report_type=annual&start_date=2026-01-01&end_date=2026-12-31'
+        );
+
+        $response->assertRedirect();
+        $response->assertSessionHas('error');
+
+        $this->assertStringContainsString('Annual Expanded WTAX DAT generation is not enabled yet', session('error'));
+        $this->assertStringContainsString('01/01/2026 to 12/31/2026', session('error'));
     }
 
     public function test_an_unfilable_row_blocks_the_download_and_names_the_payee(): void

@@ -80,6 +80,27 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas
     }
 
     /**
+     * @param  \Illuminate\Http\UploadedFile|string  $file
+     * @return string[] empty when the file may be imported
+     */
+    public function checkRange($file, string $startDate, string $endDate): array
+    {
+        Excel::import($this, $file);
+        $this->detectLayout();
+
+        $missing = $this->missingColumns();
+
+        if ($missing !== []) {
+            return [
+                'The workbook is missing ' . (count($missing) === 1 ? 'the column ' : 'the columns ')
+                . implode(', ', $missing) . '. ' . $this->layoutHint(),
+            ];
+        }
+
+        return $this->dateRangeMismatches(Carbon::parse($startDate), Carbon::parse($endDate));
+    }
+
+    /**
      * @return string[] the template's own header names, for the ones not found
      */
     private function missingColumns(): array
@@ -159,10 +180,65 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas
     }
 
     /**
+     * @return string[]
+     */
+    private function dateRangeMismatches(Carbon $startDate, Carbon $endDate): array
+    {
+        $errors = [];
+        $extra = 0;
+
+        foreach ($this->rows as $index => $row) {
+            if ($index <= $this->headingRow) {
+                continue;
+            }
+
+            if ($this->isBlank($row)) {
+                continue;
+            }
+
+            if ($this->isSystemSummaryRow($row)) {
+                continue;
+            }
+
+            $worksheetRow = $index + 1;
+            $rowDate = $this->rowDate($row);
+
+            if ($rowDate !== null && $rowDate->betweenIncluded($startDate, $endDate)) {
+                continue;
+            }
+
+            if (count($errors) >= self::ROWS_NAMED) {
+                $extra++;
+
+                continue;
+            }
+
+            $range = $startDate->format('m/d/Y') . ' to ' . $endDate->format('m/d/Y');
+            $errors[] = $rowDate === null
+                ? "Row {$worksheetRow}: Reporting_Month is blank or unreadable."
+                : "Row {$worksheetRow}: Reporting_Month is {$rowDate->format('m/d/Y')}, "
+                    . "but this annual upload is for {$range}.";
+        }
+
+        if ($errors !== []) {
+            $errors[] = $extra > 0
+                ? "...and {$extra} more row(s) outside {$startDate->format('m/d/Y')} to {$endDate->format('m/d/Y')}."
+                : 'The annual upload can only include rows inside the selected start and end dates.';
+        }
+
+        return $errors;
+    }
+
+    /**
      * Excel hands a date cell over as a serial number when the data is read
      * unformatted, but a CSV gives plain text and some writers give a DateTime.
      */
     private function rowMonth(array $row): ?Carbon
+    {
+        return $this->rowDate($row);
+    }
+
+    private function rowDate(array $row): ?Carbon
     {
         $value = $this->layout === 'system'
             ? $this->value($row, 'Date')

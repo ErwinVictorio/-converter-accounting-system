@@ -19,6 +19,7 @@ use App\Services\BIR\WithholdingCompanyDirectory;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class DatFileController extends Controller
@@ -43,9 +44,13 @@ class DatFileController extends Controller
     {
         $recordType = $request->validate([
             'record_type' => ['nullable', 'in:purchase,sales,importation,expanded'],
+            'report_type' => ['nullable', 'in:quarterly,annual'],
             'withholding_agent_tin' => ['nullable', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
             'withholding_agent_branch_code' => ['nullable', 'regex:/^\d{1,4}$/'],
         ])['record_type'] ?? 'purchase';
+        $reportType = $recordType === 'expanded'
+            ? $request->input('report_type', 'quarterly')
+            : 'quarterly';
         $selectedWithholdingAgent = $this->selectedWithholdingAgent($request);
 
         if ($recordType === 'sales') {
@@ -61,6 +66,7 @@ class DatFileController extends Controller
         return Inertia::render('GenerateDatFile', [
             'defaultCompany' => config('bir.companies.008791976'),
             'recordType' => $recordType,
+            'reportType' => $reportType,
             'availablePeriods' => $availablePeriods,
             'periodIssues' => $periodIssues,
             'birCompanies' => $this->companies->activeCompanies(),
@@ -130,14 +136,47 @@ class DatFileController extends Controller
     )
     {
         $validated = $request->validate([
-            'period' => ['required', 'date'],
             'record_type' => ['nullable', 'in:purchase,sales,importation,expanded'],
+            'report_type' => ['nullable', 'in:quarterly,annual'],
+            'period' => [
+                'nullable',
+                Rule::requiredIf(fn () => $request->input('record_type', 'purchase') !== 'expanded'
+                    || $request->input('report_type', 'quarterly') === 'quarterly'),
+                'date',
+            ],
+            'start_date' => [
+                'nullable',
+                Rule::requiredIf(fn () => $request->input('record_type') === 'expanded'
+                    && $request->input('report_type') === 'annual'),
+                'date',
+            ],
+            'end_date' => [
+                'nullable',
+                Rule::requiredIf(fn () => $request->input('record_type') === 'expanded'
+                    && $request->input('report_type') === 'annual'),
+                'date',
+                'after_or_equal:start_date',
+            ],
             'withholding_agent_tin' => ['nullable', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
             'withholding_agent_branch_code' => ['nullable', 'regex:/^\d{1,4}$/'],
         ]);
 
-        $period = Carbon::parse($validated['period'])->endOfMonth();
         $recordType = $validated['record_type'] ?? 'purchase';
+
+        if ($recordType === 'expanded' && ($validated['report_type'] ?? 'quarterly') === 'annual') {
+            $startDate = Carbon::parse($validated['start_date'])->startOfDay();
+            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
+
+            if ($startDate->year !== $endDate->year) {
+                return back()->withErrors([
+                    'end_date' => 'Annual Expanded WTAX generation must stay inside one filing year.',
+                ]);
+            }
+
+            return $this->downloadExpandedAnnual($startDate, $endDate);
+        }
+
+        $period = Carbon::parse($validated['period'])->endOfMonth();
 
         if ($recordType === 'sales') {
             return $this->downloadSales($period, $salesGenerator, $salesValidator);
@@ -447,6 +486,16 @@ class DatFileController extends Controller
         return response($content)
             ->header('Content-Type', 'text/plain')
             ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+    }
+
+    private function downloadExpandedAnnual(Carbon $startDate, Carbon $endDate)
+    {
+        return back()->with(
+            'error',
+            'Annual Expanded WTAX DAT generation is not enabled yet. Confirm the annual BIR DAT layout for '
+                . $startDate->format('m/d/Y') . ' to ' . $endDate->format('m/d/Y')
+                . ' before generating a file.'
+        );
     }
 
     /**

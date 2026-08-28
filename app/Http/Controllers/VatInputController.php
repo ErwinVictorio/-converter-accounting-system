@@ -13,6 +13,7 @@ use App\Services\BIR\WithholdingCompanyDirectory;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -45,17 +46,37 @@ class VatInputController extends Controller
     {
         $request->validate([
             'excel_file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
-            'reporting_month' => ['required', 'date'],
             'record_type' => ['required', 'in:purchase,sales,expanded'],
+            'report_type' => ['nullable', 'in:quarterly,annual'],
+            'reporting_month' => [
+                'nullable',
+                Rule::requiredIf(fn () => $request->input('record_type') !== 'expanded'
+                    || $request->input('report_type', 'quarterly') === 'quarterly'),
+                'date',
+            ],
+            'start_date' => [
+                'nullable',
+                Rule::requiredIf(fn () => $request->input('record_type') === 'expanded'
+                    && $request->input('report_type') === 'annual'),
+                'date',
+            ],
+            'end_date' => [
+                'nullable',
+                Rule::requiredIf(fn () => $request->input('record_type') === 'expanded'
+                    && $request->input('report_type') === 'annual'),
+                'date',
+                'after_or_equal:start_date',
+            ],
             'withholding_agent_tin' => ['nullable', 'required_if:record_type,expanded', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
             'withholding_agent_branch_code' => ['nullable', 'required_if:record_type,expanded', 'regex:/^\d{1,4}$/'],
         ]);
 
         try {
             $file = $request->file('excel_file');
-            $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
 
             if ($request->input('record_type') === 'sales') {
+                $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
+
                 Excel::import(new SalesVatInputImport($reportingPeriod), $file);
 
                 return back()->with('success', 'Sales VAT report successfully imported!');
@@ -63,6 +84,51 @@ class VatInputController extends Controller
 
             if ($request->input('record_type') === 'expanded') {
                 $withholdingAgent = $this->withholdingAgentFromRequest($request);
+                $reportType = $request->input('report_type', 'quarterly');
+
+                if ($reportType === 'annual') {
+                    $startDate = Carbon::parse($request->input('start_date'))->startOfDay();
+                    $endDate = Carbon::parse($request->input('end_date'))->endOfDay();
+
+                    if ($startDate->year !== $endDate->year) {
+                        return back()->withErrors([
+                            'end_date' => 'Annual Expanded WTAX uploads must stay inside one filing year.',
+                        ]);
+                    }
+
+                    $issues = (new ExpandedWtaxUploadPreflight)->checkRange(
+                        $file,
+                        $startDate->toDateString(),
+                        $endDate->toDateString()
+                    );
+
+                    if ($issues !== []) {
+                        return back()->with(
+                            'error',
+                            'Expanded withholding tax annual upload rejected. ' . implode(' ', $issues)
+                        );
+                    }
+
+                    DB::transaction(function () use ($startDate, $endDate, $file, $withholdingAgent) {
+                        ExpandedWtaxEntry::query()
+                            ->whereBetween('reporting_period', [
+                                $startDate->copy()->startOfMonth()->toDateString(),
+                                $endDate->copy()->endOfMonth()->toDateString(),
+                            ])
+                            ->where('withholding_agent_tin', $withholdingAgent['tin'])
+                            ->where('withholding_agent_branch_code', $withholdingAgent['branch_code'])
+                            ->delete();
+
+                        Excel::import(
+                            new ExpandedWtaxImport($endDate->toDateString(), $withholdingAgent, true),
+                            $file
+                        );
+                    });
+
+                    return back()->with('success', 'Expanded withholding tax annual report successfully imported!');
+                }
+
+                $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
 
                 /*
                  * Checked before anything is deleted, so a workbook with a missing
@@ -98,6 +164,8 @@ class VatInputController extends Controller
 
                 return back()->with('success', 'Expanded withholding tax report successfully imported!');
             }
+
+            $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
 
             Excel::import(new VatInputImport($reportingPeriod), $file);
 

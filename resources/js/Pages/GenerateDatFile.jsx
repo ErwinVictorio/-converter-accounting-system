@@ -19,6 +19,7 @@ function GenerateDatFile() {
     const {
         flash,
         recordType = "purchase",
+        reportType = "quarterly",
         availablePeriods = [],
         periodIssues = {},
         birCompanies = [],
@@ -35,6 +36,9 @@ function GenerateDatFile() {
     const { data, setData, processing, errors } = useForm({
         period: defaultPeriod,
         record_type: recordType,
+        report_type: reportType,
+        start_date: `${new Date().getFullYear()}-01-01`,
+        end_date: `${new Date().getFullYear()}-12-31`,
         withholding_agent_tin: defaultAgent.tin,
         withholding_agent_branch_code: defaultAgent.branch_code || "0000",
     });
@@ -68,10 +72,11 @@ function GenerateDatFile() {
 
     useEffect(() => {
         setData("record_type", recordType);
+        setData("report_type", reportType);
         setData("period", availablePeriods[0]?.value || currentMonth);
         setData("withholding_agent_tin", defaultAgent.tin);
         setData("withholding_agent_branch_code", defaultAgent.branch_code || "0000");
-    }, [recordType, availablePeriods, selectedWithholdingAgent]);
+    }, [recordType, reportType, availablePeriods, selectedWithholdingAgent]);
 
     const handleRecordTypeChange = (value) => {
         setData("record_type", value);
@@ -79,6 +84,24 @@ function GenerateDatFile() {
         router.get(
             "/generate-datfile",
             { record_type: value },
+            {
+                preserveScroll: true,
+                replace: true,
+            }
+        );
+    };
+
+    const handleReportTypeChange = (value) => {
+        setData("report_type", value);
+
+        router.get(
+            "/generate-datfile",
+            {
+                record_type: "expanded",
+                report_type: value,
+                withholding_agent_tin: data.withholding_agent_tin,
+                withholding_agent_branch_code: data.withholding_agent_branch_code,
+            },
             {
                 preserveScroll: true,
                 replace: true,
@@ -99,6 +122,7 @@ function GenerateDatFile() {
             "/generate-datfile",
             {
                 record_type: "expanded",
+                report_type: data.report_type,
                 withholding_agent_tin: tin,
                 withholding_agent_branch_code: branchCode || "0000",
             },
@@ -112,34 +136,53 @@ function GenerateDatFile() {
     const handleDownload = (e) => {
         e.preventDefault();
 
-        if (!data.period) {
-            toast.error("Please select a reporting month.");
-            return;
-        }
-
         if (!data.record_type) {
             toast.error("Please select the DAT file type.");
             return;
         }
 
-        if (availablePeriods.length > 0 && !selectedPeriod) {
+        if (data.record_type === "expanded" && data.report_type === "annual") {
+            if (!data.start_date || !data.end_date) {
+                toast.error("Please select the covered dates.");
+                return;
+            }
+
+            if (data.end_date < data.start_date) {
+                toast.error("End date cannot be earlier than start date.");
+                return;
+            }
+        } else if (!data.period) {
+            toast.error("Please select a reporting month.");
+            return;
+        }
+
+        if (!(data.record_type === "expanded" && data.report_type === "annual") && availablePeriods.length > 0 && !selectedPeriod) {
             toast.error(`No ${datType.rows} records found for the selected reporting month.`);
             return;
         }
 
-        if (selectedIssues.invalid_count > 0) {
+        if (!(data.record_type === "expanded" && data.report_type === "annual") && selectedIssues.invalid_count > 0) {
             toast.error(`Please fix invalid ${datType.rows} rows before downloading the DAT file.`);
             return;
         }
 
         const params = new URLSearchParams({
-            period: data.period,
             record_type: data.record_type,
         });
 
         if (data.record_type === "expanded") {
+            params.set("report_type", data.report_type);
             params.set("withholding_agent_tin", data.withholding_agent_tin);
             params.set("withholding_agent_branch_code", data.withholding_agent_branch_code);
+
+            if (data.report_type === "annual") {
+                params.set("start_date", data.start_date);
+                params.set("end_date", data.end_date);
+            } else {
+                params.set("period", data.period);
+            }
+        } else {
+            params.set("period", data.period);
         }
 
         window.location.href = `/download-datfile?${params.toString()}`;
@@ -158,7 +201,7 @@ function GenerateDatFile() {
                         Generate {datType.heading} DAT
                     </h2>
                     <p className="text-xs text-gray-500">
-                        Select a type and reporting month to download one DAT file from your uploaded records.
+                        Select a type and covered period to download one DAT file from your uploaded records.
                     </p>
                 </div>
 
@@ -187,6 +230,60 @@ function GenerateDatFile() {
                             )}
                         </div>
 
+                        {data.record_type === "expanded" ? (
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-gray-600">
+                                    Type of Report
+                                </label>
+                                <select
+                                    value={data.report_type}
+                                    onChange={(e) => handleReportTypeChange(e.target.value)}
+                                    className={`flex h-11 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-700 shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-[3px] ${
+                                        errors.report_type
+                                            ? "border-red-500 focus-visible:ring-red-500/20"
+                                            : "border-slate-300 focus-visible:border-ring focus-visible:ring-ring/50"
+                                    }`}
+                                >
+                                    <option value="quarterly">Quarterly</option>
+                                    <option value="annual">Annual</option>
+                                </select>
+                                {errors.report_type && (
+                                    <p className="text-xs text-red-500">{errors.report_type}</p>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-gray-600">
+                                    Reporting Month
+                                </label>
+                                {availablePeriods.length > 0 ? (
+                                    <select
+                                        value={data.period}
+                                        onChange={(e) => setData("period", e.target.value)}
+                                        className="flex h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-xs transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                    >
+                                        {availablePeriods.map((period) => (
+                                            <option key={period.value} value={period.value}>
+                                                {period.label} ({period.records_count} rows)
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <Input
+                                        type="month"
+                                        value={data.period}
+                                        onChange={(e) => setData("period", e.target.value)}
+                                        className="h-11 rounded-lg border-slate-300 text-gray-700"
+                                    />
+                                )}
+                                {errors.period && (
+                                    <p className="text-xs text-red-500">{errors.period}</p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {data.record_type === "expanded" && data.report_type === "quarterly" && (
                         <div className="space-y-1.5">
                             <label className="text-xs font-medium text-gray-600">
                                 Reporting Month
@@ -215,7 +312,45 @@ function GenerateDatFile() {
                                 <p className="text-xs text-red-500">{errors.period}</p>
                             )}
                         </div>
-                    </div>
+                    )}
+
+                    {data.record_type === "expanded" && data.report_type === "annual" && (
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-gray-600">
+                                    Start Date
+                                </label>
+                                <Input
+                                    type="date"
+                                    value={data.start_date}
+                                    onChange={(e) => setData("start_date", e.target.value)}
+                                    className={`h-11 rounded-lg border-slate-300 text-gray-700 ${
+                                        errors.start_date ? "border-red-500 focus-visible:ring-red-500" : ""
+                                    }`}
+                                />
+                                {errors.start_date && (
+                                    <p className="text-xs text-red-500">{errors.start_date}</p>
+                                )}
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-medium text-gray-600">
+                                    End Date
+                                </label>
+                                <Input
+                                    type="date"
+                                    value={data.end_date}
+                                    onChange={(e) => setData("end_date", e.target.value)}
+                                    className={`h-11 rounded-lg border-slate-300 text-gray-700 ${
+                                        errors.end_date ? "border-red-500 focus-visible:ring-red-500" : ""
+                                    }`}
+                                />
+                                {errors.end_date && (
+                                    <p className="text-xs text-red-500">{errors.end_date}</p>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     {data.record_type === "expanded" && (
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -289,7 +424,12 @@ function GenerateDatFile() {
                     )}
 
                     <div className="space-y-1.5">
-                        {selectedPeriod && (
+                        {data.record_type === "expanded" && data.report_type === "annual" && (
+                            <p className="text-xs text-amber-600">
+                                Annual DAT output is waiting for the confirmed BIR annual file layout.
+                            </p>
+                        )}
+                        {!(data.record_type === "expanded" && data.report_type === "annual") && selectedPeriod && (
                             <p className={`text-xs ${selectedIssues.invalid_count > 0 ? "text-amber-600" : "text-emerald-600"}`}>
                                 {selectedPeriod.records_count} {datType.rows} rows found.
                                 {selectedIssues.invalid_count > 0
@@ -297,14 +437,14 @@ function GenerateDatFile() {
                                     : " Ready for DAT generation."}
                             </p>
                         )}
-                        {availablePeriods.length === 0 && (
+                        {!(data.record_type === "expanded" && data.report_type === "annual") && availablePeriods.length === 0 && (
                             <p className="text-xs text-amber-600">
                                 No {datType.rows} records yet.
                             </p>
                         )}
                     </div>
 
-                    {selectedIssues.invalid_count > 0 && (
+                    {!(data.record_type === "expanded" && data.report_type === "annual") && selectedIssues.invalid_count > 0 && (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                             <p className="font-semibold">
                                 Fix {datType.rows} rows before downloading DAT
@@ -321,7 +461,7 @@ function GenerateDatFile() {
                         <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                             <Button
                                 type="submit"
-                                disabled={processing || selectedIssues.invalid_count > 0}
+                                disabled={processing || (!(data.record_type === "expanded" && data.report_type === "annual") && selectedIssues.invalid_count > 0)}
                                 className="h-11 rounded-lg bg-blue-600 px-8 font-medium text-white shadow-sm transition-all hover:bg-blue-700"
                             >
                                 Download DAT
