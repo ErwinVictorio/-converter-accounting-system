@@ -3,7 +3,7 @@ import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { FileSpreadsheet, Loader2, Plus, UploadCloud } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2, Plus, UploadCloud } from "lucide-react";
 import { motion } from "framer-motion";
 
 import MainLayout from "@/Layouts/MainLayout";
@@ -206,7 +206,7 @@ function Importation() {
                     </CardHeader>
                     <CardContent className="p-6">
                         <form id="importation-upload-form" onSubmit={onUpload} className="space-y-5">
-                            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_auto]">
+                            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_auto_auto]">
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-slate-700">
                                         Excel File <span className="text-red-500">*</span>
@@ -220,6 +220,20 @@ function Importation() {
                                     <p className="text-xs text-slate-500">
                                         Template: Importation_Upload_Template_Updated.xlsx
                                     </p>
+                                </div>
+
+                                <div className="flex items-end">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        asChild
+                                        className="h-10 min-w-[165px] border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50"
+                                    >
+                                        <a href="/importation/template">
+                                            <Download className="h-4 w-4" />
+                                            Download Template
+                                        </a>
+                                    </Button>
                                 </div>
 
                                 <div className="flex items-end">

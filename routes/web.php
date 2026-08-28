@@ -76,6 +76,7 @@ Route::middleware('auth')->group(function () {
 
     // Route for Importation (manual entry)
     Route::get('/importation', [ImportationController::class, 'index']);
+    Route::get('/importation/template', [ImportationController::class, 'template']);
     Route::post('/importation', [ImportationController::class, 'store']);
     Route::post('/importation/upload', [ImportationController::class, 'upload']);
     Route::put('/importation/{importationEntry}', [ImportationController::class, 'update']);

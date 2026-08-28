@@ -84,6 +84,17 @@ class ImportationUploadTest extends TestCase
         ]);
     }
 
+    public function test_user_can_download_the_importation_upload_template(): void
+    {
+        $response = $this->get('/importation/template');
+
+        $response->assertOk();
+        $response->assertHeader(
+            'content-disposition',
+            'attachment; filename=Importation_Upload_Template_Updated.xlsx'
+        );
+    }
+
     public function test_uploading_the_final_template_creates_entries_and_computed_amounts(): void
     {
         $response = $this->upload($this->workbook());

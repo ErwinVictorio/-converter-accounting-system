@@ -102,6 +102,15 @@ class ImportationController extends Controller
         }
     }
 
+    public function template()
+    {
+        $path = base_path('Docs/Importaion/Importation_Upload_Template_Updated.xlsx');
+
+        abort_unless(is_file($path), 404);
+
+        return response()->download($path, 'Importation_Upload_Template_Updated.xlsx');
+    }
+
     public function update(Request $request, ImportationEntry $importationEntry)
     {
         $request->merge([
