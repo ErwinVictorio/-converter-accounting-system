@@ -77,6 +77,7 @@ Route::middleware('auth')->group(function () {
     // Route for Importation (manual entry)
     Route::get('/importation', [ImportationController::class, 'index']);
     Route::post('/importation', [ImportationController::class, 'store']);
+    Route::post('/importation/upload', [ImportationController::class, 'upload']);
     Route::put('/importation/{importationEntry}', [ImportationController::class, 'update']);
     Route::delete('/importation/{importationEntry}', [ImportationController::class, 'destroy']);
 
@@ -87,7 +88,7 @@ Route::middleware('auth')->group(function () {
      * refused once a month has been filed under the company.
      */
     Route::get('/withholding-companies', [WithholdingCompanyController::class, 'index']);
-    Route::post('/withholding-companies', [WithholdingCompanyController::class, 'store']);
+    Route::post('/withholding-companies', [WithholdingCompanyController::class, 'store']);  
     Route::put('/withholding-companies/{company}', [WithholdingCompanyController::class, 'update']);
     Route::patch('/withholding-companies/{company}/deactivate', [WithholdingCompanyController::class, 'deactivate']);
     Route::patch('/withholding-companies/{company}/activate', [WithholdingCompanyController::class, 'activate']);

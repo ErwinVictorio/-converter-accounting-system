@@ -110,8 +110,8 @@ class ImportationDatFileTest extends TestCase
     {
         $this->post('/importation', $this->payload())->assertSessionHasNoErrors();
 
-        // charges and taxable_goods are derived by the form, but VAT is still
-        // keyed, so a typo can be saved. The DAT validator must stop it.
+        // The form and writer derive VAT, but a corrupted stored row must still
+        // be stopped before a DAT is generated.
         ImportationEntry::query()->firstOrFail()->forceFill([
             'vat_payable' => '123.45',
         ])->save();
