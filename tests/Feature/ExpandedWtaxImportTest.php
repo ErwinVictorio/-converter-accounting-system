@@ -413,6 +413,7 @@ class ExpandedWtaxImportTest extends TestCase
 
         $this->assertSame(1, ExpandedWtaxEntry::count());
         $this->assertSame('2026-07-31', ExpandedWtaxEntry::firstOrFail()->reporting_period->toDateString());
+        $this->assertSame('quarterly', ExpandedWtaxEntry::firstOrFail()->report_type);
     }
 
     public function test_annual_upload_requires_covered_dates(): void
@@ -441,17 +442,78 @@ class ExpandedWtaxImportTest extends TestCase
     {
         $response = $this->uploadAnnual($this->csv([
             $this->row([0 => '07/03/2026']),
-            $this->row([0 => '11/28/2026', 1 => '004703296']),
-        ]), '2026-01-01', '2026-09-30');
+            $this->row([0 => '11/28/2027', 1 => '004703296']),
+        ]), '2026-01-01', '2026-12-31');
 
         $response->assertSessionMissing('success');
         $response->assertSessionHas('error');
 
         $error = session('error');
 
-        $this->assertStringContainsString('Row 3: Reporting_Month is 11/28/2026', $error);
-        $this->assertStringContainsString('but this annual upload is for 01/01/2026 to 09/30/2026', $error);
+        $this->assertStringContainsString('Row 3: Reporting_Month is 11/28/2027', $error);
+        $this->assertStringContainsString('but this annual upload is for 01/01/2026 to 12/31/2026', $error);
         $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
+    /**
+     * The taxable year cases. A 1604E is dated 12/31 of its taxable year whatever
+     * covered period was selected, so anything short of one whole year is refused
+     * here rather than widened into a full-year filing that is missing months.
+     */
+    public function test_annual_upload_accepts_one_full_taxable_year(): void
+    {
+        $this->uploadAnnual($this->csv([$this->row()]), '2026-01-01', '2026-12-31')
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success');
+
+        $this->assertSame(1, ExpandedWtaxEntry::count());
+    }
+
+    public function test_annual_upload_rejects_a_covered_period_that_ends_before_december(): void
+    {
+        $this->uploadAnnual($this->csv([$this->row()]), '2026-01-01', '2026-07-31')
+            ->assertSessionHasErrors([
+                'end_date' => 'Annual Expanded WTAX must cover one full taxable year: '
+                    . 'January 1 to December 31 of the same year.',
+            ]);
+
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
+    public function test_annual_upload_rejects_a_covered_period_that_starts_after_january(): void
+    {
+        $this->uploadAnnual($this->csv([$this->row()]), '2026-02-01', '2026-12-31')
+            ->assertSessionHasErrors('start_date');
+
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
+    public function test_annual_upload_rejects_a_cross_year_covered_period(): void
+    {
+        $this->uploadAnnual($this->csv([$this->row()]), '2026-01-01', '2027-01-31')
+            ->assertSessionHasErrors('end_date');
+
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
+    /**
+     * The refusal has to come before the delete that clears the year, or a mistyped
+     * end date would cost the user the annual rows already on file.
+     */
+    public function test_a_rejected_annual_upload_leaves_the_stored_annual_rows_alone(): void
+    {
+        $this->uploadAnnual($this->csv([$this->row()]), '2026-01-01', '2026-12-31')
+            ->assertSessionHas('success');
+
+        $this->uploadAnnual($this->csv([
+            $this->row([1 => '004703296', 3 => 'REPLACEMENT PAYEE INC']),
+        ]), '2026-01-01', '2026-07-31')->assertSessionHasErrors('end_date');
+
+        $this->assertSame(1, ExpandedWtaxEntry::count());
+        $this->assertSame(
+            'ACERSTEEL INDUSTRIAL SALES INC',
+            ExpandedWtaxEntry::firstOrFail()->payee_name
+        );
     }
 
     public function test_annual_upload_stores_each_row_under_its_own_reporting_month(): void
@@ -467,6 +529,7 @@ class ExpandedWtaxImportTest extends TestCase
             ->all();
 
         $this->assertSame(['2026-07-31', '2026-08-31'], $periods);
+        $this->assertSame(['annual', 'annual'], ExpandedWtaxEntry::orderBy('reporting_period')->pluck('report_type')->all());
     }
 
     public function test_expanded_rows_stay_out_of_the_vat_tables(): void

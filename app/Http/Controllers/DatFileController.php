@@ -7,10 +7,12 @@ use App\Models\ExpandedWtaxEntry;
 use App\Models\ImportationEntry;
 use App\Models\SalesVatInput;
 use App\Models\Supplier;
+use App\Services\BIR\AnnualCoveredPeriodValidator;
 use App\Services\BIR\BirExpandedWtaxRowValidator;
 use App\Services\BIR\BirImportationRowValidator;
 use App\Services\BIR\BirPurchaseRowValidator;
 use App\Services\BIR\BirSalesRowValidator;
+use App\Services\BIR\ReliefExpandedWtaxAnnualDatGenerator;
 use App\Services\BIR\ReliefExpandedWtaxDatGenerator;
 use App\Services\BIR\ReliefImportationDatGenerator;
 use App\Services\BIR\ReliefPurchaseDatGenerator;
@@ -30,8 +32,10 @@ class DatFileController extends Controller
      * reach the 1601EQ header. All of that comes from one directory, shared with the
      * upload screen -- see WithholdingCompanyDirectory.
      */
-    public function __construct(private WithholdingCompanyDirectory $companies)
-    {
+    public function __construct(
+        private WithholdingCompanyDirectory $companies,
+        private AnnualCoveredPeriodValidator $annualPeriod
+    ) {
     }
 
     public function index(
@@ -45,6 +49,8 @@ class DatFileController extends Controller
         $recordType = $request->validate([
             'record_type' => ['nullable', 'in:purchase,sales,importation,expanded'],
             'report_type' => ['nullable', 'in:quarterly,annual'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'withholding_agent_tin' => ['nullable', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
             'withholding_agent_branch_code' => ['nullable', 'regex:/^\d{1,4}$/'],
         ])['record_type'] ?? 'purchase';
@@ -52,6 +58,8 @@ class DatFileController extends Controller
             ? $request->input('report_type', 'quarterly')
             : 'quarterly';
         $selectedWithholdingAgent = $this->selectedWithholdingAgent($request);
+        $annualStartDate = Carbon::parse($request->input('start_date', now()->startOfYear()->toDateString()))->startOfDay();
+        $annualEndDate = Carbon::parse($request->input('end_date', now()->endOfYear()->toDateString()))->endOfDay();
 
         if ($recordType === 'sales') {
             [$availablePeriods, $periodIssues] = $this->salesPeriods($salesValidator);
@@ -69,6 +77,11 @@ class DatFileController extends Controller
             'reportType' => $reportType,
             'availablePeriods' => $availablePeriods,
             'periodIssues' => $periodIssues,
+            'annualStartDate' => $annualStartDate->toDateString(),
+            'annualEndDate' => $annualEndDate->toDateString(),
+            'annualSummary' => $recordType === 'expanded'
+                ? $this->expandedAnnualSummary($selectedWithholdingAgent, $annualStartDate, $annualEndDate)
+                : ['records_count' => 0, 'invalid_count' => 0, 'errors' => []],
             'birCompanies' => $this->companies->activeCompanies(),
             'selectedWithholdingAgent' => $selectedWithholdingAgent,
         ]);
@@ -129,6 +142,7 @@ class DatFileController extends Controller
         ReliefSalesDatGenerator $salesGenerator,
         ReliefImportationDatGenerator $importationGenerator,
         ReliefExpandedWtaxDatGenerator $expandedGenerator,
+        ReliefExpandedWtaxAnnualDatGenerator $expandedAnnualGenerator,
         BirPurchaseRowValidator $purchaseValidator,
         BirSalesRowValidator $salesValidator,
         BirImportationRowValidator $importationValidator,
@@ -167,13 +181,26 @@ class DatFileController extends Controller
             $startDate = Carbon::parse($validated['start_date'])->startOfDay();
             $endDate = Carbon::parse($validated['end_date'])->endOfDay();
 
-            if ($startDate->year !== $endDate->year) {
-                return back()->withErrors([
-                    'end_date' => 'Annual Expanded WTAX generation must stay inside one filing year.',
-                ]);
+            /*
+             * The 1604E always carries the taxable year end, 12/31/YYYY, so the
+             * selected period has to be that whole year. A partial selection is
+             * refused rather than widened: filing seven months of payees in a
+             * full-year return would understate it with nothing in the file to show
+             * for it. See AnnualCoveredPeriodValidator.
+             */
+            $periodErrors = $this->annualPeriod->errors($startDate, $endDate);
+
+            if ($periodErrors !== []) {
+                return back()->withErrors($periodErrors);
             }
 
-            return $this->downloadExpandedAnnual($startDate, $endDate);
+            return $this->downloadExpandedAnnual(
+                $startDate,
+                $endDate,
+                $expandedAnnualGenerator,
+                $expandedValidator,
+                $this->selectedWithholdingAgent($request)
+            );
         }
 
         $period = Carbon::parse($validated['period'])->endOfMonth();
@@ -329,6 +356,7 @@ class DatFileController extends Controller
         $months = ExpandedWtaxEntry::query()
             ->where('withholding_agent_tin', $withholdingAgent['tin'])
             ->where('withholding_agent_branch_code', $withholdingAgent['branch_code'])
+            ->where('report_type', 'quarterly')
             ->orderByDesc('reporting_period')
             ->orderBy('payee_name')
             ->orderBy('tax_rate')
@@ -438,6 +466,7 @@ class DatFileController extends Controller
         $records = ExpandedWtaxEntry::query()
             ->where('withholding_agent_tin', $withholdingAgent['tin'])
             ->where('withholding_agent_branch_code', $withholdingAgent['branch_code'])
+            ->where('report_type', 'quarterly')
             ->whereBetween('reporting_period', [
                 $period->copy()->startOfMonth()->toDateString(),
                 $period->copy()->endOfMonth()->toDateString(),
@@ -488,13 +517,99 @@ class DatFileController extends Controller
             ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
     }
 
-    private function downloadExpandedAnnual(Carbon $startDate, Carbon $endDate)
+    private function downloadExpandedAnnual(
+        Carbon $startDate,
+        Carbon $endDate,
+        ReliefExpandedWtaxAnnualDatGenerator $generator,
+        BirExpandedWtaxRowValidator $validator,
+        array $withholdingAgent
+    ) {
+        $records = ExpandedWtaxEntry::query()
+            ->where('withholding_agent_tin', $withholdingAgent['tin'])
+            ->where('withholding_agent_branch_code', $withholdingAgent['branch_code'])
+            ->where('report_type', 'annual')
+            ->whereBetween('reporting_period', [
+                $startDate->copy()->startOfMonth()->toDateString(),
+                $endDate->copy()->endOfMonth()->toDateString(),
+            ])
+            ->orderBy('payee_name')
+            ->orderBy('tax_rate')
+            ->orderBy('id')
+            ->get();
+
+        if ($records->isEmpty()) {
+            return back()->with('error', 'No annual expanded withholding tax records found for the selected company and covered period.');
+        }
+
+        $rowErrors = [];
+        foreach ($records as $index => $record) {
+            foreach ($validator->validate($record->toBirExpandedRow(), $index + 2) as $error) {
+                $rowErrors[] = "Record #{$record->id} {$record->payee_name}: {$error}";
+            }
+        }
+
+        if ($rowErrors !== []) {
+            return back()->with('error', 'Cannot generate Annual DAT. Fix these expanded withholding tax rows first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
+        }
+
+        $taxableYearEnd = $endDate->copy()->endOfYear();
+        $records = $this->consolidateAnnualExpandedRecords($records, $taxableYearEnd);
+        $company = $this->companyForExpandedDownload($withholdingAgent);
+        $content = $generator->generate($company, $records, $taxableYearEnd);
+        $fileName = $generator->filename($company, $taxableYearEnd);
+
+        return response($content)
+            ->header('Content-Type', 'text/plain')
+            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+    }
+
+    private function expandedAnnualSummary(array $withholdingAgent, Carbon $startDate, Carbon $endDate): array
     {
-        return back()->with(
-            'error',
-            'Annual Expanded WTAX DAT generation is not enabled yet. Confirm the annual BIR DAT layout for '
-                . $startDate->format('m/d/Y') . ' to ' . $endDate->format('m/d/Y')
-                . ' before generating a file.'
+        if ($endDate->lessThan($startDate) || $startDate->year !== $endDate->year) {
+            return [
+                'records_count' => 0,
+                'invalid_count' => 0,
+                'errors' => [],
+            ];
+        }
+
+        $records = ExpandedWtaxEntry::query()
+            ->where('withholding_agent_tin', $withholdingAgent['tin'])
+            ->where('withholding_agent_branch_code', $withholdingAgent['branch_code'])
+            ->where('report_type', 'annual')
+            ->whereBetween('reporting_period', [
+                $startDate->copy()->startOfMonth()->toDateString(),
+                $endDate->copy()->endOfMonth()->toDateString(),
+            ])
+            ->orderBy('reporting_period')
+            ->orderBy('payee_name')
+            ->orderBy('tax_rate')
+            ->orderBy('id')
+            ->get();
+
+        $errors = [];
+        foreach ($records->values() as $index => $record) {
+            foreach (app(BirExpandedWtaxRowValidator::class)->validate($record->toBirExpandedRow(), $index + 2) as $error) {
+                $errors[] = "{$record->payee_name}: {$error}";
+            }
+        }
+
+        return [
+            'records_count' => $this->consolidateAnnualExpandedRecords($records, $endDate->copy()->endOfYear())->count(),
+            'invalid_count' => count($errors),
+            'errors' => array_slice($errors, 0, 10),
+        ];
+    }
+
+    private function consolidateAnnualExpandedRecords(Collection $records, Carbon $periodEnd): Collection
+    {
+        return ExpandedWtaxEntry::consolidate(
+            $records->map(function (ExpandedWtaxEntry $record) use ($periodEnd) {
+                $annualRecord = clone $record;
+                $annualRecord->reporting_period = $periodEnd->copy()->endOfMonth();
+
+                return $annualRecord;
+            })
         );
     }
 

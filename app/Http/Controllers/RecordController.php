@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ExpandedWtaxEntry;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
+use App\Services\BIR\BirExpandedWtaxRowValidator;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
@@ -124,7 +125,7 @@ class RecordController extends Controller
      * ordering stay in SQL, and the consolidated collection is paginated
      * afterwards.
      */
-    public function expandedWtax(Request $request)
+    public function expandedWtax(Request $request, BirExpandedWtaxRowValidator $validator)
     {
         $search = $request->input('search');
 
@@ -142,7 +143,21 @@ class RecordController extends Controller
                 ->orderBy('tax_rate')
                 ->orderBy('id')
                 ->get()
-        );
+        )->map(function (array $row) use ($validator) {
+            $errors = $validator->validate($row, 0);
+
+            return $row + [
+                'invalid_count' => count($errors),
+                'validation_errors' => array_map(
+                    fn (string $error) => preg_replace('/^Row \d+: /', '', $error),
+                    $errors
+                ),
+                'has_missing_id' => collect($errors)->contains(
+                    fn (string $error) => str_contains($error, 'payee_tin must contain at least 9 digits')
+                        || str_contains($error, 'payee_tin cannot be 000000000')
+                ),
+            ];
+        });
 
         $page = LengthAwarePaginator::resolveCurrentPage();
 

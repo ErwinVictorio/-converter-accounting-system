@@ -92,12 +92,46 @@ class ExpandedWtaxDatFileTest extends TestCase
 
     public function test_the_generate_page_accepts_the_expanded_annual_report_type(): void
     {
+        $this->entry(['report_type' => 'annual']);
+        $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2026-08-31',
+            'payee_name' => 'AUGUST PAYEE INC',
+            'company_name' => 'AUGUST PAYEE INC',
+            'payee_tin' => '004703296',
+        ]);
+        $this->entry([
+            'report_type' => 'quarterly',
+            'payee_name' => 'QUARTERLY PAYEE INC',
+            'company_name' => 'QUARTERLY PAYEE INC',
+            'payee_tin' => '111222333',
+        ]);
+
         $this->get('/generate-datfile?record_type=expanded&report_type=annual')->assertOk()->assertInertia(
             fn ($page) => $page
                 ->component('GenerateDatFile')
                 ->where('recordType', 'expanded')
                 ->where('reportType', 'annual')
+                ->where('annualSummary.records_count', 2)
         );
+    }
+
+    public function test_quarterly_generation_ignores_annual_records(): void
+    {
+        $this->entry();
+        $this->entry([
+            'report_type' => 'annual',
+            'payee_name' => 'ANNUAL PAYEE INC',
+            'company_name' => 'ANNUAL PAYEE INC',
+            'payee_tin' => '004703296',
+        ]);
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+        );
+
+        $this->assertStringContainsString('ACERSTEEL INDUSTRIAL SALES INC', implode('', $lines));
+        $this->assertStringNotContainsString('ANNUAL PAYEE INC', implode('', $lines));
     }
 
     public function test_the_generate_page_reports_unfilable_rows_for_the_month(): void
@@ -521,14 +555,77 @@ class ExpandedWtaxDatFileTest extends TestCase
         $response->assertSessionHas('error', 'No expanded withholding tax records found for the selected company and reporting month.');
     }
 
-    public function test_annual_generation_is_guarded_until_the_bir_layout_is_confirmed(): void
+    public function test_it_downloads_a_1604e_annual_dat_for_the_selected_period(): void
     {
-        $this->entry();
         $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2026-05-31',
+            'payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'company_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'payee_tin' => '007-086-184-000',
+            'atc_code' => 'WC158',
+            'tax_rate' => 1.00,
+            'income_payment' => 3682716.00,
+            'tax_withheld' => 36827.16,
+        ]);
+        $this->entry([
+            'report_type' => 'annual',
             'reporting_period' => '2026-08-31',
             'payee_name' => 'AUGUST PAYEE INC',
             'company_name' => 'AUGUST PAYEE INC',
             'payee_tin' => '004703296',
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+            'income_payment' => 1000.00,
+            'tax_withheld' => 20.00,
+        ]);
+        $this->entry([
+            'report_type' => 'quarterly',
+            'payee_name' => 'QUARTERLY PAYEE INC',
+            'company_name' => 'QUARTERLY PAYEE INC',
+            'payee_tin' => '111222333',
+        ]);
+
+        $response = $this->get(
+            '/download-datfile?record_type=expanded&report_type=annual&start_date=2026-01-01&end_date=2026-12-31'
+        );
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/plain; charset=UTF-8');
+        $response->assertHeader(
+            'content-disposition',
+            'attachment; filename="0087919760000123120261604E.dat"'
+        );
+
+        $lines = $this->lines($response->getContent());
+
+        $this->assertCount(4, $lines);
+        $this->assertSame('H1604E,008791976,0000,12/31/2026', $lines[0]);
+        $this->assertSame(
+            'D3,1604E,008791976,0000,12/31/2026,1,007086184,0000,"ACERSTEEL INDUSTRIAL SALES INC",,,,WC158,3682716.00,1.00,36827.16',
+            $lines[1]
+        );
+        $this->assertSame(
+            'D3,1604E,008791976,0000,12/31/2026,2,004703296,0000,"AUGUST PAYEE INC",,,,WC160,1000.00,2.00,20.00',
+            $lines[2]
+        );
+        $this->assertSame('C3,1604E,008791976,0000,12/31/2026,36847.16', $lines[3]);
+
+        $this->assertStringNotContainsString('QUARTERLY PAYEE INC', $response->getContent());
+    }
+
+    public function test_annual_generation_blocks_unfilable_rows(): void
+    {
+        $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2026-05-31',
+            'payee_name' => 'GLOBE TELECOM INC',
+            'company_name' => 'GLOBE TELECOM INC',
+            'payee_tin' => '4',
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+            'income_payment' => 1000.00,
+            'tax_withheld' => 20.00,
         ]);
 
         $response = $this->get(
@@ -538,8 +635,124 @@ class ExpandedWtaxDatFileTest extends TestCase
         $response->assertRedirect();
         $response->assertSessionHas('error');
 
-        $this->assertStringContainsString('Annual Expanded WTAX DAT generation is not enabled yet', session('error'));
-        $this->assertStringContainsString('01/01/2026 to 12/31/2026', session('error'));
+        $this->assertStringContainsString('Cannot generate Annual DAT', session('error'));
+        $this->assertStringContainsString('GLOBE TELECOM INC', session('error'));
+        $this->assertStringContainsString('payee_tin must contain at least 9 digits', session('error'));
+    }
+
+    public function test_annual_generation_merges_the_same_payee_across_months(): void
+    {
+        $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2026-05-31',
+            'payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'company_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'payee_tin' => '007-086-184-000',
+            'income_payment' => 1000.00,
+            'tax_withheld' => 10.00,
+        ]);
+        $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2026-08-31',
+            'payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'company_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'payee_tin' => '007-086-184-000',
+            'income_payment' => 500.00,
+            'tax_withheld' => 5.00,
+        ]);
+
+        $response = $this->get('/generate-datfile?record_type=expanded&report_type=annual&start_date=2026-01-01&end_date=2026-12-31');
+        $response->assertOk();
+        $this->assertSame(1, $response->viewData('page')['props']['annualSummary']['records_count']);
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?record_type=expanded&report_type=annual&start_date=2026-01-01&end_date=2026-12-31')->getContent()
+        );
+
+        $this->assertCount(3, $lines);
+        $this->assertSame(
+            'D3,1604E,008791976,0000,12/31/2026,1,007086184,0000,"ACERSTEEL INDUSTRIAL SALES INC",,,,WC158,1500.00,1.00,15.00',
+            $lines[1]
+        );
+        $this->assertSame('C3,1604E,008791976,0000,12/31/2026,15.00', $lines[2]);
+    }
+
+    /**
+     * The file is dated from the taxable year the user selected, not from today, and
+     * a December row is inside the accepted period rather than past its end.
+     */
+    public function test_annual_generation_dates_the_file_from_the_selected_taxable_year(): void
+    {
+        $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2025-12-31',
+            'income_payment' => 1000.00,
+            'tax_withheld' => 10.00,
+        ]);
+
+        $response = $this->get(
+            '/download-datfile?record_type=expanded&report_type=annual&start_date=2025-01-01&end_date=2025-12-31'
+        );
+
+        $response->assertOk();
+        $response->assertHeader(
+            'content-disposition',
+            'attachment; filename="0087919760000123120251604E.dat"'
+        );
+
+        $lines = $this->lines($response->getContent());
+
+        $this->assertSame('H1604E,008791976,0000,12/31/2025', $lines[0]);
+        $this->assertSame('C3,1604E,008791976,0000,12/31/2025,10.00', $lines[2]);
+    }
+
+    /**
+     * The 1604E is dated 12/31 of its taxable year whatever period was selected, so
+     * a partial covered period is refused rather than widened. Generating this would
+     * have filed seven months of payees as a full-year return, and the file itself
+     * would say 12/31/2026 with nothing to show that five months were missing.
+     */
+    public function test_annual_generation_refuses_a_partial_covered_period_instead_of_widening_it(): void
+    {
+        $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2026-07-31',
+            'payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'company_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'payee_tin' => '007-086-184-000',
+            'income_payment' => 1000.00,
+            'tax_withheld' => 10.00,
+        ]);
+
+        $response = $this->get(
+            '/download-datfile?record_type=expanded&report_type=annual&start_date=2026-01-01&end_date=2026-07-31'
+        );
+
+        $response->assertRedirect();
+        $response->assertSessionHasErrors([
+            'end_date' => 'Annual Expanded WTAX must cover one full taxable year: '
+                . 'January 1 to December 31 of the same year.',
+        ]);
+
+        $this->assertStringNotContainsString('H1604E', $response->getContent());
+    }
+
+    public function test_annual_generation_refuses_a_covered_period_that_starts_after_january(): void
+    {
+        $this->entry(['report_type' => 'annual', 'reporting_period' => '2026-05-31']);
+
+        $this->get(
+            '/download-datfile?record_type=expanded&report_type=annual&start_date=2026-02-01&end_date=2026-12-31'
+        )->assertRedirect()->assertSessionHasErrors('start_date');
+    }
+
+    public function test_annual_generation_refuses_a_cross_year_covered_period(): void
+    {
+        $this->entry(['report_type' => 'annual', 'reporting_period' => '2026-05-31']);
+
+        $this->get(
+            '/download-datfile?record_type=expanded&report_type=annual&start_date=2026-01-01&end_date=2027-01-31'
+        )->assertRedirect()->assertSessionHasErrors('end_date');
     }
 
     public function test_an_unfilable_row_blocks_the_download_and_names_the_payee(): void

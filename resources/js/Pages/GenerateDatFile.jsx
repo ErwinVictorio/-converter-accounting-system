@@ -6,6 +6,10 @@ import { motion } from "framer-motion";
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
 import { Input } from "@/Components/ui/input";
+import {
+    ANNUAL_FULL_YEAR_HINT,
+    annualCoveredPeriodError,
+} from "@/lib/annualCoveredPeriod";
 
 const DAT_TYPES = {
     purchase: { heading: "RELIEF Purchases", rows: "VAT input" },
@@ -22,6 +26,9 @@ function GenerateDatFile() {
         reportType = "quarterly",
         availablePeriods = [],
         periodIssues = {},
+        annualStartDate = `${new Date().getFullYear()}-01-01`,
+        annualEndDate = `${new Date().getFullYear()}-12-31`,
+        annualSummary = { records_count: 0, invalid_count: 0, errors: [] },
         birCompanies = [],
         selectedWithholdingAgent = null,
     } = usePage().props;
@@ -37,13 +44,16 @@ function GenerateDatFile() {
         period: defaultPeriod,
         record_type: recordType,
         report_type: reportType,
-        start_date: `${new Date().getFullYear()}-01-01`,
-        end_date: `${new Date().getFullYear()}-12-31`,
+        start_date: annualStartDate,
+        end_date: annualEndDate,
         withholding_agent_tin: defaultAgent.tin,
         withholding_agent_branch_code: defaultAgent.branch_code || "0000",
     });
 
     const datType = DAT_TYPES[data.record_type] || DAT_TYPES.purchase;
+    const datHeading = data.record_type === "expanded" && data.report_type === "annual"
+        ? "1604E Expanded WTAX"
+        : datType.heading;
 
     const selectedPeriod = useMemo(() => {
         return availablePeriods.find((period) => period.value === data.period);
@@ -53,6 +63,23 @@ function GenerateDatFile() {
         invalid_count: 0,
         errors: [],
     };
+    const isAnnualExpanded = data.record_type === "expanded" && data.report_type === "annual";
+    /*
+     * The 1604E is always dated 12/31 of the taxable year, so a partial covered
+     * period is refused here rather than widened -- the same rule the backend
+     * applies in AnnualCoveredPeriodValidator.
+     */
+    const annualPeriodError = isAnnualExpanded
+        ? annualCoveredPeriodError(data.start_date, data.end_date)
+        : "";
+    const annualTaxableYearEnd = data.end_date
+        ? `${data.end_date.slice(0, 4)}-12-31`
+        : "";
+    const downloadDisabled = processing || (isAnnualExpanded
+        ? annualPeriodError !== ""
+            || annualSummary.records_count === 0
+            || annualSummary.invalid_count > 0
+        : selectedIssues.invalid_count > 0);
     const selectedBirCompanyKey = `${data.withholding_agent_tin}|${data.withholding_agent_branch_code}`;
     /*
      * The list is what Master Data > Companies keeps active (with config and
@@ -74,9 +101,11 @@ function GenerateDatFile() {
         setData("record_type", recordType);
         setData("report_type", reportType);
         setData("period", availablePeriods[0]?.value || currentMonth);
+        setData("start_date", annualStartDate);
+        setData("end_date", annualEndDate);
         setData("withholding_agent_tin", defaultAgent.tin);
         setData("withholding_agent_branch_code", defaultAgent.branch_code || "0000");
-    }, [recordType, reportType, availablePeriods, selectedWithholdingAgent]);
+    }, [recordType, reportType, annualStartDate, annualEndDate, availablePeriods, selectedWithholdingAgent]);
 
     const handleRecordTypeChange = (value) => {
         setData("record_type", value);
@@ -109,6 +138,33 @@ function GenerateDatFile() {
         );
     };
 
+    const refreshAnnualRange = (field, value) => {
+        const nextStartDate = field === "start_date" ? value : data.start_date;
+        const nextEndDate = field === "end_date" ? value : data.end_date;
+
+        setData(field, value);
+
+        if (!nextStartDate || !nextEndDate || nextEndDate < nextStartDate) {
+            return;
+        }
+
+        router.get(
+            "/generate-datfile",
+            {
+                record_type: "expanded",
+                report_type: "annual",
+                start_date: nextStartDate,
+                end_date: nextEndDate,
+                withholding_agent_tin: data.withholding_agent_tin,
+                withholding_agent_branch_code: data.withholding_agent_branch_code,
+            },
+            {
+                preserveScroll: true,
+                replace: true,
+            }
+        );
+    };
+
     const handleWithholdingAgentChange = (value) => {
         const [tin, branchCode] = value.split("|");
         setData((current) => ({
@@ -123,6 +179,8 @@ function GenerateDatFile() {
             {
                 record_type: "expanded",
                 report_type: data.report_type,
+                start_date: data.start_date,
+                end_date: data.end_date,
                 withholding_agent_tin: tin,
                 withholding_agent_branch_code: branchCode || "0000",
             },
@@ -141,28 +199,33 @@ function GenerateDatFile() {
             return;
         }
 
-        if (data.record_type === "expanded" && data.report_type === "annual") {
-            if (!data.start_date || !data.end_date) {
-                toast.error("Please select the covered dates.");
-                return;
-            }
+        if (isAnnualExpanded && annualPeriodError) {
+            toast.error(annualPeriodError);
+            return;
+        }
 
-            if (data.end_date < data.start_date) {
-                toast.error("End date cannot be earlier than start date.");
-                return;
-            }
-        } else if (!data.period) {
+        if (!isAnnualExpanded && !data.period) {
             toast.error("Please select a reporting month.");
             return;
         }
 
-        if (!(data.record_type === "expanded" && data.report_type === "annual") && availablePeriods.length > 0 && !selectedPeriod) {
+        if (!isAnnualExpanded && availablePeriods.length > 0 && !selectedPeriod) {
             toast.error(`No ${datType.rows} records found for the selected reporting month.`);
             return;
         }
 
-        if (!(data.record_type === "expanded" && data.report_type === "annual") && selectedIssues.invalid_count > 0) {
+        if (!isAnnualExpanded && selectedIssues.invalid_count > 0) {
             toast.error(`Please fix invalid ${datType.rows} rows before downloading the DAT file.`);
+            return;
+        }
+
+        if (isAnnualExpanded && annualSummary.records_count === 0) {
+            toast.error("No annual expanded withholding tax records found for the selected covered period.");
+            return;
+        }
+
+        if (isAnnualExpanded && annualSummary.invalid_count > 0) {
+            toast.error("Please fix invalid annual expanded withholding tax rows before downloading the DAT file.");
             return;
         }
 
@@ -175,7 +238,7 @@ function GenerateDatFile() {
             params.set("withholding_agent_tin", data.withholding_agent_tin);
             params.set("withholding_agent_branch_code", data.withholding_agent_branch_code);
 
-            if (data.report_type === "annual") {
+            if (isAnnualExpanded) {
                 params.set("start_date", data.start_date);
                 params.set("end_date", data.end_date);
             } else {
@@ -198,7 +261,7 @@ function GenerateDatFile() {
             >
                 <div>
                     <h2 className="text-lg font-semibold text-gray-800">
-                        Generate {datType.heading} DAT
+                        Generate {datHeading} DAT
                     </h2>
                     <p className="text-xs text-gray-500">
                         Select a type and covered period to download one DAT file from your uploaded records.
@@ -315,40 +378,48 @@ function GenerateDatFile() {
                     )}
 
                     {data.record_type === "expanded" && data.report_type === "annual" && (
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-600">
-                                    Start Date
-                                </label>
-                                <Input
-                                    type="date"
-                                    value={data.start_date}
-                                    onChange={(e) => setData("start_date", e.target.value)}
-                                    className={`h-11 rounded-lg border-slate-300 text-gray-700 ${
-                                        errors.start_date ? "border-red-500 focus-visible:ring-red-500" : ""
-                                    }`}
-                                />
-                                {errors.start_date && (
-                                    <p className="text-xs text-red-500">{errors.start_date}</p>
-                                )}
+                        <div className="space-y-2">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-gray-600">
+                                        Start Date
+                                    </label>
+                                    <Input
+                                        type="date"
+                                        value={data.start_date}
+                                        onChange={(e) => refreshAnnualRange("start_date", e.target.value)}
+                                        className={`h-11 rounded-lg border-slate-300 text-gray-700 ${
+                                            errors.start_date ? "border-red-500 focus-visible:ring-red-500" : ""
+                                        }`}
+                                    />
+                                    {errors.start_date && (
+                                        <p className="text-xs text-red-500">{errors.start_date}</p>
+                                    )}
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-gray-600">
+                                        End Date
+                                    </label>
+                                    <Input
+                                        type="date"
+                                        value={data.end_date}
+                                        onChange={(e) => refreshAnnualRange("end_date", e.target.value)}
+                                        className={`h-11 rounded-lg border-slate-300 text-gray-700 ${
+                                            errors.end_date ? "border-red-500 focus-visible:ring-red-500" : ""
+                                        }`}
+                                    />
+                                    {errors.end_date && (
+                                        <p className="text-xs text-red-500">{errors.end_date}</p>
+                                    )}
+                                </div>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-600">
-                                    End Date
-                                </label>
-                                <Input
-                                    type="date"
-                                    value={data.end_date}
-                                    onChange={(e) => setData("end_date", e.target.value)}
-                                    className={`h-11 rounded-lg border-slate-300 text-gray-700 ${
-                                        errors.end_date ? "border-red-500 focus-visible:ring-red-500" : ""
-                                    }`}
-                                />
-                                {errors.end_date && (
-                                    <p className="text-xs text-red-500">{errors.end_date}</p>
-                                )}
-                            </div>
+                            {annualPeriodError ? (
+                                <p className="text-xs text-red-500">{annualPeriodError}</p>
+                            ) : (
+                                <p className="text-xs text-gray-400">{ANNUAL_FULL_YEAR_HINT}</p>
+                            )}
                         </div>
                     )}
 
@@ -424,12 +495,30 @@ function GenerateDatFile() {
                     )}
 
                     <div className="space-y-1.5">
-                        {data.record_type === "expanded" && data.report_type === "annual" && (
-                            <p className="text-xs text-amber-600">
-                                Annual DAT output is waiting for the confirmed BIR annual file layout.
-                            </p>
+                        {isAnnualExpanded && (
+                            <>
+                                {annualSummary.records_count > 0 ? (
+                                    <p className="text-xs text-emerald-600">
+                                        {annualSummary.records_count} annual expanded withholding tax rows found for the selected covered period.
+                                    </p>
+                                ) : (
+                                    <p className="text-xs text-amber-600">
+                                        No annual expanded withholding tax records found for the selected covered period.
+                                    </p>
+                                )}
+                                {annualSummary.invalid_count > 0 && (
+                                    <p className="text-xs text-amber-600">
+                                        {annualSummary.invalid_count} annual rows need BIR info fixes before DAT generation.
+                                    </p>
+                                )}
+                                {annualSummary.records_count > 0 && annualTaxableYearEnd && !annualPeriodError && (
+                                    <p className="text-xs text-slate-500">
+                                        1604E output will use taxable year end {annualTaxableYearEnd}.
+                                    </p>
+                                )}
+                            </>
                         )}
-                        {!(data.record_type === "expanded" && data.report_type === "annual") && selectedPeriod && (
+                        {!isAnnualExpanded && selectedPeriod && (
                             <p className={`text-xs ${selectedIssues.invalid_count > 0 ? "text-amber-600" : "text-emerald-600"}`}>
                                 {selectedPeriod.records_count} {datType.rows} rows found.
                                 {selectedIssues.invalid_count > 0
@@ -437,20 +526,21 @@ function GenerateDatFile() {
                                     : " Ready for DAT generation."}
                             </p>
                         )}
-                        {!(data.record_type === "expanded" && data.report_type === "annual") && availablePeriods.length === 0 && (
+                        {!isAnnualExpanded && availablePeriods.length === 0 && (
                             <p className="text-xs text-amber-600">
                                 No {datType.rows} records yet.
                             </p>
                         )}
                     </div>
 
-                    {!(data.record_type === "expanded" && data.report_type === "annual") && selectedIssues.invalid_count > 0 && (
+                    {((!isAnnualExpanded && selectedIssues.invalid_count > 0)
+                        || (isAnnualExpanded && annualSummary.invalid_count > 0)) && (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                             <p className="font-semibold">
                                 Fix {datType.rows} rows before downloading DAT
                             </p>
                             <ul className="mt-2 space-y-1 text-xs">
-                                {selectedIssues.errors.map((error) => (
+                                {(isAnnualExpanded ? annualSummary.errors : selectedIssues.errors).map((error) => (
                                     <li key={error}>{error}</li>
                                 ))}
                             </ul>
@@ -461,8 +551,8 @@ function GenerateDatFile() {
                         <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                             <Button
                                 type="submit"
-                                disabled={processing || (!(data.record_type === "expanded" && data.report_type === "annual") && selectedIssues.invalid_count > 0)}
-                                className="h-11 rounded-lg bg-blue-600 px-8 font-medium text-white shadow-sm transition-all hover:bg-blue-700"
+                                disabled={downloadDisabled}
+                                className="h-11 rounded-lg bg-blue-600 px-8 font-medium text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 Download DAT
                             </Button>

@@ -13,6 +13,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/Components/ui/card";
+import {
+  ANNUAL_FULL_YEAR_HINT,
+  annualCoveredPeriodError,
+} from "@/lib/annualCoveredPeriod";
 
 /**
  * The upload type is always chosen explicitly -- it is never inferred from the
@@ -60,6 +64,16 @@ function RecordEntry() {
     withholding_agent_branch_code: defaultBirCompany.branch_code || "0000",
   });
   const isExpandedMode = data.record_type === "expanded";
+  const isAnnualExpanded = isExpandedMode && data.report_type === "annual";
+  /*
+   * Annual rows are filed in a 1604E dated 12/31 of the taxable year, so the
+   * covered period has to be that whole year -- the same rule the backend applies
+   * in AnnualCoveredPeriodValidator, repeated here so the file is not uploaded
+   * only to be refused.
+   */
+  const annualPeriodError = isAnnualExpanded
+    ? annualCoveredPeriodError(data.start_date, data.end_date)
+    : "";
   const recordType = RECORD_TYPES[data.record_type] || RECORD_TYPES.purchase;
   const uploadedRecordType = uploadedType ? RECORD_TYPES[uploadedType] : null;
   const selectedBirCompanyKey = `${data.withholding_agent_tin}|${data.withholding_agent_branch_code}`;
@@ -158,16 +172,9 @@ function RecordEntry() {
       return;
     }
 
-    if (isExpandedMode && data.report_type === "annual") {
-      if (!data.start_date || !data.end_date) {
-        toast.error("Please select the covered dates.");
-        return;
-      }
-
-      if (data.end_date < data.start_date) {
-        toast.error("End date cannot be earlier than start date.");
-        return;
-      }
+    if (annualPeriodError) {
+      toast.error(annualPeriodError);
+      return;
     }
 
     if (!data.record_type) {
@@ -334,6 +341,19 @@ function RecordEntry() {
                       />
                       {errors.end_date && (
                         <p className="text-xs text-red-500 font-medium">{errors.end_date}</p>
+                      )}
+                    </div>
+
+                    {/*
+                      The 1604E these rows are filed in is dated 12/31 of the
+                      taxable year, so a partial covered period is refused rather
+                      than widened. Said here, before the file is sent.
+                    */}
+                    <div className="sm:col-span-3">
+                      {annualPeriodError ? (
+                        <p className="text-xs font-medium text-red-500">{annualPeriodError}</p>
+                      ) : (
+                        <p className="text-xs text-slate-400">{ANNUAL_FULL_YEAR_HINT}</p>
                       )}
                     </div>
                   </>

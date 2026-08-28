@@ -55,6 +55,8 @@ function ExpandedWtaxRecords() {
                             <TableHead className="text-right font-semibold text-slate-700">Income Payment</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Tax Withheld</TableHead>
                             <TableHead className="font-semibold text-slate-700">Reporting Month</TableHead>
+                            <TableHead className="font-semibold text-slate-700">Report Type</TableHead>
+                            <TableHead className="font-semibold text-slate-700">Status</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -131,11 +133,34 @@ function ExpandedWtaxRecords() {
                                     <TableCell className="whitespace-nowrap text-xs text-slate-600">
                                         {formatMonth(item.reporting_period)}
                                     </TableCell>
+                                    <TableCell className="whitespace-nowrap">
+                                        <Badge className={
+                                            item.report_type === "annual"
+                                                ? "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-50"
+                                                : "bg-slate-100 text-slate-700 hover:bg-slate-100"
+                                        }>
+                                            {item.report_type === "annual" ? "Annual" : "Quarterly"}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="whitespace-nowrap">
+                                        {item.invalid_count > 0 ? (
+                                            <Badge
+                                                className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50"
+                                                title={(item.validation_errors || []).join(" ")}
+                                            >
+                                                {item.has_missing_id ? "Missing ID/TIN" : "Needs BIR info"}
+                                            </Badge>
+                                        ) : (
+                                            <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                                                Ready
+                                            </Badge>
+                                        )}
+                                    </TableCell>
                                 </TableRow>
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={9} className="h-32 text-center text-slate-500">
+                                <TableCell colSpan={11} className="h-32 text-center text-slate-500">
                                     No expanded withholding tax records found.
                                 </TableCell>
                             </TableRow>

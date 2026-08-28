@@ -273,6 +273,31 @@ class RecordPagesTest extends TestCase
         );
     }
 
+    public function test_expanded_records_flag_rows_with_missing_id_or_tin(): void
+    {
+        $this->withholding([
+            'payee_name' => 'SAMSON, RAM ELDRICH CELESTINO',
+            'payee_type' => 'individual',
+            'payee_tin' => '4',
+            'company_name' => null,
+            'last_name' => 'SAMSON',
+            'first_name' => 'RAM ELDRICH CELESTINO',
+            'atc_code' => 'WI516',
+            'tax_rate' => 10.00,
+            'income_payment' => 791.30,
+            'tax_withheld' => 79.13,
+        ]);
+
+        $this->get('/records/expanded-wtax?search=SAMSON')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->component('Records/ExpandedWtaxRecords')
+                ->where('expandedWtaxEntries.data.0.payee_name', 'SAMSON, RAM ELDRICH CELESTINO')
+                ->where('expandedWtaxEntries.data.0.invalid_count', 1)
+                ->where('expandedWtaxEntries.data.0.has_missing_id', true)
+                ->where('expandedWtaxEntries.data.0.validation_errors.0', 'payee_tin must contain at least 9 digits.')
+        );
+    }
+
     public function test_the_record_pages_are_behind_auth(): void
     {
         Auth::logout();

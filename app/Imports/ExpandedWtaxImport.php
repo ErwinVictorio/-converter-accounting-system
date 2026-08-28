@@ -102,19 +102,27 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
 
     private bool $useRowReportingPeriod;
 
+    private string $reportType;
+
     /** @var 'bir'|'system'|null */
     private ?string $layout = null;
 
     /** @var array<string, int> */
     private array $columnIndexes = [];
 
-    public function __construct(?string $reportingPeriod = null, ?array $withholdingAgent = null, bool $useRowReportingPeriod = false)
+    public function __construct(
+        ?string $reportingPeriod = null,
+        ?array $withholdingAgent = null,
+        bool $useRowReportingPeriod = false,
+        string $reportType = 'quarterly'
+    )
     {
         $this->reportingPeriod = Carbon::parse($reportingPeriod ?? now()->toDateString())
             ->endOfMonth()
             ->toDateString();
         $this->withholdingAgent = $this->normaliseWithholdingAgent($withholdingAgent);
         $this->useRowReportingPeriod = $useRowReportingPeriod;
+        $this->reportType = $reportType === 'annual' ? 'annual' : 'quarterly';
     }
 
     public function onRow(Row $row): void
@@ -162,6 +170,7 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
 
         ExpandedWtaxEntry::create([
             'reporting_period' => $this->reportingPeriodForRow($data, 'Reporting_Month'),
+            'report_type' => $this->reportType,
             ...$this->withholdingAgent,
             'payee_name' => $isCompany
                 ? $companyName
@@ -208,6 +217,7 @@ class ExpandedWtaxImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFor
 
             ExpandedWtaxEntry::create([
                 'reporting_period' => $this->reportingPeriodForRow($data, 'Date'),
+                'report_type' => $this->reportType,
                 ...$this->withholdingAgent,
                 'payee_name' => $payeeName,
                 'payee_type' => $payeeType,

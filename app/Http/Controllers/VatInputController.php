@@ -9,6 +9,7 @@ use App\Imports\SalesVatInputImport;
 use App\Models\Brokers;
 use App\Models\ExpandedWtaxEntry;
 use App\Models\VatInput;
+use App\Services\BIR\AnnualCoveredPeriodValidator;
 use App\Services\BIR\WithholdingCompanyDirectory;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -24,8 +25,10 @@ class VatInputController extends Controller
      * is stored under both come from here, so this screen and the Generate DAT
      * screen cannot end up offering different companies.
      */
-    public function __construct(private WithholdingCompanyDirectory $companies)
-    {
+    public function __construct(
+        private WithholdingCompanyDirectory $companies,
+        private AnnualCoveredPeriodValidator $annualPeriod
+    ) {
     }
 
     /**
@@ -90,10 +93,18 @@ class VatInputController extends Controller
                     $startDate = Carbon::parse($request->input('start_date'))->startOfDay();
                     $endDate = Carbon::parse($request->input('end_date'))->endOfDay();
 
-                    if ($startDate->year !== $endDate->year) {
-                        return back()->withErrors([
-                            'end_date' => 'Annual Expanded WTAX uploads must stay inside one filing year.',
-                        ]);
+                    /*
+                     * A partial covered period is refused here, before checkRange reads
+                     * the workbook and before the delete below clears the year. The 1604E
+                     * those rows would be filed in is dated 12/31/YYYY whatever period
+                     * was selected, so accepting 01/01 to 07/31 would file a full-year
+                     * return five months short -- and a cross-year selection is not one
+                     * taxable year at all. See AnnualCoveredPeriodValidator.
+                     */
+                    $periodErrors = $this->annualPeriod->errors($startDate, $endDate);
+
+                    if ($periodErrors !== []) {
+                        return back()->withErrors($periodErrors);
                     }
 
                     $issues = (new ExpandedWtaxUploadPreflight)->checkRange(
@@ -111,6 +122,7 @@ class VatInputController extends Controller
 
                     DB::transaction(function () use ($startDate, $endDate, $file, $withholdingAgent) {
                         ExpandedWtaxEntry::query()
+                            ->where('report_type', 'annual')
                             ->whereBetween('reporting_period', [
                                 $startDate->copy()->startOfMonth()->toDateString(),
                                 $endDate->copy()->endOfMonth()->toDateString(),
@@ -120,7 +132,7 @@ class VatInputController extends Controller
                             ->delete();
 
                         Excel::import(
-                            new ExpandedWtaxImport($endDate->toDateString(), $withholdingAgent, true),
+                            new ExpandedWtaxImport($endDate->toDateString(), $withholdingAgent, true, 'annual'),
                             $file
                         );
                     });
@@ -154,12 +166,13 @@ class VatInputController extends Controller
                  */
                 DB::transaction(function () use ($reportingPeriod, $file, $withholdingAgent) {
                     ExpandedWtaxEntry::query()
+                        ->where('report_type', 'quarterly')
                         ->where('reporting_period', $reportingPeriod)
                         ->where('withholding_agent_tin', $withholdingAgent['tin'])
                         ->where('withholding_agent_branch_code', $withholdingAgent['branch_code'])
                         ->delete();
 
-                    Excel::import(new ExpandedWtaxImport($reportingPeriod, $withholdingAgent), $file);
+                    Excel::import(new ExpandedWtaxImport($reportingPeriod, $withholdingAgent, false, 'quarterly'), $file);
                 });
 
                 return back()->with('success', 'Expanded withholding tax report successfully imported!');

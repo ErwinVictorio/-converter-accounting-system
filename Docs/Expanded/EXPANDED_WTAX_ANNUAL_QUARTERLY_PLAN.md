@@ -2,20 +2,22 @@
 
 ## Implementation Note
 
-Status: partially implemented.
+Status: implemented.
 
 Implemented:
 
 - `Import Data` shows `Type of Report` when `Expanded WTAX` is selected.
 - `Quarterly` keeps the existing reporting-month upload behavior.
 - `Annual` upload accepts `Start Date` and `End Date`, validates the range, and imports rows under each row's own month.
+- Annual upload stores rows with `report_type = annual`, giving the records table and Generate screen an indicator.
 - `Generate DAT File` shows the same `Type of Report` choice for Expanded WTAX.
+- `Generate DAT File` shows the count of annual records found for the selected annual covered period.
+- `Generate DAT File` enables Annual download when annual rows exist and pass validation.
 - `Quarterly` DAT generation keeps the existing 1601EQ/QAP output.
-- `Annual` DAT generation is intentionally guarded and does not emit a DAT file until the annual BIR layout is confirmed.
+- `Annual` DAT generation emits the confirmed 1604E Schedule 3 output.
+- Annual generation uses a separate generator from Quarterly.
 
-Not yet enabled:
-
-- Annual DAT file generation. The app returns a clear message instead of producing an unverified annual file.
+Superseded on one point: this plan speaks of an arbitrary selected date range for Annual. Annual Expanded WTAX requires a full taxable year. Select January 1 as Start Date and December 31 of the same year as End Date. A shorter or cross-year period is refused on both upload and download — see `Docs/Expanded/EXPANDED_WTAX_ANNUAL_FULL_YEAR_VALIDATOR_PLAN.md` and `app/Services/BIR/AnnualCoveredPeriodValidator.php`. Read "selected date range" below as that taxable year.
 
 ## Goal
 

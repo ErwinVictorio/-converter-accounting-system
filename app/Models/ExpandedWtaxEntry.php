@@ -36,6 +36,7 @@ class ExpandedWtaxEntry extends Model
 
     protected $fillable = [
         'reporting_period',
+        'report_type',
         'withholding_agent_tin',
         'withholding_agent_branch_code',
         'withholding_agent_name',
@@ -69,6 +70,7 @@ class ExpandedWtaxEntry extends Model
     {
         return [
             'payee_name' => $this->payee_name,
+            'report_type' => $this->report_type ?: 'quarterly',
             'withholding_agent_tin' => (string) $this->withholding_agent_tin,
             'withholding_agent_branch_code' => (string) $this->withholding_agent_branch_code,
             'withholding_agent_name' => (string) $this->withholding_agent_name,
@@ -129,6 +131,7 @@ class ExpandedWtaxEntry extends Model
                     // a paginator identity without an autoincrement id.
                     'id' => $key,
                     'reporting_period' => $row->reporting_period?->toDateString(),
+                    'report_type' => $row->report_type ?: 'quarterly',
                     'withholding_agent_tin' => $row->withholding_agent_tin,
                     'withholding_agent_branch_code' => $row->withholding_agent_branch_code,
                     'withholding_agent_name' => $row->withholding_agent_name,
@@ -193,6 +196,7 @@ class ExpandedWtaxEntry extends Model
     {
         return implode('|', [
             $row->reporting_period?->format('Y-m') ?? '',
+            $row->report_type ?: 'quarterly',
             static::birTin($row->withholding_agent_tin),
             static::branchCode($row->withholding_agent_branch_code),
             static::payeeIdentity($row),
