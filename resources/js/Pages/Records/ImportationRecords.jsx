@@ -28,6 +28,7 @@ import ImportationFormFields, {
     money,
     useComputedVat,
 } from "@/Components/Importation/ImportationFormFields";
+import RecordSearchInput from "@/Components/Records/RecordSearchInput";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
 import { importationSchema } from "@/lib/FormSchema";
 
@@ -124,7 +125,10 @@ function ImportationRecords() {
         setMonthFilter(value);
         router.get(
             "/records/importations",
-            value ? { tax_month: value } : {},
+            {
+                ...(value ? { tax_month: value } : {}),
+                ...(filters.search ? { search: filters.search } : {}),
+            },
             { preserveState: true, preserveScroll: true, replace: true }
         );
     };
@@ -136,7 +140,13 @@ function ImportationRecords() {
                 description="Manually keyed importations. Add a new one under Data & Transactions > Importation."
                 links={entries?.links}
                 actions={
-                    <div className="flex items-center gap-2">
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                        <RecordSearchInput
+                            url="/records/importations"
+                            placeholder="Search any column..."
+                            initialValue={filters.search || ""}
+                            params={monthFilter ? { tax_month: monthFilter } : {}}
+                        />
                         <select
                             value={monthFilter}
                             onChange={(event) => handleMonthChange(event.target.value)}

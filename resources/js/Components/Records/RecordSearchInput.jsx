@@ -10,7 +10,7 @@ import { Input } from "@/Components/ui/input";
  * Each Record page owns one table, so the request goes back to that page's own
  * url -- the old combined screen hard-coded /records for all three.
  */
-export default function RecordSearchInput({ url, placeholder, initialValue = "" }) {
+export default function RecordSearchInput({ url, placeholder, initialValue = "", params = {} }) {
     const [searchTerm, setSearchTerm] = useState(initialValue);
 
     // Keep in step with the server when a link (pagination, sidebar) changes it.
@@ -23,14 +23,14 @@ export default function RecordSearchInput({ url, placeholder, initialValue = "" 
             if (searchTerm !== initialValue) {
                 router.get(
                     url,
-                    { search: searchTerm },
+                    { ...params, search: searchTerm },
                     { preserveState: true, replace: true }
                 );
             }
         }, 300);
 
         return () => clearTimeout(timer);
-    }, [searchTerm]);
+    }, [searchTerm, params]);
 
     return (
         <div className="relative w-full md:w-72">

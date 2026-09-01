@@ -273,6 +273,50 @@ class RecordPagesTest extends TestCase
         );
     }
 
+    public function test_importation_records_can_be_searched_across_columns(): void
+    {
+        $this->importation();
+        $this->importation([
+            'sequence_number' => 2,
+            'tax_month' => '2026-07-01',
+            'import_entry_no' => 'C-77777',
+            'assessment_date' => '2026-07-11',
+            'supplier' => 'PACIFIC PARTS LTD.',
+            'importation_date' => '2026-07-06',
+            'country' => 'JAPAN',
+            'total_landed_cost' => 180000.00,
+            'dutiable_value' => 150000.00,
+            'charges' => 30000.00,
+            'exempt' => 20000.00,
+            'taxable_goods' => 160000.00,
+            'vat_rate' => 12.00,
+            'vat_payable' => 19200.00,
+            'or_number' => 'OR-777',
+            'payment_date' => '2026-07-15',
+        ]);
+
+        $this->get('/records/importations?search=PACIFIC')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('entries.data', 1)
+                ->where('entries.data.0.import_entry_no', 'C-77777')
+                ->where('filters.search', 'PACIFIC')
+        );
+
+        $this->get('/records/importations?search=30,000')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('entries.data', 1)
+                ->where('entries.data.0.import_entry_no', 'C-77777')
+        );
+
+        $this->get('/records/importations?tax_month=2026-07&search=OR-777')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('entries.data', 1)
+                ->where('filters.tax_month', '2026-07')
+                ->where('filters.search', 'OR-777')
+                ->where('entries.data.0.import_entry_no', 'C-77777')
+        );
+    }
+
     public function test_expanded_records_flag_rows_with_missing_id_or_tin(): void
     {
         $this->withholding([

@@ -30,10 +30,43 @@ class ImportationController extends Controller
     {
         $taxMonth = $request->input('tax_month');
         $normalizedMonth = $taxMonth ? $this->entries->normalizeTaxMonth($taxMonth) : null;
+        $search = trim((string) $request->input('search', ''));
+        $searchTerms = collect([$search, str_replace(',', '', $search)])
+            ->filter()
+            ->unique()
+            ->values();
 
         $entries = ImportationEntry::query()
             ->when($normalizedMonth, function ($query, string $month) {
                 $query->whereDate('tax_month', $month);
+            })
+            ->when($searchTerms->isNotEmpty(), function ($query) use ($searchTerms) {
+                $columns = [
+                    'sequence_number',
+                    'tax_month',
+                    'import_entry_no',
+                    'assessment_date',
+                    'supplier',
+                    'importation_date',
+                    'country',
+                    'total_landed_cost',
+                    'dutiable_value',
+                    'charges',
+                    'exempt',
+                    'taxable_goods',
+                    'vat_rate',
+                    'vat_payable',
+                    'or_number',
+                    'payment_date',
+                ];
+
+                $query->where(function ($q) use ($columns, $searchTerms) {
+                    foreach ($searchTerms as $term) {
+                        foreach ($columns as $column) {
+                            $q->orWhere($column, 'LIKE', "%{$term}%");
+                        }
+                    }
+                });
             })
             ->orderByDesc('tax_month')
             ->orderBy('sequence_number')
@@ -57,6 +90,7 @@ class ImportationController extends Controller
             'months' => $months,
             'filters' => [
                 'tax_month' => $taxMonth ? Carbon::parse($normalizedMonth)->format('Y-m') : '',
+                'search' => $search,
             ],
         ]);
     }
