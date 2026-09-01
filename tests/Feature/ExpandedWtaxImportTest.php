@@ -60,6 +60,20 @@ class ExpandedWtaxImportTest extends TestCase
         );
     }
 
+    private function systemCsv(array $rows): UploadedFile
+    {
+        $lines = ['No,Date,Supplier Name,TIN,Reference,(1%),(2%),(5%),(10%),(15%),Total'];
+
+        foreach ($rows as $row) {
+            $lines[] = implode(',', $row);
+        }
+
+        return UploadedFile::fake()->createWithContent(
+            'expanded-wtax-system.csv',
+            implode("\r\n", $lines) . "\r\n"
+        );
+    }
+
     /**
      * One company row, with only the cells a case cares about overridden.
      *
@@ -80,6 +94,29 @@ class ExpandedWtaxImportTest extends TestCase
             '1',                                // ewt_rate
             '36827.16',                         // tax_amount
         ], $overrides);
+    }
+
+    private function storedExpanded(array $overrides = []): ExpandedWtaxEntry
+    {
+        return ExpandedWtaxEntry::create(array_merge([
+            'reporting_period' => '2026-07-31',
+            'report_type' => 'quarterly',
+            'withholding_agent_tin' => '008791976',
+            'withholding_agent_branch_code' => '0000',
+            'withholding_agent_name' => 'FORTRESS STEEL INC.',
+            'payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'payee_type' => 'company',
+            'payee_tin' => '007086184',
+            'payee_branch_code' => '0000',
+            'company_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+            'last_name' => null,
+            'first_name' => null,
+            'middle_name' => null,
+            'atc_code' => 'WC158',
+            'tax_rate' => 1.00,
+            'income_payment' => 100000.00,
+            'tax_withheld' => 1000.00,
+        ], $overrides));
     }
 
     private function upload(UploadedFile $file, string $month = '2026-07'): \Illuminate\Testing\TestResponse
@@ -276,7 +313,7 @@ class ExpandedWtaxImportTest extends TestCase
     {
         $this->upload($this->csv([
             $this->row([2 => '1']),
-            $this->row([1 => '004703296', 2 => '']),
+            $this->row([1 => '004703296', 2 => '', 3 => 'OTHER COMPANY INC']),
         ]))->assertSessionHas('success');
 
         // The template writes a plain number; the DAT carries four digits.
@@ -407,6 +444,45 @@ class ExpandedWtaxImportTest extends TestCase
         $this->assertSame(0, ExpandedWtaxEntry::count());
     }
 
+    public function test_same_company_name_with_different_tins_rejects_the_bir_upload_before_replacing_rows(): void
+    {
+        $this->upload($this->csv([$this->row()]))->assertSessionHas('success');
+
+        $response = $this->upload($this->csv([
+            $this->row(),
+            $this->row([1 => '005425287']),
+        ]));
+
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
+
+        $error = session('error');
+
+        $this->assertStringContainsString('ACERSTEEL INDUSTRIAL SALES INC has multiple TINs', $error);
+        $this->assertStringContainsString('007086184, 005425287', $error);
+        $this->assertStringContainsString('A company name must use one unique TIN', $error);
+
+        $this->assertSame(1, ExpandedWtaxEntry::count());
+        $this->assertSame('007086184', ExpandedWtaxEntry::firstOrFail()->payee_tin);
+    }
+
+    public function test_same_company_name_with_different_tins_rejects_the_system_export_upload(): void
+    {
+        $response = $this->upload($this->systemCsv([
+            ['1', '07/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007086184', 'A-1', '10224.13', '', '', '', '', '10224.13'],
+            ['2', '07/04/2026', 'ACERSTEEL INDUSTRIAL SALES INC.', '005425287', 'A-2', '500.00', '', '', '', '', '500.00'],
+        ]));
+
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
+
+        $error = session('error');
+
+        $this->assertStringContainsString('ACERSTEEL INDUSTRIAL SALES INC has multiple TINs', $error);
+        $this->assertStringContainsString('007086184, 005425287', $error);
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+    }
+
     public function test_expanded_upload_defaults_to_quarterly_when_report_type_is_missing(): void
     {
         $this->upload($this->csv([$this->row()]))->assertSessionHas('success');
@@ -520,7 +596,7 @@ class ExpandedWtaxImportTest extends TestCase
     {
         $this->uploadAnnual($this->csv([
             $this->row([0 => '07/03/2026']),
-            $this->row([0 => '08/04/2026', 1 => '004703296', 8 => '100000.00', 10 => '1000.00']),
+            $this->row([0 => '08/04/2026', 1 => '004703296', 3 => 'OTHER COMPANY INC', 8 => '100000.00', 10 => '1000.00']),
         ]))->assertSessionHas('success');
 
         $periods = ExpandedWtaxEntry::orderBy('reporting_period')
@@ -543,45 +619,15 @@ class ExpandedWtaxImportTest extends TestCase
         $this->assertSame(0, \App\Models\SalesVatInput::count());
     }
 
-    public function test_it_reads_the_bir_format_workbook_and_resolves_its_formulas(): void
+    public function test_bir_format_workbook_with_conflicting_company_tins_is_rejected(): void
     {
-        $this->upload($this->workbook(), '2025-12')->assertSessionHas('success');
+        $response = $this->upload($this->workbook(), '2025-12');
 
-        $entries = ExpandedWtaxEntry::orderBy('id')->get();
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
 
-        // Seven worksheet rows, seven stored rows.
-        $this->assertCount(7, $entries);
-
-        /*
-         * Column K of the fixture is the template's own formula,
-         * =ROUND(I*J/100,2). Stored as the value it computes -- had the formula text
-         * been read instead, its digits would have been scraped into a nonsense
-         * amount, which is what these three figures pin down.
-         */
-        $this->assertEqualsWithDelta(36827.16, (float) $entries[0]->tax_withheld, 0.001);
-        $this->assertEqualsWithDelta(4380.47, (float) $entries[2]->tax_withheld, 0.001);
-        $this->assertEqualsWithDelta(-1032.00, (float) $entries[5]->tax_withheld, 0.001);
-
-        // Leading zeros survive: 000491813 is a real TIN, not 491813.
-        $this->assertSame('000491813', $entries[2]->payee_tin);
-        $this->assertSame('0000', $entries[2]->payee_branch_code);
-        $this->assertSame('2025-12-31', $entries[0]->reporting_period->toDateString());
-
-        // The individual row fills the name columns; the six company rows do not.
-        $this->assertSame('individual', $entries[4]->payee_type);
-        $this->assertSame('BANSIL', $entries[4]->last_name);
-        $this->assertSame(6, $entries->where('payee_type', 'company')->count());
-
-        // Every row is filable exactly as imported.
-        $validator = app(BirExpandedWtaxRowValidator::class);
-
-        foreach ($entries as $index => $entry) {
-            $this->assertSame(
-                [],
-                $validator->validate($entry->toBirExpandedRow(), $index + 2),
-                "Worksheet row {$index} of the fixture is unfilable as imported."
-            );
-        }
+        $this->assertStringContainsString('ACERSTEEL INDUSTRIAL SALES INC has multiple TINs', session('error'));
+        $this->assertSame(0, ExpandedWtaxEntry::count());
     }
 
     public function test_it_reads_the_system_expanded_wtax_export(): void
@@ -638,18 +684,47 @@ class ExpandedWtaxImportTest extends TestCase
 
     public function test_the_records_page_lists_the_consolidated_rows(): void
     {
-        $this->upload($this->workbook(), '2025-12')->assertSessionHas('success');
+        $this->storedExpanded();
+        $this->storedExpanded(['income_payment' => 200000.00, 'tax_withheld' => 2000.00]);
+        $this->storedExpanded([
+            'payee_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'payee_tin' => '000491813',
+            'company_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+            'income_payment' => 438047.00,
+            'tax_withheld' => 4380.47,
+        ]);
+        $this->storedExpanded([
+            'payee_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'payee_tin' => '000491813',
+            'company_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+            'income_payment' => 100000.00,
+            'tax_withheld' => 1000.00,
+        ]);
+        $this->storedExpanded([
+            'payee_name' => 'BANSIL, JUAN CRUZ',
+            'payee_type' => 'individual',
+            'payee_tin' => '220052738',
+            'company_name' => null,
+            'last_name' => 'BANSIL',
+            'first_name' => 'JUAN',
+            'middle_name' => 'CRUZ',
+            'atc_code' => 'WI010',
+            'tax_rate' => 5.00,
+            'income_payment' => 50000.00,
+            'tax_withheld' => 2500.00,
+        ]);
 
-        // Seven stored rows, five listed. Two pairs merge: the two PRUDENTIAL rows,
-        // and the two ACERSTEEL WC158 rows at 1% whose TINs disagree -- one payee
-        // billed at one rate is one filing line either way.
         $this->get('/records/expanded-wtax')->assertOk()->assertInertia(
             fn ($page) => $page
                 ->component('Records/ExpandedWtaxRecords')
-                ->has('expandedWtaxEntries.data', 5)
+                ->has('expandedWtaxEntries.data', 3)
         );
 
-        $this->assertSame(7, ExpandedWtaxEntry::count());
+        $this->assertSame(5, ExpandedWtaxEntry::count());
 
         // Search covers the payee, the TIN and the ATC code.
         $this->get('/records/expanded-wtax?search=BANSIL')->assertOk()->assertInertia(
@@ -667,13 +742,32 @@ class ExpandedWtaxImportTest extends TestCase
 
     public function test_the_records_page_flags_a_merged_group_whose_tins_disagree(): void
     {
-        $this->upload($this->workbook(), '2025-12')->assertSessionHas('success');
+        $this->storedExpanded();
+        $this->storedExpanded([
+            'payee_tin' => '009999999',
+            'income_payment' => 200000.00,
+            'tax_withheld' => 2000.00,
+        ]);
+        $this->storedExpanded([
+            'payee_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'payee_tin' => '000491813',
+            'company_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+        ]);
+        $this->storedExpanded([
+            'payee_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'payee_tin' => '000491813',
+            'company_name' => 'PRUDENTIAL GUARANTEE AND ASSURANCE INC',
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+        ]);
 
         $rows = collect(
             $this->get('/records/expanded-wtax')->viewData('page')['props']['expandedWtaxEntries']['data']
         );
 
-        // The workbook files ACERSTEEL under two TINs at the same 1% rate. The
+        // Historical rows can still exist under two TINs at the same 1% rate. The
         // group keeps the first and says so, rather than filing the payee twice.
         $acersteel = $rows->firstWhere('atc_code', 'WC158');
 

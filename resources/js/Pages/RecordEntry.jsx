@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
-import { ArrowRight, FileSpreadsheet, Loader2, UploadCloud, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Copy } from "lucide-react";
 
+import ExcelUploadPanel from "@/Components/ExcelUploadPanel";
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
 import { Input } from "@/Components/ui/input";
 import {
   Card,
   CardContent,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/Components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/Components/ui/dialog";
 import {
   ANNUAL_FULL_YEAR_HINT,
   annualCoveredPeriodError,
@@ -43,6 +51,25 @@ const RECORD_TYPES = {
   },
 };
 
+const expandedUploadErrorDetails = (message = "") => {
+  const prefixes = [
+    "Expanded withholding tax upload rejected. ",
+    "Expanded withholding tax annual upload rejected. ",
+  ];
+  const prefix = prefixes.find((item) => message.startsWith(item));
+
+  if (!prefix) {
+    return [];
+  }
+
+  const body = message.slice(prefix.length).trim();
+
+  return body
+    .split(/(?=Rows \d)/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
 function RecordEntry() {
   const { flash, birCompanies = [] } = usePage().props;
   const defaultBirCompany = birCompanies[0] || { tin: "008791976", branch_code: "0000", name: "FORTRESS STEEL INC." };
@@ -50,6 +77,8 @@ function RecordEntry() {
   // Which Record page the last successful upload landed in, so the confirmation
   // can point at it. Derived from the submitted type, not from a new flash key.
   const [uploadedType, setUploadedType] = useState(null);
+  const [uploadErrorDialogOpen, setUploadErrorDialogOpen] = useState(false);
+  const [uploadErrorDetails, setUploadErrorDetails] = useState([]);
   const fileInputRef = useRef(null);
 
   // Inertia Form Setup para sa File Upload
@@ -93,9 +122,28 @@ function RecordEntry() {
       toast.success(flash.success);
     }
     if (flash?.error) {
-      toast.error(flash.error);
+      const details = expandedUploadErrorDetails(flash.error);
+
+      if (details.length > 0) {
+        setUploadErrorDetails(details);
+        setUploadErrorDialogOpen(true);
+        toast.error("Upload rejected. Review the workbook corrections.");
+      } else {
+        toast.error(flash.error);
+      }
     }
   }, [flash]);
+
+  const copyUploadErrorDetails = async () => {
+    const text = uploadErrorDetails.join("\n\n");
+
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Error details copied.");
+    } catch {
+      toast.error("Unable to copy error details.");
+    }
+  };
 
   // Handle File Selection
   const handleFileChange = (file) => {
@@ -473,114 +521,78 @@ function RecordEntry() {
               </div>
             )}
 
-            <input
-              type="file"
-              ref={fileInputRef}
+            <ExcelUploadPanel
               accept=".xls,.xlsx,.xlsm"
-              className="hidden"
-              onChange={(e) => handleFileChange(e.target.files[0])}
+              acceptLabel=".xls, .xlsx, .xlsm"
+              clearLabel="Clear File"
+              error={errors.excel_file}
+              file={data.excel_file}
+              fileInputRef={fileInputRef}
+              formId="record-upload-form"
+              isDragging={isDragging}
+              maxSizeLabel="10MB"
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onFileChange={handleFileChange}
+              onRemove={handleRemoveFile}
+              processing={processing}
+              selectedFileLabel={recordType.label}
+              submitLabel="Submit File"
             />
-
-            {!data.excel_file ? (
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-xl p-6 sm:p-10 flex flex-col items-center justify-center text-center transition-colors cursor-pointer ${
-                  isDragging
-                    ? "border-indigo-500 bg-indigo-50/50"
-                    : "border-gray-200 hover:border-indigo-300 hover:bg-gray-50/50"
-                }`}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center mb-4 text-indigo-600">
-                  <UploadCloud className="w-6 h-6" />
-                </div>
-
-                <h4 className="text-base sm:text-lg font-bold text-gray-800 mb-1">
-                  Drag &amp; drop to upload file
-                </h4>
-                <p className="text-xs sm:text-sm text-gray-400 font-medium mb-6">
-                  (XLS, XLSX, XLSM up to 500MB)
-                </p>
-
-                <div className="w-full max-w-xs flex items-center gap-3 my-2 mb-6">
-                  <div className="h-[1px] bg-gray-200 flex-1"></div>
-                  <span className="text-xs text-gray-400 uppercase font-medium">or</span>
-                  <div className="h-[1px] bg-gray-200 flex-1"></div>
-                </div>
-
-                <Button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg shadow-sm"
-                >
-                  Browse Files
-                </Button>
-              </div>
-            ) : (
-              <div className="border rounded-xl p-4 sm:p-6 bg-slate-50 flex items-center justify-between">
-                <div className="flex items-center space-x-4 min-w-0">
-                  <div className="p-3 bg-emerald-100 text-emerald-700 rounded-lg shrink-0">
-                    <FileSpreadsheet className="w-8 h-8" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-800 truncate">
-                      {data.excel_file.name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {(data.excel_file.size / (1024 * 1024)).toFixed(2)} MB - {recordType.label}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleRemoveFile}
-                  disabled={processing}
-                  className="text-gray-400 hover:text-red-500 transition-colors p-1 shrink-0"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            )}
-
-            {errors.excel_file && (
-              <p className="text-xs text-red-500 mt-2">{errors.excel_file}</p>
-            )}
           </form>
         </CardContent>
-
-        <CardFooter className="flex flex-col sm:flex-row justify-end gap-3 p-4 sm:p-6 border-t bg-gray-50/50">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleRemoveFile}
-            disabled={!data.excel_file || processing}
-            className="w-full sm:w-auto px-5"
-          >
-            Clear File
-          </Button>
-          <Button
-            type="submit"
-            form="record-upload-form"
-            disabled={!data.excel_file || processing}
-            className="w-full sm:w-auto bg-slate-900 text-white hover:bg-slate-800 px-6 min-w-[120px]"
-          >
-            {processing ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Uploading...
-              </>
-            ) : (
-              "Submit File"
-            )}
-          </Button>
-        </CardFooter>
       </Card>
+
+      <Dialog open={uploadErrorDialogOpen} onOpenChange={setUploadErrorDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader className="border-b border-slate-100 pb-4 pr-8">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                <AlertTriangle className="h-5 w-5" />
+              </span>
+              <div>
+                <DialogTitle className="text-base font-semibold text-slate-900">
+                  Upload Rejected
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-sm text-slate-500">
+                  Some company names use more than one TIN. Correct the workbook and upload it again.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {uploadErrorDetails.map((detail, index) => (
+              <div
+                key={`${detail}-${index}`}
+                className="rounded-lg border border-red-100 bg-red-50/70 p-4 text-sm leading-relaxed text-red-950"
+              >
+                {detail}
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="border-t border-slate-100 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={copyUploadErrorDetails}
+              className="gap-1.5"
+            >
+              <Copy className="h-4 w-4" />
+              Copy Errors
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setUploadErrorDialogOpen(false)}
+              className="bg-slate-900 text-white hover:bg-slate-800"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

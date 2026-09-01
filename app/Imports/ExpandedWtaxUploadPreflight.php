@@ -76,7 +76,10 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas
             ];
         }
 
-        return $this->monthMismatches(Carbon::parse($reportingPeriod));
+        return [
+            ...$this->companyTinConflicts(),
+            ...$this->monthMismatches(Carbon::parse($reportingPeriod)),
+        ];
     }
 
     /**
@@ -97,7 +100,10 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas
             ];
         }
 
-        return $this->dateRangeMismatches(Carbon::parse($startDate), Carbon::parse($endDate));
+        return [
+            ...$this->companyTinConflicts(),
+            ...$this->dateRangeMismatches(Carbon::parse($startDate), Carbon::parse($endDate)),
+        ];
     }
 
     /**
@@ -262,6 +268,96 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas
     }
 
     /**
+     * A company name should point to one base TIN. Catching mismatches here keeps
+     * a bad workbook from replacing the selected month before the row list can
+     * merely warn about it.
+     *
+     * @return string[]
+     */
+    private function companyTinConflicts(): array
+    {
+        $companies = [];
+
+        foreach ($this->rows as $index => $row) {
+            if ($index <= $this->headingRow) {
+                continue;
+            }
+
+            if ($this->isBlank($row) || $this->isSystemSummaryRow($row)) {
+                continue;
+            }
+
+            $identity = $this->companyIdentity($row);
+
+            if ($identity === null) {
+                continue;
+            }
+
+            [$companyName, $tin] = $identity;
+
+            if (! isset($companies[$companyName])) {
+                $companies[$companyName] = [];
+            }
+
+            if (! isset($companies[$companyName][$tin])) {
+                $companies[$companyName][$tin] = [];
+            }
+
+            $companies[$companyName][$tin][] = $index + 1;
+        }
+
+        $errors = [];
+
+        foreach ($companies as $companyName => $tins) {
+            if (count($tins) <= 1) {
+                continue;
+            }
+
+            $tinList = implode(', ', array_keys($tins));
+            $rows = collect($tins)
+                ->flatten()
+                ->sort()
+                ->values()
+                ->all();
+            $rowList = implode(', ', array_slice($rows, 0, self::ROWS_NAMED));
+            $more = count($rows) > self::ROWS_NAMED
+                ? ' and ' . (count($rows) - self::ROWS_NAMED) . ' more'
+                : '';
+
+            $errors[] = "Rows {$rowList}{$more}: {$companyName} has multiple TINs in the uploaded file: "
+                . "{$tinList}. A company name must use one unique TIN. Correct the workbook and upload again.";
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @return array{0: string, 1: string}|null
+     */
+    private function companyIdentity(array $row): ?array
+    {
+        if ($this->layout === 'system') {
+            $name = $this->normaliseCompanyName($this->value($row, 'Supplier Name'));
+            $tin = $this->baseTin($this->value($row, 'TIN'));
+
+            if ($name === '' || strlen($tin) !== 9 || $this->isSystemIndividualName((string) $this->value($row, 'Supplier Name'))) {
+                return null;
+            }
+
+            return [$name, $tin];
+        }
+
+        $name = $this->normaliseCompanyName($this->value($row, 'companyName'));
+        $tin = $this->baseTin($this->value($row, 'Vendor_TIN'));
+
+        if ($name === '' || strlen($tin) !== 9) {
+            return null;
+        }
+
+        return [$name, $tin];
+    }
+
+    /**
      * A spacer line between blocks of payees. Only a row with nothing at all in any
      * of the eleven columns is skipped, so a row that carries figures but no month
      * is still reported.
@@ -409,6 +505,29 @@ class ExpandedWtaxUploadPreflight implements ToArray, WithCalculatedFormulas
     private function normaliseHeading($value): string
     {
         return strtolower(preg_replace('/[^a-z0-9]/i', '', trim((string) $value)));
+    }
+
+    private function normaliseCompanyName($value): string
+    {
+        $value = strtoupper(trim((string) $value));
+        $value = str_replace('&', ' AND ', $value);
+        $value = preg_replace('/[^A-Z0-9 ]/', ' ', $value);
+
+        return trim(preg_replace('/\s+/', ' ', $value));
+    }
+
+    private function baseTin($value): string
+    {
+        return substr(preg_replace('/\D/', '', (string) $value), 0, 9);
+    }
+
+    private function isSystemIndividualName(string $name): bool
+    {
+        if (! str_contains($name, ',')) {
+            return false;
+        }
+
+        return preg_match('/\b(INC|INCORPORATED|CORP|CORPORATION|COMPANY|CO|OPC|SERVICES|AGENCY|SUPPLY|SALES|HARDWARE|TRADING)\b/i', $name) !== 1;
     }
 
     private function isSystemSummaryRow(array $row): bool

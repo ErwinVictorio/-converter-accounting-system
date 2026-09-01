@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Download, FileSpreadsheet, Loader2, Plus, UploadCloud } from "lucide-react";
+import { Download, Loader2, Plus, UploadCloud } from "lucide-react";
 import { motion } from "framer-motion";
 
+import ExcelUploadPanel from "@/Components/ExcelUploadPanel";
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
 import {
@@ -45,8 +46,10 @@ function Importation() {
     const [activeTab, setActiveTab] = useState("manual");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [uploadProgress, setUploadProgress] = useState(null);
+    const fileInputRef = useRef(null);
 
     const {
         register,
@@ -107,10 +110,34 @@ function Importation() {
             onSuccess: () => {
                 setSelectedFile(null);
                 setUploadProgress(null);
+                if (fileInputRef.current) fileInputRef.current.value = "";
                 event.target.reset();
             },
             onFinish: () => setIsUploading(false),
         });
+    };
+
+    const handleDragOver = (event) => {
+        event.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (event) => {
+        event.preventDefault();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (event) => {
+        event.preventDefault();
+        setIsDragging(false);
+
+        setSelectedFile(event.dataTransfer.files?.[0] ?? null);
+    };
+
+    const handleRemoveFile = () => {
+        setSelectedFile(null);
+        setUploadProgress(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
     const tabClass = (tab) =>
@@ -200,73 +227,45 @@ function Importation() {
                 <Card className="w-full overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
                     <CardHeader className="border-b border-slate-100 bg-slate-50/50 py-4">
                         <CardTitle className="flex items-center gap-2 text-lg font-medium text-slate-800">
-                            <FileSpreadsheet className="h-5 w-5 text-[#0344a4]" />
+                            <UploadCloud className="h-5 w-5 text-[#0344a4]" />
                             Upload Importation Data
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6">
-                        <form id="importation-upload-form" onSubmit={onUpload} className="space-y-5">
-                            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_auto_auto]">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-slate-700">
-                                        Excel File <span className="text-red-500">*</span>
-                                    </label>
-                                    <input
-                                        type="file"
-                                        accept=".xlsx,.xls,.csv"
-                                        onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-                                        className="block w-full rounded-md border border-slate-200 bg-white text-sm text-slate-700 shadow-sm file:mr-4 file:h-9 file:border-0 file:bg-slate-100 file:px-4 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#0344a4]"
-                                    />
-                                    <p className="text-xs text-slate-500">
-                                        Template: Importation_Upload_Template_Updated.xlsx
-                                    </p>
-                                </div>
-
-                                <div className="flex items-end">
+                        <form id="importation-upload-form" onSubmit={onUpload}>
+                            <ExcelUploadPanel
+                                accept=".xlsx,.xls,.csv"
+                                acceptLabel=".xlsx, .xls, .csv"
+                                clearLabel="Cancel"
+                                file={selectedFile}
+                                fileInputRef={fileInputRef}
+                                footerActions={
                                     <Button
                                         type="button"
                                         variant="outline"
                                         asChild
-                                        className="h-10 min-w-[165px] border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50"
+                                        className="w-full border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50 sm:w-auto"
                                     >
                                         <a href="/importation/template">
                                             <Download className="h-4 w-4" />
                                             Download Template
                                         </a>
                                     </Button>
-                                </div>
-
-                                <div className="flex items-end">
-                                    <Button
-                                        type="submit"
-                                        disabled={isUploading}
-                                        className="h-10 min-w-[130px] bg-[#0344a4] px-6 text-white hover:bg-[#023384]"
-                                    >
-                                        {isUploading ? (
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                            <span className="flex items-center gap-1.5">
-                                                <UploadCloud className="h-4 w-4" /> Upload
-                                            </span>
-                                        )}
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {selectedFile && (
-                                <div className="rounded-md border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                                    {selectedFile.name}
-                                </div>
-                            )}
-
-                            {uploadProgress !== null && (
-                                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                                    <div
-                                        className="h-full bg-[#0344a4] transition-all"
-                                        style={{ width: `${uploadProgress}%` }}
-                                    />
-                                </div>
-                            )}
+                                }
+                                formId="importation-upload-form"
+                                isDragging={isDragging}
+                                maxSizeLabel="10MB"
+                                onDragLeave={handleDragLeave}
+                                onDragOver={handleDragOver}
+                                onDrop={handleDrop}
+                                onFileChange={setSelectedFile}
+                                onRemove={handleRemoveFile}
+                                processing={isUploading}
+                                processingLabel="Processing Importation File"
+                                progress={uploadProgress}
+                                selectedFileLabel="Importation"
+                                submitLabel="Upload"
+                            />
                         </form>
                     </CardContent>
                 </Card>

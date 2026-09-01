@@ -535,7 +535,12 @@ export default function Dashboard({
               <SelectTrigger className="h-8 w-full min-w-0 border-0 px-1 text-sm font-bold text-slate-900 shadow-none focus:ring-0 sm:w-[180px]">
                 <SelectValue placeholder="Select month" />
               </SelectTrigger>
-              <SelectContent className="max-h-72">
+              <SelectContent
+                position="popper"
+                align="end"
+                sideOffset={6}
+                className="!max-h-72 w-[var(--radix-select-trigger-width)] overflow-y-auto border border-slate-200 !bg-white shadow-lg"
+              >
                 {months.map((month) => (
                   <SelectItem key={month.value} value={month.value}>
                     {month.label}
