@@ -234,6 +234,32 @@ class RecordPagesTest extends TestCase
         );
     }
 
+    public function test_purchase_records_can_be_filtered_by_period(): void
+    {
+        $this->purchase();
+        $this->purchase([
+            'supplier_name' => 'MAY STEEL SUPPLY',
+            'tin_number' => '222-333-444-0000',
+            'date_uploaded' => '2026-05-31',
+        ]);
+
+        $this->get('/records/purchases')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('vatInputs.data', 2)
+                ->has('months', 2)
+                ->where('months.0.value', '2026-05')
+                ->where('months.0.label', 'May 2026')
+                ->where('months.0.records_count', 1)
+        );
+
+        $this->get('/records/purchases?period=2026-04')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('vatInputs.data', 1)
+                ->where('filters.period', '2026-04')
+                ->where('vatInputs.data.0.supplier_name', 'LOCAL HARDWARE INC.')
+        );
+    }
+
     public function test_sales_records_can_be_searched(): void
     {
         $this->sale();
@@ -241,6 +267,82 @@ class RecordPagesTest extends TestCase
 
         $this->get('/records/sales?search=DAVAO')->assertOk()->assertInertia(
             fn ($page) => $page->has('salesVatInputs.data', 1)
+        );
+    }
+
+    public function test_sales_records_can_be_filtered_by_period(): void
+    {
+        $this->sale();
+        $this->sale([
+            'customer_name' => 'MAY BUILDERS CORP.',
+            'customer_tin' => '444-555-666-0000',
+            'reporting_period' => '2026-05-31',
+        ]);
+
+        $this->get('/records/sales')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('salesVatInputs.data', 2)
+                ->has('months', 2)
+                ->where('months.0.value', '2026-05')
+                ->where('months.0.label', 'May 2026')
+                ->where('months.0.records_count', 1)
+        );
+
+        $this->get('/records/sales?period=2026-05')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('salesVatInputs.data', 1)
+                ->where('filters.period', '2026-05')
+                ->where('salesVatInputs.data.0.customer_name', 'MAY BUILDERS CORP.')
+        );
+    }
+
+    public function test_expanded_records_can_be_filtered_by_period(): void
+    {
+        $this->withholding();
+        $this->withholding([
+            'reporting_period' => '2026-05-31',
+            'payee_name' => 'MAY CONTRACTOR INC',
+            'payee_tin' => '222333444',
+            'company_name' => 'MAY CONTRACTOR INC',
+        ]);
+
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('expandedWtaxEntries.data', 2)
+                ->has('months', 2)
+                ->where('months.0.value', '2026-05')
+                ->where('months.0.label', 'May 2026')
+                ->where('months.0.records_count', 1)
+        );
+
+        $this->get('/records/expanded-wtax?period=2026-05')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('expandedWtaxEntries.data', 1)
+                ->where('filters.period', '2026-05')
+                ->where('expandedWtaxEntries.data.0.payee_name', 'MAY CONTRACTOR INC')
+        );
+    }
+
+    public function test_record_period_filters_keep_search_scoped(): void
+    {
+        $this->purchase();
+        $this->purchase([
+            'supplier_name' => 'MAY STEEL SUPPLY',
+            'tin_number' => '222-333-444-0000',
+            'date_uploaded' => '2026-05-31',
+        ]);
+        $this->purchase([
+            'supplier_name' => 'MAY OFFICE SUPPLY',
+            'tin_number' => '555-666-777-0000',
+            'date_uploaded' => '2026-05-31',
+        ]);
+
+        $this->get('/records/purchases?period=2026-05&search=STEEL')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('vatInputs.data', 1)
+                ->where('filters.period', '2026-05')
+                ->where('filters.search', 'STEEL')
+                ->where('vatInputs.data.0.supplier_name', 'MAY STEEL SUPPLY')
         );
     }
 

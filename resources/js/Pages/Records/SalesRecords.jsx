@@ -13,11 +13,12 @@ import {
     TableRow,
 } from "@/Components/ui/table";
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
+import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
 import { formatCurrency } from "@/Components/Records/format";
 
 function SalesRecords() {
-    const { flash, salesVatInputs, filters } = usePage().props;
+    const { flash, salesVatInputs, months = [], filters = {} } = usePage().props;
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
@@ -31,11 +32,20 @@ function SalesRecords() {
                 description="Uploaded sales rows, grouped per customer. Upload new files under Import Data."
                 links={salesVatInputs?.links}
                 actions={
-                    <RecordSearchInput
-                        url="/records/sales"
-                        placeholder="Search customer, TIN, or document..."
-                        initialValue={filters?.search || ""}
-                    />
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                        <RecordSearchInput
+                            url="/records/sales"
+                            placeholder="Search customer, TIN, or document..."
+                            initialValue={filters.search || ""}
+                            params={filters.period ? { period: filters.period } : {}}
+                        />
+                        <RecordPeriodFilter
+                            url="/records/sales"
+                            months={months}
+                            initialValue={filters.period || ""}
+                            search={filters.search || ""}
+                        />
+                    </div>
                 }
             >
                 <Table className="min-w-[1100px]">

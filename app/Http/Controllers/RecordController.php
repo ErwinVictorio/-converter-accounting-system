@@ -6,6 +6,7 @@ use App\Models\ExpandedWtaxEntry;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\BirExpandedWtaxRowValidator;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
@@ -31,6 +32,7 @@ class RecordController extends Controller
     public function purchases(Request $request)
     {
         $search = $request->input('search');
+        $period = $this->normalisedMonth($request->input('period'));
 
         /*
          * is_broker is computed in SQL rather than eager-loaded: a purchase row is
@@ -49,13 +51,23 @@ class RecordController extends Controller
                         ->orWhere('tin_number', 'LIKE', "%{$search}%");
                 });
             })
+            ->when($period, function ($query, Carbon $month) {
+                $query->whereBetween('date_uploaded', [
+                    $month->copy()->startOfMonth()->toDateString(),
+                    $month->copy()->endOfMonth()->toDateString(),
+                ]);
+            })
             ->orderBy('id', 'asc')
             ->paginate(15)
             ->withQueryString();
 
         return Inertia::render('Records/PurchaseRecords', [
             'vatInputs' => $vatInputs,
-            'filters' => ['search' => $search],
+            'months' => $this->availableMonths(VatInput::query(), 'date_uploaded'),
+            'filters' => [
+                'search' => $search,
+                'period' => $period?->format('Y-m') ?? '',
+            ],
         ]);
     }
 
@@ -65,6 +77,7 @@ class RecordController extends Controller
     public function sales(Request $request)
     {
         $search = $request->input('search');
+        $period = $this->normalisedMonth($request->input('period'));
 
         $salesVatInputs = SalesVatInput::query()
             ->select([
@@ -93,6 +106,12 @@ class RecordController extends Controller
                         ->orWhere('document_no', 'LIKE', "%{$search}%");
                 });
             })
+            ->when($period, function ($query, Carbon $month) {
+                $query->whereBetween('reporting_period', [
+                    $month->copy()->startOfMonth()->toDateString(),
+                    $month->copy()->endOfMonth()->toDateString(),
+                ]);
+            })
             ->groupBy([
                 'customer_name',
                 'customer_tin',
@@ -110,7 +129,11 @@ class RecordController extends Controller
 
         return Inertia::render('Records/SalesRecords', [
             'salesVatInputs' => $salesVatInputs,
-            'filters' => ['search' => $search],
+            'months' => $this->availableMonths(SalesVatInput::query(), 'reporting_period'),
+            'filters' => [
+                'search' => $search,
+                'period' => $period?->format('Y-m') ?? '',
+            ],
         ]);
     }
 
@@ -128,6 +151,7 @@ class RecordController extends Controller
     public function expandedWtax(Request $request, BirExpandedWtaxRowValidator $validator)
     {
         $search = $request->input('search');
+        $period = $this->normalisedMonth($request->input('period'));
 
         $expandedRows = ExpandedWtaxEntry::consolidate(
             ExpandedWtaxEntry::query()
@@ -137,6 +161,12 @@ class RecordController extends Controller
                             ->orWhere('payee_tin', 'LIKE', "%{$search}%")
                             ->orWhere('atc_code', 'LIKE', "%{$search}%");
                     });
+                })
+                ->when($period, function ($query, Carbon $month) {
+                    $query->whereBetween('reporting_period', [
+                        $month->copy()->startOfMonth()->toDateString(),
+                        $month->copy()->endOfMonth()->toDateString(),
+                    ]);
                 })
                 ->orderByDesc('reporting_period')
                 ->orderBy('payee_name')
@@ -171,7 +201,40 @@ class RecordController extends Controller
 
         return Inertia::render('Records/ExpandedWtaxRecords', [
             'expandedWtaxEntries' => $expandedWtaxEntries,
-            'filters' => ['search' => $search],
+            'months' => $this->availableMonths(ExpandedWtaxEntry::query(), 'reporting_period'),
+            'filters' => [
+                'search' => $search,
+                'period' => $period?->format('Y-m') ?? '',
+            ],
         ]);
+    }
+
+    private function normalisedMonth(mixed $value): ?Carbon
+    {
+        if (! $value) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse((string) $value)->startOfMonth();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function availableMonths($query, string $column): array
+    {
+        return $query
+            ->whereNotNull($column)
+            ->orderByDesc($column)
+            ->pluck($column)
+            ->groupBy(fn ($date) => Carbon::parse($date)->format('Y-m'))
+            ->map(fn ($group, string $value) => [
+                'value' => $value,
+                'label' => Carbon::parse($value . '-01')->format('F Y'),
+                'records_count' => $group->count(),
+            ])
+            ->values()
+            ->all();
     }
 }

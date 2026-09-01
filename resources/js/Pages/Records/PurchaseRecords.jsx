@@ -15,6 +15,7 @@ import {
     TableRow,
 } from "@/Components/ui/table";
 import BirVendorDialog from "@/Components/Records/BirVendorDialog";
+import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
 import { formatCurrency } from "@/Components/Records/format";
@@ -23,7 +24,7 @@ import { formatCurrency } from "@/Components/Records/format";
 const BIR_TIN = /^(\d{9}|\d{12}|\d{3}-\d{3}-\d{3}|\d{3}-\d{3}-\d{3}-\d{3})$/;
 
 function PurchaseRecords() {
-    const { flash, vatInputs, filters } = usePage().props;
+    const { flash, vatInputs, months = [], filters = {} } = usePage().props;
     const [selectedBirRecord, setSelectedBirRecord] = useState(null);
 
     useEffect(() => {
@@ -38,11 +39,20 @@ function PurchaseRecords() {
                 description="Uploaded VAT input rows. Upload new files under Import Data."
                 links={vatInputs?.links}
                 actions={
-                    <RecordSearchInput
-                        url="/records/purchases"
-                        placeholder="Search supplier or TIN..."
-                        initialValue={filters?.search || ""}
-                    />
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                        <RecordSearchInput
+                            url="/records/purchases"
+                            placeholder="Search supplier or TIN..."
+                            initialValue={filters.search || ""}
+                            params={filters.period ? { period: filters.period } : {}}
+                        />
+                        <RecordPeriodFilter
+                            url="/records/purchases"
+                            months={months}
+                            initialValue={filters.period || ""}
+                            search={filters.search || ""}
+                        />
+                    </div>
                 }
             >
                 <Table className="min-w-[800px]">

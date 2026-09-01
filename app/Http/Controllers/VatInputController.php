@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Imports\ExpandedWtaxImport;
 use App\Imports\ExpandedWtaxUploadPreflight;
+use App\Imports\UploadWorkbookTypePreflight;
 use App\Imports\VatInputImport;
 use App\Imports\SalesVatInputImport;
 use App\Models\Brokers;
@@ -79,6 +80,11 @@ class VatInputController extends Controller
 
             if ($request->input('record_type') === 'sales') {
                 $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
+                $issues = (new UploadWorkbookTypePreflight)->check($file, 'sales', $reportingPeriod);
+
+                if ($issues !== []) {
+                    return back()->with('error', implode(' ', $issues));
+                }
 
                 Excel::import(new SalesVatInputImport($reportingPeriod), $file);
 
@@ -179,6 +185,11 @@ class VatInputController extends Controller
             }
 
             $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
+            $issues = (new UploadWorkbookTypePreflight)->check($file, 'purchase', $reportingPeriod);
+
+            if ($issues !== []) {
+                return back()->with('error', implode(' ', $issues));
+            }
 
             Excel::import(new VatInputImport($reportingPeriod), $file);
 

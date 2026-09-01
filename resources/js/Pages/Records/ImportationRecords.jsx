@@ -3,7 +3,7 @@ import { router, usePage } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Loader2, Pencil, Trash2, X } from "lucide-react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
@@ -29,6 +29,7 @@ import ImportationFormFields, {
     useComputedVat,
 } from "@/Components/Importation/ImportationFormFields";
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
+import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
 import { importationSchema } from "@/lib/FormSchema";
 
@@ -44,7 +45,6 @@ function ImportationRecords() {
     const rows = entries?.data || [];
     const [isUpdating, setIsUpdating] = useState(false);
     const [editingEntry, setEditingEntry] = useState(null);
-    const [monthFilter, setMonthFilter] = useState(filters.tax_month || "");
 
     const {
         register: registerEdit,
@@ -65,10 +65,6 @@ function ImportationRecords() {
         if (flash?.success) toast.success(flash.success);
         if (flash?.error) toast.error(flash.error);
     }, [flash]);
-
-    useEffect(() => {
-        setMonthFilter(filters.tax_month || "");
-    }, [filters.tax_month]);
 
     const handleCloseEdit = () => {
         if (isUpdating) return;
@@ -121,18 +117,6 @@ function ImportationRecords() {
         }
     };
 
-    const handleMonthChange = (value) => {
-        setMonthFilter(value);
-        router.get(
-            "/records/importations",
-            {
-                ...(value ? { tax_month: value } : {}),
-                ...(filters.search ? { search: filters.search } : {}),
-            },
-            { preserveState: true, preserveScroll: true, replace: true }
-        );
-    };
-
     return (
         <section className="w-full max-w-full space-y-6 overflow-hidden">
             <RecordTableShell
@@ -145,31 +129,15 @@ function ImportationRecords() {
                             url="/records/importations"
                             placeholder="Search any column..."
                             initialValue={filters.search || ""}
-                            params={monthFilter ? { tax_month: monthFilter } : {}}
+                            params={filters.tax_month ? { tax_month: filters.tax_month } : {}}
                         />
-                        <select
-                            value={monthFilter}
-                            onChange={(event) => handleMonthChange(event.target.value)}
-                            className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                            <option value="">All months</option>
-                            {months.map((month) => (
-                                <option key={month.value} value={month.value}>
-                                    {month.label} ({month.records_count})
-                                </option>
-                            ))}
-                        </select>
-                        {monthFilter && (
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={() => handleMonthChange("")}
-                                className="h-9"
-                            >
-                                <X className="h-4 w-4" />
-                                Clear
-                            </Button>
-                        )}
+                        <RecordPeriodFilter
+                            url="/records/importations"
+                            months={months}
+                            initialValue={filters.tax_month || ""}
+                            search={filters.search || ""}
+                            queryKey="tax_month"
+                        />
                     </div>
                 }
             >

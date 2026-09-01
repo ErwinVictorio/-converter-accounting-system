@@ -13,6 +13,7 @@ import {
     TableRow,
 } from "@/Components/ui/table";
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
+import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
 import { formatCurrency, formatMonth } from "@/Components/Records/format";
 
@@ -22,7 +23,7 @@ import { formatCurrency, formatMonth } from "@/Components/Records/format";
  * exist so a consolidated list cannot be mistaken for missing data.
  */
 function ExpandedWtaxRecords() {
-    const { flash, expandedWtaxEntries, filters } = usePage().props;
+    const { flash, expandedWtaxEntries, months = [], filters = {} } = usePage().props;
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
@@ -36,11 +37,20 @@ function ExpandedWtaxRecords() {
                 description="Consolidated 1601EQ lines per agent, payee, ATC and rate. Upload new files under Import Data."
                 links={expandedWtaxEntries?.links}
                 actions={
-                    <RecordSearchInput
-                        url="/records/expanded-wtax"
-                        placeholder="Search payee, TIN, or ATC..."
-                        initialValue={filters?.search || ""}
-                    />
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                        <RecordSearchInput
+                            url="/records/expanded-wtax"
+                            placeholder="Search payee, TIN, or ATC..."
+                            initialValue={filters.search || ""}
+                            params={filters.period ? { period: filters.period } : {}}
+                        />
+                        <RecordPeriodFilter
+                            url="/records/expanded-wtax"
+                            months={months}
+                            initialValue={filters.period || ""}
+                            search={filters.search || ""}
+                        />
+                    </div>
                 }
             >
                 <Table className="min-w-[1100px]">
