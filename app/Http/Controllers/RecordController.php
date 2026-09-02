@@ -58,7 +58,8 @@ class RecordController extends Controller
                     $month->copy()->endOfMonth()->toDateString(),
                 ]);
             })
-            ->orderBy('id', 'asc')
+            ->orderBy('supplier_name')
+            ->orderBy('id')
             ->paginate(15)
             ->withQueryString();
 
@@ -151,8 +152,8 @@ class RecordController extends Controller
                         $month->copy()->endOfMonth()->toDateString(),
                     ]);
                 })
-                ->orderByDesc('reporting_period')
                 ->orderBy('payee_name')
+                ->orderByDesc('reporting_period')
                 ->orderBy('tax_rate')
                 ->orderBy('id')
                 ->get()

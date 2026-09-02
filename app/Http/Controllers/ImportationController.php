@@ -68,6 +68,7 @@ class ImportationController extends Controller
                     }
                 });
             })
+            ->orderBy('supplier')
             ->orderByDesc('tax_month')
             ->orderBy('sequence_number')
             ->orderBy('id')

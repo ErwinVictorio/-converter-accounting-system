@@ -47,8 +47,6 @@ class WithholdingCompanyController extends Controller
                     }
                 });
             })
-            // Active first, then by name: the list reads like the dropdown it feeds.
-            ->orderByDesc('is_active')
             ->orderBy('registered_name')
             ->orderBy('branch_code')
             ->paginate(10)

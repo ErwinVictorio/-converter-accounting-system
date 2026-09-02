@@ -10,7 +10,10 @@ class ManageBrokerController extends Controller
 {
     public function index()
     {
-        $brokerList = Brokers::select('tin_number', 'broker_name', 'id')->get();
+        $brokerList = Brokers::select('tin_number', 'broker_name', 'id')
+            ->orderBy('broker_name')
+            ->orderBy('id')
+            ->get();
 
         return Inertia::render('ManageBrokers', [
             'brokerList' => $brokerList,

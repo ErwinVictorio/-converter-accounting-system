@@ -71,16 +71,6 @@ const transactionItems = [
 
 const recordItems = [
     {
-        title: "Purchase Records",
-        url: "/records/purchases",
-        icon: ShoppingCart,
-    },
-    {
-        title: "Sales Records",
-        url: "/records/sales",
-        icon: Receipt,
-    },
-    {
         title: "Expanded WTAX Records",
         url: "/records/expanded-wtax",
         icon: Percent,
@@ -90,19 +80,19 @@ const recordItems = [
         url: "/records/importations",
         icon: Container,
     },
+    {
+        title: "Purchase Records",
+        url: "/records/purchases",
+        icon: ShoppingCart,
+    },
+    {
+        title: "Sales Records",
+        url: "/records/sales",
+        icon: Receipt,
+    },
 ];
 
 const masterDataItems = [
-    {
-        title: "Customers",
-        url: "/customers",
-        icon: Users,
-    },
-    {
-        title: "Suppliers",
-        url: "/suppliers",
-        icon: Truck,
-    },
     {
         title: "Brokers",
         url: "/brokers",
@@ -112,6 +102,16 @@ const masterDataItems = [
         title: "Companies",
         url: "/withholding-companies",
         icon: Building,
+    },
+    {
+        title: "Customers",
+        url: "/customers",
+        icon: Users,
+    },
+    {
+        title: "Suppliers",
+        url: "/suppliers",
+        icon: Truck,
     },
 ];
 
