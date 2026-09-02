@@ -49,6 +49,24 @@ class UploadWorkbookTypePreflightTest extends TestCase
         ]);
     }
 
+    private function salesSummaryWithDocumentTypesCsv(): UploadedFile
+    {
+        return $this->csv('sales-summary.csv', [
+            'Document No,Date,Terms,Days,Due Date,Agent,Customer Name,SO/DR/SI,Gross Amount,Discount,Charges,Net Amount,Output VAT,Taxable Net of VAT',
+            'SI#13940,05/04/2026,CASH-IBD-BP,0,05/04/2026,FERDIE HUI,SECOND SONS CONSTRUCTION,012396,1120,0,0,1000,120,1000',
+            'CM#00001,05/05/2026,CASH-IBD-BP,0,05/05/2026,FERDIE HUI,SECOND SONS CONSTRUCTION,012397,224,0,0,200,24,200',
+            'DM#00001,05/06/2026,CASH-IBD-BP,0,05/06/2026,FERDIE HUI,SECOND SONS CONSTRUCTION,012398,336,0,0,300,36,300',
+        ]);
+    }
+
+    private function salesSummaryWithOnlyDebitMemosCsv(): UploadedFile
+    {
+        return $this->csv('sales-summary.csv', [
+            'Document No,Date,Terms,Days,Due Date,Agent,Customer Name,SO/DR/SI,Gross Amount,Discount,Charges,Net Amount,Output VAT,Taxable Net of VAT',
+            'DM#00001,05/06/2026,CASH-IBD-BP,0,05/06/2026,FERDIE HUI,SECOND SONS CONSTRUCTION,012398,336,0,0,300,36,300',
+        ]);
+    }
+
     private function purchaseCsv(): UploadedFile
     {
         return $this->csv('purchase.csv', [
@@ -142,6 +160,40 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
         $this->assertSame(1, SalesVatInput::count());
         $this->assertSame('2026-05-31', SalesVatInput::first()->reporting_period->toDateString());
+    }
+
+    public function test_sales_import_stores_si_and_cm_but_skips_dm_with_warning(): void
+    {
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->salesSummaryWithDocumentTypesCsv(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'sales',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+        $response->assertSessionHas('warning');
+
+        $this->assertStringContainsString('1 DM row(s) were skipped', session('warning'));
+        $this->assertSame(2, SalesVatInput::count());
+        $this->assertSame(['CM', 'SI'], SalesVatInput::query()->orderBy('document_type')->pluck('document_type')->all());
+        $this->assertDatabaseMissing('sales_vatsinputs', ['document_no' => 'DM#00001']);
+    }
+
+    public function test_sales_upload_with_only_dm_rows_is_not_reported_as_normal_success(): void
+    {
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->salesSummaryWithOnlyDebitMemosCsv(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'sales',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
+
+        $this->assertStringContainsString('No importable SI/CM Sales rows were found', session('error'));
+        $this->assertSame(0, SalesVatInput::count());
     }
 
     public function test_matching_purchase_workbook_type_passes_preflight(): void

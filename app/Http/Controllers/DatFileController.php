@@ -17,6 +17,7 @@ use App\Services\BIR\ReliefExpandedWtaxDatGenerator;
 use App\Services\BIR\ReliefImportationDatGenerator;
 use App\Services\BIR\ReliefPurchaseDatGenerator;
 use App\Services\BIR\ReliefSalesDatGenerator;
+use App\Services\BIR\SalesSiCmConsolidator;
 use App\Services\BIR\WithholdingCompanyDirectory;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -34,7 +35,8 @@ class DatFileController extends Controller
      */
     public function __construct(
         private WithholdingCompanyDirectory $companies,
-        private AnnualCoveredPeriodValidator $annualPeriod
+        private AnnualCoveredPeriodValidator $annualPeriod,
+        private SalesSiCmConsolidator $salesConsolidator
     ) {
     }
 
@@ -292,7 +294,7 @@ class DatFileController extends Controller
             ->each(function ($records, string $period) use (&$periodIssues, $validator) {
                 $errors = [];
 
-                foreach ($this->groupSalesRows($records)->values() as $index => $row) {
+                foreach ($this->salesConsolidator->consolidate($records)->values() as $index => $row) {
                     foreach ($validator->validate($row, $index + 2) as $error) {
                         $errors[] = "Sales group {$row['customer_name']}: {$error}";
                     }
@@ -652,7 +654,7 @@ class DatFileController extends Controller
             return back()->with('error', 'No Sales VAT records found for the selected reporting month.');
         }
 
-        $salesRows = $this->groupSalesRows($records)->values();
+        $salesRows = $this->salesConsolidator->consolidate($records)->values();
         $rowErrors = [];
 
         foreach ($salesRows as $index => $row) {
@@ -740,44 +742,4 @@ class DatFileController extends Controller
             ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
     }
 
-    private function groupSalesRows(Collection $records): Collection
-    {
-        return $records
-            ->groupBy(function (SalesVatInput $record) {
-                $tin = substr(preg_replace('/\D/', '', (string) $record->customer_tin), 0, 9);
-                $name = preg_replace('/\s+/', '', strtoupper((string) ($record->company_name ?: $record->customer_name)));
-
-                return implode('|', [
-                    $tin,
-                    $record->customer_type ?: 'company',
-                    $name,
-                    strtoupper((string) $record->last_name),
-                    strtoupper((string) $record->first_name),
-                    strtoupper((string) $record->middle_name),
-                    strtoupper((string) $record->address1),
-                    strtoupper((string) $record->address2),
-                ]);
-            })
-            ->map(function (Collection $group) {
-                $first = $group->first();
-
-                return [
-                    'customer_type' => $first->customer_type ?: 'company',
-                    'customer_tin' => $first->customer_tin,
-                    'customer_name' => $first->customer_name,
-                    'company_name' => $first->customer_type === 'individual'
-                        ? ''
-                        : ($first->company_name ?: $first->customer_name),
-                    'last_name' => $first->last_name,
-                    'first_name' => $first->first_name,
-                    'middle_name' => $first->middle_name,
-                    'address1' => $first->address1,
-                    'address2' => $first->address2,
-                    'exempt_sales' => round($group->sum(fn (SalesVatInput $record) => (float) $record->exempt_sales), 2),
-                    'zero_rated_sales' => round($group->sum(fn (SalesVatInput $record) => (float) $record->zero_rated_sales), 2),
-                    'taxable_sales' => round($group->sum(fn (SalesVatInput $record) => (float) $record->taxable_net_of_vat), 2),
-                    'output_vat' => round($group->sum(fn (SalesVatInput $record) => (float) $record->output_vat), 2),
-                ];
-            });
-    }
 }

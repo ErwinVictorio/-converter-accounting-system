@@ -14,6 +14,8 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
 {
     protected string $reportingPeriod;
     protected ?string $format = null;
+    protected int $importedRows = 0;
+    protected int $skippedDebitMemoRows = 0;
 
     public function __construct(?string $reportingPeriod = null)
     {
@@ -54,6 +56,16 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
         }
     }
 
+    public function importedRows(): int
+    {
+        return $this->importedRows;
+    }
+
+    public function skippedDebitMemoRows(): int
+    {
+        return $this->skippedDebitMemoRows;
+    }
+
     private function importSalesSummaryRow(array $data, int $rowNumber): void
     {
         $documentNo = $this->birText((string) ($data[0] ?? ''));
@@ -71,6 +83,14 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
             $documentNo = 'SALES-SUMMARY-' . $this->reportingPeriod . '-' . $rowNumber;
         }
 
+        $documentType = $this->documentType($documentNo);
+
+        if ($documentType === 'DM') {
+            $this->skippedDebitMemoRows++;
+
+            return;
+        }
+
         $existingBirInfo = SalesVatInput::query()
             ->where('customer_name', $customerName)
             ->whereNotNull('customer_tin')
@@ -85,6 +105,7 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
                 'reporting_period' => $this->reportingPeriod,
             ],
             [
+                'document_type' => $documentType,
                 'document_date' => $this->parseDate($data[1] ?? null),
                 'terms' => $this->birText((string) ($data[2] ?? '')),
                 'days' => $this->parseInteger($data[3] ?? null),
@@ -110,6 +131,8 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
                 'is_adjusted' => false,
             ]
         );
+
+        $this->importedRows++;
     }
 
     private function importBirSalesRow(array $data, int $rowNumber): void
@@ -135,6 +158,7 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
                 'reporting_period' => $this->reportingPeriod,
             ],
             [
+                'document_type' => 'BIR',
                 'document_date' => $this->reportingPeriod,
                 'terms' => null,
                 'days' => null,
@@ -160,6 +184,27 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
                 'is_adjusted' => false,
             ]
         );
+
+        $this->importedRows++;
+    }
+
+    private function documentType(string $documentNo): string
+    {
+        $documentNo = $this->birText($documentNo);
+
+        if (preg_match('/^SI(?:#|\b|-)?/', $documentNo)) {
+            return 'SI';
+        }
+
+        if (preg_match('/^CM(?:#|\b|-)?/', $documentNo)) {
+            return 'CM';
+        }
+
+        if (preg_match('/^DM(?:#|\b|-)?/', $documentNo)) {
+            return 'DM';
+        }
+
+        return 'OTHER';
     }
 
     private function isHeadingOrGuideRow(array $data): bool

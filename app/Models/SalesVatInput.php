@@ -10,6 +10,7 @@ class SalesVatInput extends Model
 
     protected $fillable = [
         'document_no',
+        'document_type',
         'document_date',
         'terms',
         'days',

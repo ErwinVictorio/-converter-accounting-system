@@ -121,6 +121,9 @@ function RecordEntry() {
     if (flash?.success) {
       toast.success(flash.success);
     }
+    if (flash?.warning) {
+      toast.warning(flash.warning);
+    }
     if (flash?.error) {
       const details = expandedUploadErrorDetails(flash.error);
 

@@ -86,9 +86,20 @@ class VatInputController extends Controller
                     return back()->with('error', implode(' ', $issues));
                 }
 
-                Excel::import(new SalesVatInputImport($reportingPeriod), $file);
+                $import = new SalesVatInputImport($reportingPeriod);
+                Excel::import($import, $file);
 
-                return back()->with('success', 'Sales VAT report successfully imported!');
+                if ($import->importedRows() === 0 && $import->skippedDebitMemoRows() > 0) {
+                    return back()->with('error', 'Sales upload skipped ' . $import->skippedDebitMemoRows() . ' DM row(s). No importable SI/CM Sales rows were found.');
+                }
+
+                $response = back()->with('success', 'Sales VAT report successfully imported!');
+
+                if ($import->skippedDebitMemoRows() > 0) {
+                    $response->with('warning', 'Sales upload completed, but ' . $import->skippedDebitMemoRows() . ' DM row(s) were skipped because Debit Memo rows are not included in Sales VAT upload.');
+                }
+
+                return $response;
             }
 
             if ($request->input('record_type') === 'expanded') {

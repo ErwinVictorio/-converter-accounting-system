@@ -54,6 +54,8 @@ function SalesRecords() {
                             <TableHead className="font-semibold text-slate-700">Customer Name</TableHead>
                             <TableHead className="font-semibold text-slate-700">TIN Number</TableHead>
                             <TableHead className="font-semibold text-slate-700">Type</TableHead>
+                            <TableHead className="text-right font-semibold text-slate-700">SI Rows</TableHead>
+                            <TableHead className="text-right font-semibold text-slate-700">CM Rows</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Exempt</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Zero Rated</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Taxable Net of VAT</TableHead>
@@ -78,6 +80,12 @@ function SalesRecords() {
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                        {item.si_count || 0}
+                                    </TableCell>
+                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                        {item.cm_count || 0}
+                                    </TableCell>
+                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
                                         {formatCurrency(item.exempt_sales)}
                                     </TableCell>
                                     <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
@@ -99,7 +107,7 @@ function SalesRecords() {
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={9} className="h-32 text-center text-slate-500">
+                                <TableCell colSpan={11} className="h-32 text-center text-slate-500">
                                     No sales records found.
                                 </TableCell>
                             </TableRow>

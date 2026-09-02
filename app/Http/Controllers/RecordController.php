@@ -6,6 +6,7 @@ use App\Models\ExpandedWtaxEntry;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\BirExpandedWtaxRowValidator;
+use App\Services\BIR\SalesSiCmConsolidator;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -74,58 +75,40 @@ class RecordController extends Controller
     /**
      * Sales rows, grouped by customer identity the way they are filed.
      */
-    public function sales(Request $request)
+    public function sales(Request $request, SalesSiCmConsolidator $salesConsolidator)
     {
         $search = $request->input('search');
         $period = $this->normalisedMonth($request->input('period'));
 
-        $salesVatInputs = SalesVatInput::query()
-            ->select([
-                'customer_name',
-                'customer_tin',
-                'customer_type',
-                'company_name',
-                'last_name',
-                'first_name',
-                'middle_name',
-                'address1',
-                'address2',
-            ])
-            ->selectRaw('MIN(id) as id')
-            ->selectRaw('COUNT(*) as records_count')
-            ->selectRaw('SUM(exempt_sales) as exempt_sales')
-            ->selectRaw('SUM(zero_rated_sales) as zero_rated_sales')
-            ->selectRaw('SUM(taxable_net_of_vat) as taxable_net_of_vat')
-            ->selectRaw('SUM(output_vat) as output_vat')
-            ->selectRaw('SUM(net_amount) as net_amount')
-            ->selectRaw('SUM(gross_amount) as gross_amount')
-            ->when($search, function ($query, $search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('customer_name', 'LIKE', "%{$search}%")
-                        ->orWhere('customer_tin', 'LIKE', "%{$search}%")
-                        ->orWhere('document_no', 'LIKE', "%{$search}%");
-                });
-            })
-            ->when($period, function ($query, Carbon $month) {
-                $query->whereBetween('reporting_period', [
-                    $month->copy()->startOfMonth()->toDateString(),
-                    $month->copy()->endOfMonth()->toDateString(),
-                ]);
-            })
-            ->groupBy([
-                'customer_name',
-                'customer_tin',
-                'customer_type',
-                'company_name',
-                'last_name',
-                'first_name',
-                'middle_name',
-                'address1',
-                'address2',
-            ])
-            ->orderBy('customer_name')
-            ->paginate(15)
-            ->withQueryString();
+        $salesRows = $salesConsolidator->consolidate(
+            SalesVatInput::query()
+                ->when($search, function ($query, $search) {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('customer_name', 'LIKE', "%{$search}%")
+                            ->orWhere('customer_tin', 'LIKE', "%{$search}%")
+                            ->orWhere('document_no', 'LIKE', "%{$search}%");
+                    });
+                })
+                ->when($period, function ($query, Carbon $month) {
+                    $query->whereBetween('reporting_period', [
+                        $month->copy()->startOfMonth()->toDateString(),
+                        $month->copy()->endOfMonth()->toDateString(),
+                    ]);
+                })
+                ->orderBy('customer_name')
+                ->orderBy('id')
+                ->get()
+        );
+
+        $page = LengthAwarePaginator::resolveCurrentPage();
+
+        $salesVatInputs = (new LengthAwarePaginator(
+            $salesRows->forPage($page, 15)->values(),
+            $salesRows->count(),
+            15,
+            $page,
+            ['path' => $request->url()]
+        ))->withQueryString();
 
         return Inertia::render('Records/SalesRecords', [
             'salesVatInputs' => $salesVatInputs,
