@@ -12,7 +12,7 @@ class ImportationEntryWriter
     /**
      * @param  array<string, mixed>  $data
      */
-    public function validate(array $data, ?int $ignoreId = null): array
+    public function validate(array $data, ?int $ignoreId = null, bool $allowExistingDuplicate = false): array
     {
         $validated = validator($data, [
             'tax_month' => ['required', 'date'],
@@ -46,16 +46,18 @@ class ImportationEntryWriter
         $taxMonth = Carbon::parse($validated['tax_month'])->startOfMonth()->toDateString();
         $importEntryNo = $this->birText($validated['import_entry_no']);
 
-        $duplicate = ImportationEntry::query()
-            ->whereDate('tax_month', $taxMonth)
-            ->where('import_entry_no', $importEntryNo)
-            ->when($ignoreId, fn ($query, int $id) => $query->where('id', '!=', $id))
-            ->exists();
+        if (! $allowExistingDuplicate) {
+            $duplicate = ImportationEntry::query()
+                ->whereDate('tax_month', $taxMonth)
+                ->where('import_entry_no', $importEntryNo)
+                ->when($ignoreId, fn ($query, int $id) => $query->where('id', '!=', $id))
+                ->exists();
 
-        if ($duplicate) {
-            throw ValidationException::withMessages([
-                'import_entry_no' => 'This import entry no. already exists for the selected tax month.',
-            ]);
+            if ($duplicate) {
+                throw ValidationException::withMessages([
+                    'import_entry_no' => 'This import entry no. already exists for the selected tax month.',
+                ]);
+            }
         }
 
         return $validated;

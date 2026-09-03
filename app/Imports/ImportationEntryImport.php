@@ -41,6 +41,11 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
 
     private int $imported = 0;
 
+    /**
+     * @var array<int, array<string, mixed>>
+     */
+    private array $prepared = [];
+
     public function __construct(private ImportationEntryWriter $entries) {}
 
     public function array(array $rows): void
@@ -55,7 +60,8 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
             );
         }
 
-        $prepared = [];
+        $this->prepared = [];
+        $this->imported = 0;
         $errors = [];
         $seen = [];
 
@@ -78,8 +84,8 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
                 }
 
                 $seen[$key] = $worksheetRow;
-                $this->entries->validate($data);
-                $prepared[] = $data;
+                $this->entries->validate($data, null, true);
+                $this->prepared[] = $data;
             } catch (Throwable $th) {
                 if (count($errors) < self::ROWS_NAMED) {
                     $errors[] = "Row {$worksheetRow}: ".$this->message($th);
@@ -87,15 +93,18 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
             }
         }
 
-        if ($prepared === [] && $errors === []) {
+        if ($this->prepared === [] && $errors === []) {
             throw new RuntimeException('The workbook has no importation rows to upload.');
         }
 
         if ($errors !== []) {
             throw new RuntimeException(implode(' ', $errors));
         }
+    }
 
-        foreach ($prepared as $data) {
+    public function savePreparedRows(): void
+    {
+        foreach ($this->prepared as $data) {
             $this->entries->create($data);
             $this->imported++;
         }
@@ -104,6 +113,18 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
     public function importedCount(): int
     {
         return $this->imported;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function taxMonths(): array
+    {
+        return collect($this->prepared)
+            ->pluck('tax_month')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**

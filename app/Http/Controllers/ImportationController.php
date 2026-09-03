@@ -124,13 +124,18 @@ class ImportationController extends Controller
         try {
             $import = new ImportationEntryImport($this->entries);
 
-            DB::transaction(function () use ($request, $import) {
-                Excel::import($import, $request->file('excel_file'));
+            Excel::import($import, $request->file('excel_file'));
+
+            DB::transaction(function () use ($import) {
+                $this->replaceImportationMonths($import->taxMonths());
+                $import->savePreparedRows();
             });
 
             return redirect()->back()->with(
                 'success',
-                "Importation upload completed. {$import->importedCount()} row(s) imported."
+                'Importation upload completed. Replaced '
+                    .count($import->taxMonths())
+                    ." month(s), {$import->importedCount()} row(s) imported."
             );
         } catch (\Throwable $th) {
             return redirect()->back()->with('error', 'Importation upload failed: '.$th->getMessage());
@@ -144,6 +149,31 @@ class ImportationController extends Controller
         abort_unless(is_file($path), 404);
 
         return response()->download($path, 'Importation_Upload_Template_Updated.xlsx');
+    }
+
+    /**
+     * @param  array<int, string>  $taxMonths
+     */
+    private function replaceImportationMonths(array $taxMonths): void
+    {
+        $entries = ImportationEntry::query()
+            ->whereIn('tax_month', $taxMonths)
+            ->get(['id', 'vat_input_id']);
+
+        $vatInputIds = $entries
+            ->pluck('vat_input_id')
+            ->filter()
+            ->values();
+
+        ImportationEntry::query()
+            ->whereKey($entries->pluck('id'))
+            ->delete();
+
+        if ($vatInputIds->isNotEmpty()) {
+            VatInput::query()
+                ->whereKey($vatInputIds)
+                ->delete();
+        }
     }
 
     public function update(Request $request, ImportationEntry $importationEntry)

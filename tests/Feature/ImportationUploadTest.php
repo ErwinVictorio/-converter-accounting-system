@@ -146,6 +146,61 @@ class ImportationUploadTest extends TestCase
         $this->assertSame(0, VatInput::count());
     }
 
+    public function test_upload_replaces_existing_month_entries_and_their_synced_rows(): void
+    {
+        $this->upload($this->csv([
+            $this->row([2 => 'Old Supplier']),
+        ]))->assertSessionHas('success');
+
+        $oldEntry = ImportationEntry::firstOrFail();
+        $oldVatInputId = $oldEntry->vat_input_id;
+
+        $response = $this->upload($this->csv([
+            $this->row([2 => 'Corrected Supplier', 7 => '300000', 8 => '210000']),
+        ]));
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+
+        $this->assertSame(1, ImportationEntry::count());
+        $this->assertSame(1, VatInput::count());
+        $this->assertDatabaseMissing('vat_inputs', ['id' => $oldVatInputId]);
+
+        $entry = ImportationEntry::firstOrFail();
+        $this->assertSame('CORRECTED SUPPLIER', $entry->supplier);
+        $this->assertSame('C-12345', $entry->import_entry_no);
+        $this->assertSame(1, $entry->sequence_number);
+        $this->assertEqualsWithDelta(300000.00, (float) $entry->total_landed_cost, 0.001);
+        $this->assertEqualsWithDelta(90000.00, (float) $entry->charges, 0.001);
+        $this->assertSame('CORRECTED SUPPLIER', $entry->vatInput->supplier_name);
+    }
+
+    public function test_upload_replaces_only_months_present_in_the_file(): void
+    {
+        $this->upload($this->csv([
+            $this->row(),
+            $this->row([0 => 'August 2026', 1 => 'C-88888', 2 => 'August Supplier']),
+        ]))->assertSessionHas('success');
+
+        $response = $this->upload($this->csv([
+            $this->row([2 => 'July Replacement']),
+        ]));
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+
+        $this->assertSame(2, ImportationEntry::count());
+        $this->assertSame(2, VatInput::count());
+        $this->assertDatabaseHas('importation_entries', [
+            'tax_month' => '2026-07-01',
+            'supplier' => 'JULY REPLACEMENT',
+        ]);
+        $this->assertDatabaseHas('importation_entries', [
+            'tax_month' => '2026-08-01',
+            'supplier' => 'AUGUST SUPPLIER',
+        ]);
+    }
+
     public function test_upload_rejects_missing_required_headers(): void
     {
         $headings = str_replace(',Dutiable Value', '', self::HEADINGS);
@@ -172,6 +227,24 @@ class ImportationUploadTest extends TestCase
         $this->assertStringContainsString('Row 2:', session('error'));
         $this->assertStringContainsString('Dutiable value cannot be more than the total landed cost', session('error'));
         $this->assertSame(0, ImportationEntry::count());
+    }
+
+    public function test_failed_importation_upload_does_not_delete_existing_month(): void
+    {
+        $this->upload($this->csv([
+            $this->row([2 => 'Existing Supplier']),
+        ]))->assertSessionHas('success');
+
+        $response = $this->upload($this->csv([
+            $this->row([2 => 'Broken Supplier', 8 => '300000']),
+        ]));
+
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
+
+        $this->assertSame(1, ImportationEntry::count());
+        $this->assertSame(1, VatInput::count());
+        $this->assertDatabaseHas('importation_entries', ['supplier' => 'EXISTING SUPPLIER']);
     }
 
     public function test_uploaded_entries_are_included_in_importation_dat_and_excluded_from_purchase_dat(): void

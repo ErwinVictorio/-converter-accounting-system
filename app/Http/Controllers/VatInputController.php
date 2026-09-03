@@ -9,6 +9,8 @@ use App\Imports\VatInputImport;
 use App\Imports\SalesVatInputImport;
 use App\Models\Brokers;
 use App\Models\ExpandedWtaxEntry;
+use App\Models\ImportationEntry;
+use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\AnnualCoveredPeriodValidator;
 use App\Services\BIR\WithholdingCompanyDirectory;
@@ -87,13 +89,22 @@ class VatInputController extends Controller
                 }
 
                 $import = new SalesVatInputImport($reportingPeriod);
-                Excel::import($import, $file);
+                DB::transaction(function () use ($reportingPeriod, $import, $file) {
+                    SalesVatInput::query()
+                        ->whereDate('reporting_period', $reportingPeriod)
+                        ->where('is_adjusted', false)
+                        ->delete();
 
-                if ($import->importedRows() === 0 && $import->skippedDebitMemoRows() > 0) {
-                    return back()->with('error', 'Sales upload skipped ' . $import->skippedDebitMemoRows() . ' DM row(s). No importable SI/CM Sales rows were found.');
-                }
+                    Excel::import($import, $file);
 
-                $response = back()->with('success', 'Sales VAT report successfully imported!');
+                    if ($import->importedRows() === 0 && $import->skippedDebitMemoRows() > 0) {
+                        throw new \RuntimeException(
+                            'Sales upload skipped ' . $import->skippedDebitMemoRows() . ' DM row(s). No importable SI/CM Sales rows were found.'
+                        );
+                    }
+                });
+
+                $response = back()->with('success', 'Sales VAT report for ' . Carbon::parse($reportingPeriod)->format('F Y') . ' was replaced successfully.');
 
                 if ($import->skippedDebitMemoRows() > 0) {
                     $response->with('warning', 'Sales upload completed, but ' . $import->skippedDebitMemoRows() . ' DM row(s) were skipped because Debit Memo rows are not included in Sales VAT upload.');
@@ -202,9 +213,19 @@ class VatInputController extends Controller
                 return back()->with('error', implode(' ', $issues));
             }
 
-            Excel::import(new VatInputImport($reportingPeriod), $file);
+            DB::transaction(function () use ($reportingPeriod, $file) {
+                VatInput::query()
+                    ->whereDate('date_uploaded', $reportingPeriod)
+                    ->where('is_adjusted', false)
+                    ->whereNotIn('id', ImportationEntry::query()
+                        ->whereNotNull('vat_input_id')
+                        ->select('vat_input_id'))
+                    ->delete();
 
-            return back()->with('success', 'Purchase VAT report successfully imported!');
+                Excel::import(new VatInputImport($reportingPeriod), $file);
+            });
+
+            return back()->with('success', 'Purchase VAT report for ' . Carbon::parse($reportingPeriod)->format('F Y') . ' was replaced successfully.');
         } catch (\Exception $e) {
             return back()->with('error', 'Import failed: ' . $e->getMessage());
         }
