@@ -60,19 +60,49 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
 
         $exempt = $this->parseNumber($this->value($data, ['exempt']));
         $zeroRated = $this->parseNumber($this->value($data, ['zero_rated', 'zerorated']));
-        $purchaseImported = $this->parseNumber($this->value($data, ['purchase_imported', 'purchaseimported']));
-        $purchaseLocal = $this->parseNumber($this->value($data, ['purchase_local', 'purchaselocal']));
-        $services = $this->parseNumber($this->value($data, ['services']));
-        $others = $this->parseNumber($this->value($data, ['others']));
-        $capitalGoods = $this->parseNumber($this->value($data, ['capital_goods', 'capitalgoods'])) ?: $purchaseImported;
-        $otherThanCapitalGoods = $this->parseNumber($this->value($data, ['other_than_capital_goods', 'otherthancapitalgoods'])) ?: $purchaseLocal + $others;
-        $taxableNetOfVat = $this->parseNumber($this->value($data, ['taxable_net_of_vat', 'taxablenetofvat']));
         $vatRate = $this->parseNumber($this->value($data, ['vat_rate', 'vatrate'])) ?: 12.00;
+        $purchaseImportedValue = $this->parseNumber($this->value($data, ['purchase_imported', 'purchaseimported']));
+        $purchaseLocalValue = $this->parseNumber($this->value($data, ['purchase_local', 'purchaselocal']));
+        $servicesValue = $this->parseNumber($this->value($data, ['services']));
+        $othersValue = $this->parseNumber($this->value($data, ['others']));
         $totalPurchases = $this->parseNumber($this->value($data, ['total_purchases', 'totalpurchases', 'total']));
-        $taxableNetOfVat = $taxableNetOfVat ?: $capitalGoods + $otherThanCapitalGoods + $services;
-        $inputVat = $this->parseNumber($this->value($data, ['input_vat', 'inputvat'])) ?: round($taxableNetOfVat * ($vatRate / 100), 2);
+        $inputVatValue = $this->parseNumber($this->value($data, ['input_vat', 'inputvat']));
+        $usesVatBucketAmounts = !$this->hasFilled($data, [
+            'input_vat',
+            'inputvat',
+            'capital_goods',
+            'capitalgoods',
+            'other_than_capital_goods',
+            'otherthancapitalgoods',
+            'taxable_net_of_vat',
+            'taxablenetofvat',
+        ]);
+
+        if ($usesVatBucketAmounts) {
+            $purchaseImported = $this->taxableFromVat($purchaseImportedValue, $vatRate);
+            $purchaseLocal = $this->taxableFromVat($purchaseLocalValue, $vatRate);
+            $services = $this->taxableFromVat($servicesValue, $vatRate);
+            $others = $this->taxableFromVat($othersValue, $vatRate);
+            $capitalGoods = $purchaseImported;
+            $otherThanCapitalGoods = round($purchaseLocal + $others, 2);
+            $taxableNetOfVat = round($capitalGoods + $otherThanCapitalGoods + $services, 2);
+            $inputVat = $totalPurchases ?: round($purchaseImportedValue + $purchaseLocalValue + $servicesValue + $othersValue, 2);
+            $totalPurchases = round($taxableNetOfVat + $inputVat + $exempt + $zeroRated, 2);
+        } else {
+            $purchaseImported = $purchaseImportedValue;
+            $purchaseLocal = $purchaseLocalValue;
+            $services = $servicesValue;
+            $others = $othersValue;
+            $capitalGoods = $this->parseNumber($this->value($data, ['capital_goods', 'capitalgoods'])) ?: $purchaseImported;
+            $otherThanCapitalGoods = $this->parseNumber($this->value($data, ['other_than_capital_goods', 'otherthancapitalgoods'])) ?: $purchaseLocal + $others;
+            $taxableNetOfVat = $this->parseNumber($this->value($data, ['taxable_net_of_vat', 'taxablenetofvat']));
+            $taxableNetOfVat = $taxableNetOfVat ?: $capitalGoods + $otherThanCapitalGoods + $services;
+            $inputVat = $inputVatValue ?: round($taxableNetOfVat * ($vatRate / 100), 2);
+        }
+
         $vendorType = $companyName !== '' ? 'company' : 'individual';
         $total = $exempt + $zeroRated + $services + $capitalGoods + $otherThanCapitalGoods;
+        $totalPurchases = $totalPurchases ?: $total;
         $isImported = $purchaseImported > 0;
 
         $existingRecord = VatInput::where('supplier_name', $supplierName)
@@ -91,8 +121,8 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             $newCapitalGoods = round((float) $existingRecord->capital_goods + $capitalGoods, 2);
             $newOtherThanCapitalGoods = round((float) $existingRecord->other_than_capital_goods + $otherThanCapitalGoods, 2);
             $newTaxableNetOfVat = round($newCapitalGoods + $newOtherThanCapitalGoods + $newServices, 2);
-            $newInputVat = round($newTaxableNetOfVat * ($vatRate / 100), 2);
-            $newTotal = round($newPurchaseImported + $newPurchaseLocal + $newServices + $newOthers, 2);
+            $newInputVat = round((float) $existingRecord->input_vat + $inputVat, 2);
+            $newTotal = round((float) $existingRecord->total_purchases + $totalPurchases, 2);
 
             $existingRecord->update([
                 'tin_number' => $tinNumber ?: $existingRecord->tin_number,
@@ -143,7 +173,7 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             'taxable_net_of_vat' => $taxableNetOfVat,
             'vat_rate' => $vatRate,
             'input_vat' => $inputVat,
-            'total_purchases' => $totalPurchases ?: $total,
+            'total_purchases' => $totalPurchases,
             'others' => $others,
             'total' => $total,
             'date_uploaded' => $this->uploadDate,
@@ -183,6 +213,26 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         }
 
         return null;
+    }
+
+    private function hasFilled(array $data, array $keys): bool
+    {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $data) && trim((string) $data[$key]) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function taxableFromVat(float $value, float $vatRate): float
+    {
+        if ($value === 0.00 || $vatRate <= 0) {
+            return 0.00;
+        }
+
+        return round($value / ($vatRate / 100), 2);
     }
 
     private function digits(?string $value): string

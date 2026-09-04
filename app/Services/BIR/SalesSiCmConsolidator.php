@@ -54,6 +54,13 @@ class SalesSiCmConsolidator
             2
         );
 
+        $exemptSales = $netAmount('exempt_sales');
+        $zeroRatedSales = $netAmount('zero_rated_sales');
+        $netAmountValue = $netAmount('net_amount');
+        $vatableGross = round($netAmountValue - $exemptSales - $zeroRatedSales, 2);
+        $taxableSales = round($vatableGross / 1.12, 2);
+        $outputVat = round($vatableGross - $taxableSales, 2);
+
         return [
             'id' => $first->id,
             'records_count' => $group->count(),
@@ -70,12 +77,12 @@ class SalesSiCmConsolidator
             'middle_name' => $first->middle_name,
             'address1' => $first->address1,
             'address2' => $first->address2,
-            'exempt_sales' => $netAmount('exempt_sales'),
-            'zero_rated_sales' => $netAmount('zero_rated_sales'),
-            'taxable_sales' => $netAmount('taxable_net_of_vat'),
-            'taxable_net_of_vat' => $netAmount('taxable_net_of_vat'),
-            'output_vat' => $netAmount('output_vat'),
-            'net_amount' => $netAmount('net_amount'),
+            'exempt_sales' => $exemptSales,
+            'zero_rated_sales' => $zeroRatedSales,
+            'taxable_sales' => $taxableSales,
+            'taxable_net_of_vat' => $taxableSales,
+            'output_vat' => $outputVat,
+            'net_amount' => $netAmountValue,
             'gross_amount' => $netAmount('gross_amount'),
             'si_taxable_sales' => round($this->sumSigned($siRows, 'taxable_net_of_vat'), 2),
             'cm_taxable_sales' => round($this->sumCreditMemo($cmRows, 'taxable_net_of_vat'), 2),

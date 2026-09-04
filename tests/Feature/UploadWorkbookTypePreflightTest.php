@@ -133,6 +133,23 @@ class UploadWorkbookTypePreflightTest extends TestCase
         return new UploadedFile($path, 'purchase-with-boc-test.xlsx', null, null, true);
     }
 
+    private function purchaseVatInputReportWorkbook(): UploadedFile
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            ['VAT INPUT REPORT'],
+            ['Period Covered: July 1, 2026 - July 31, 2026'],
+            ['No', 'Date', 'Supplier Name', 'TIN', 'Reference', 'PurchaseImported', 'PurchaseLocal', 'Services', 'Others', 'TOTAL'],
+            ['PV#006357', '07/31/2026', 'CELCON INDUSTRIAL CORPORATION', '606-820-426-000', 'SI# NO SI', '', '', 4339.29, '', 4339.29],
+        ]);
+
+        $path = storage_path('app/purchase-vat-input-report-test.xlsx');
+        (new Xlsx($spreadsheet))->save($path);
+
+        return new UploadedFile($path, 'purchase-vat-input-report-test.xlsx', null, null, true);
+    }
+
     private function purchaseWorkbookWithOnlyBureauOfCustoms(): UploadedFile
     {
         $spreadsheet = new Spreadsheet();
@@ -448,6 +465,35 @@ class UploadWorkbookTypePreflightTest extends TestCase
         $this->assertSame('136-001-760-000', $record->tin_number);
         $this->assertSame('AVANCENA SUBD. STO. NINO SUR AREVALO', $record->address1);
         $this->assertSame('ILOILO CITY', $record->address2);
+        $this->assertSame([], app(BirPurchaseRowValidator::class)->validate($record->toBirPurchaseRow(), 2));
+    }
+
+    public function test_purchase_vat_input_report_amounts_are_converted_to_bir_taxable_bases(): void
+    {
+        Supplier::create([
+            'name' => 'CELCON INDUSTRIAL CORPORATION',
+            'tin' => '606-820-426-000',
+            'addr' => 'AJDSK',
+            'city' => 'QC',
+        ]);
+
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->purchaseVatInputReportWorkbook(),
+            'reporting_month' => '2026-07',
+            'record_type' => 'purchase',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+        $response->assertSessionMissing('uploadIssueDialog');
+
+        $record = VatInput::first();
+
+        $this->assertEqualsWithDelta(36160.75, (float) $record->services, 0.001);
+        $this->assertEqualsWithDelta(0.00, (float) $record->capital_goods, 0.001);
+        $this->assertEqualsWithDelta(0.00, (float) $record->other_than_capital_goods, 0.001);
+        $this->assertEqualsWithDelta(36160.75, (float) $record->taxable_net_of_vat, 0.001);
+        $this->assertEqualsWithDelta(4339.29, (float) $record->input_vat, 0.001);
         $this->assertSame([], app(BirPurchaseRowValidator::class)->validate($record->toBirPurchaseRow(), 2));
     }
 
