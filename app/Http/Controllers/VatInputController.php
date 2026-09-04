@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Imports\ExpandedWtaxImport;
 use App\Imports\ExpandedWtaxUploadPreflight;
+use App\Imports\UploadBirInfoPreflight;
 use App\Imports\UploadWorkbookTypePreflight;
 use App\Imports\VatInputImport;
 use App\Imports\SalesVatInputImport;
@@ -86,6 +87,20 @@ class VatInputController extends Controller
 
                 if ($issues !== []) {
                     return back()->with('error', implode(' ', $issues));
+                }
+
+                $birIssues = (new UploadBirInfoPreflight)->checkSales($file, $reportingPeriod);
+
+                if ($birIssues !== []) {
+                    return back()
+                        ->with('error', 'Sales upload rejected. Fix customer BIR info before importing.')
+                        ->with('uploadIssueDialog', [
+                            'title' => 'Sales upload needs BIR info fixes',
+                            'message' => 'Fix customer BIR info before uploading this file.',
+                            'summary' => count($birIssues) . ' issue(s) found. No records were imported or replaced.',
+                            'record_type' => 'sales',
+                            'issues' => $birIssues,
+                        ]);
                 }
 
                 $import = new SalesVatInputImport($reportingPeriod);
@@ -213,7 +228,22 @@ class VatInputController extends Controller
                 return back()->with('error', implode(' ', $issues));
             }
 
-            DB::transaction(function () use ($reportingPeriod, $file) {
+            $birIssues = (new UploadBirInfoPreflight)->checkPurchase($file, $reportingPeriod);
+
+            if ($birIssues !== []) {
+                return back()
+                    ->with('error', 'Purchase upload rejected. Fix supplier BIR info before importing.')
+                    ->with('uploadIssueDialog', [
+                        'title' => 'Purchase upload needs BIR info fixes',
+                        'message' => 'Fix supplier BIR info before uploading this file.',
+                        'summary' => count($birIssues) . ' issue(s) found. No records were imported or replaced.',
+                        'record_type' => 'purchase',
+                        'issues' => $birIssues,
+                    ]);
+            }
+
+            $import = new VatInputImport($reportingPeriod);
+            DB::transaction(function () use ($reportingPeriod, $file, $import) {
                 VatInput::query()
                     ->whereDate('date_uploaded', $reportingPeriod)
                     ->where('is_adjusted', false)
@@ -222,10 +252,22 @@ class VatInputController extends Controller
                         ->select('vat_input_id'))
                     ->delete();
 
-                Excel::import(new VatInputImport($reportingPeriod), $file);
+                Excel::import($import, $file);
+
+                if ($import->importedRows() === 0 && $import->skippedExcludedSupplierRows() > 0) {
+                    throw new \RuntimeException(
+                        'Purchase upload skipped ' . $import->skippedExcludedSupplierRows() . ' BUREAU OF CUSTOMS row(s). No importable Purchase rows were found.'
+                    );
+                }
             });
 
-            return back()->with('success', 'Purchase VAT report for ' . Carbon::parse($reportingPeriod)->format('F Y') . ' was replaced successfully.');
+            $response = back()->with('success', 'Purchase VAT report for ' . Carbon::parse($reportingPeriod)->format('F Y') . ' was replaced successfully.');
+
+            if ($import->skippedExcludedSupplierRows() > 0) {
+                $response->with('warning', 'Purchase upload completed, but ' . $import->skippedExcludedSupplierRows() . ' BUREAU OF CUSTOMS row(s) were skipped because they are not included in RELIEF Purchase DAT.');
+            }
+
+            return $response;
         } catch (\Exception $e) {
             return back()->with('error', 'Import failed: ' . $e->getMessage());
         }

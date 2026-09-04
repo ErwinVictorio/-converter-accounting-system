@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use App\Imports\UploadWorkbookTypePreflight;
+use App\Models\Customer;
 use App\Models\ImportationEntry;
 use App\Models\SalesVatInput;
+use App\Models\Supplier;
 use App\Models\User;
 use App\Models\VatInput;
+use App\Services\BIR\BirPurchaseRowValidator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -93,6 +96,79 @@ class UploadWorkbookTypePreflightTest extends TestCase
         (new Xlsx($spreadsheet))->save($path);
 
         return new UploadedFile($path, 'purchase-preflight-test.xlsx', null, null, true);
+    }
+
+    private function purchaseWorkbookWithCommaSupplier(): UploadedFile
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            ['Purchase VAT Report'],
+            ['For February 2026'],
+            ['vendor_tin', 'supplier_name', 'exempt', 'zero_rated', 'purchase_imported', 'purchase_local', 'services', 'others', 'input_vat', 'total_purchases'],
+            ['', 'MIT-AIR, INC.', 0, 0, 0, 0, 428.57, 0, 51.43, 480],
+        ]);
+
+        $path = storage_path('app/purchase-comma-supplier-test.xlsx');
+        (new Xlsx($spreadsheet))->save($path);
+
+        return new UploadedFile($path, 'purchase-comma-supplier-test.xlsx', null, null, true);
+    }
+
+    private function purchaseWorkbookWithBureauOfCustoms(string $bureauName = 'BUREAU OF CUSTOMS'): UploadedFile
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            ['Purchase VAT Report'],
+            ['For May 2026'],
+            ['vendor_tin', 'supplier_name', 'exempt', 'zero_rated', 'purchase_imported', 'purchase_local', 'services', 'others', 'input_vat', 'total_purchases'],
+            ['', 'ABC SUPPLIER', 0, 0, 0, 1000, 0, 0, 120, 1120],
+            ['', $bureauName, 0, 0, 0, 0, 500, 0, 60, 560],
+        ]);
+
+        $path = storage_path('app/purchase-with-boc-test.xlsx');
+        (new Xlsx($spreadsheet))->save($path);
+
+        return new UploadedFile($path, 'purchase-with-boc-test.xlsx', null, null, true);
+    }
+
+    private function purchaseWorkbookWithOnlyBureauOfCustoms(): UploadedFile
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            ['Purchase VAT Report'],
+            ['For May 2026'],
+            ['vendor_tin', 'supplier_name', 'exempt', 'zero_rated', 'purchase_imported', 'purchase_local', 'services', 'others', 'input_vat', 'total_purchases'],
+            ['', 'BUREAU OF CUSTOMS', 0, 0, 0, 0, 500, 0, 60, 560],
+        ]);
+
+        $path = storage_path('app/purchase-only-boc-test.xlsx');
+        (new Xlsx($spreadsheet))->save($path);
+
+        return new UploadedFile($path, 'purchase-only-boc-test.xlsx', null, null, true);
+    }
+
+    private function validCustomer(string $name = 'SECOND SONS CONSTRUCTION'): Customer
+    {
+        return Customer::create([
+            'name' => $name,
+            'name_key' => Customer::normalizeName($name),
+            'tin' => '111-222-333-000',
+            'addr' => 'CUSTOMER ADDRESS',
+            'city' => 'CUSTOMER CITY',
+        ]);
+    }
+
+    private function validSupplier(string $name = 'ABC SUPPLIER'): Supplier
+    {
+        return Supplier::create([
+            'name' => $name,
+            'tin' => '000-330-774-000',
+            'addr' => 'SUPPLIER ADDRESS',
+            'city' => 'SUPPLIER CITY',
+        ]);
     }
 
     private function salesRow(array $overrides = []): SalesVatInput
@@ -192,6 +268,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
     public function test_matching_sales_workbook_type_and_period_still_imports(): void
     {
+        $this->validCustomer();
+
         $response = $this->post('/vat-import', [
             'excel_file' => $this->simpleSalesSummaryCsv(),
             'reporting_month' => '2026-05',
@@ -207,6 +285,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
     public function test_sales_reupload_replaces_the_selected_month_without_touching_other_months(): void
     {
+        $this->validCustomer();
         $this->salesRow();
         $this->salesRow([
             'document_no' => 'SI#JUNE',
@@ -248,6 +327,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
     public function test_sales_import_stores_si_and_cm_but_skips_dm_with_warning(): void
     {
+        $this->validCustomer();
+
         $response = $this->post('/vat-import', [
             'excel_file' => $this->salesSummaryWithDocumentTypesCsv(),
             'reporting_month' => '2026-05',
@@ -293,6 +374,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
     public function test_purchase_reupload_replaces_selected_month_but_keeps_importation_mirrors_and_other_months(): void
     {
+        $this->validSupplier();
         $this->purchaseRow();
         $this->purchaseRow([
             'supplier_name' => 'JUNE SUPPLIER',
@@ -341,6 +423,93 @@ class UploadWorkbookTypePreflightTest extends TestCase
         $this->assertSame(3, VatInput::count());
     }
 
+    public function test_purchase_import_matches_supplier_names_after_removing_commas_and_special_characters(): void
+    {
+        Supplier::create([
+            'name' => 'MIT-AIR INC.',
+            'tin' => '136-001-760-000',
+            'addr' => 'AVANCENA SUBD. STO. NINO SUR AREVALO',
+            'city' => 'ILOILO CITY',
+        ]);
+
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->purchaseWorkbookWithCommaSupplier(),
+            'reporting_month' => '2026-02',
+            'record_type' => 'purchase',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+        $response->assertSessionMissing('uploadIssueDialog');
+
+        $record = VatInput::first();
+
+        $this->assertSame('MIT-AIR INC.', $record->supplier_name);
+        $this->assertSame('136-001-760-000', $record->tin_number);
+        $this->assertSame('AVANCENA SUBD. STO. NINO SUR AREVALO', $record->address1);
+        $this->assertSame('ILOILO CITY', $record->address2);
+        $this->assertSame([], app(BirPurchaseRowValidator::class)->validate($record->toBirPurchaseRow(), 2));
+    }
+
+    public function test_purchase_upload_skips_bureau_of_customs_with_warning(): void
+    {
+        $this->validSupplier();
+
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->purchaseWorkbookWithBureauOfCustoms(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'purchase',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+        $response->assertSessionHas('warning');
+        $response->assertSessionMissing('uploadIssueDialog');
+
+        $this->assertStringContainsString('1 BUREAU OF CUSTOMS row(s) were skipped', session('warning'));
+        $this->assertSame(1, VatInput::count());
+        $this->assertDatabaseHas('vat_inputs', ['supplier_name' => 'ABC SUPPLIER']);
+        $this->assertDatabaseMissing('vat_inputs', ['supplier_name' => 'BUREAU OF CUSTOMS']);
+    }
+
+    public function test_purchase_upload_skips_normalized_bureau_of_customs_name(): void
+    {
+        $this->validSupplier();
+
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->purchaseWorkbookWithBureauOfCustoms('BUREAU, OF CUSTOMS'),
+            'reporting_month' => '2026-05',
+            'record_type' => 'purchase',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+        $response->assertSessionHas('warning');
+
+        $this->assertSame(1, VatInput::count());
+        $this->assertDatabaseHas('vat_inputs', ['supplier_name' => 'ABC SUPPLIER']);
+        $this->assertDatabaseMissing('vat_inputs', ['supplier_name' => 'BUREAU OF CUSTOMS']);
+    }
+
+    public function test_purchase_upload_with_only_bureau_of_customs_rows_is_not_reported_as_normal_success(): void
+    {
+        $this->purchaseRow();
+
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->purchaseWorkbookWithOnlyBureauOfCustoms(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'purchase',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
+
+        $this->assertStringContainsString('No importable Purchase rows were found', session('error'));
+        $this->assertDatabaseHas('vat_inputs', ['supplier_name' => 'OLD SUPPLIER']);
+        $this->assertSame(1, VatInput::count());
+    }
+
     public function test_failed_purchase_preflight_does_not_delete_existing_month(): void
     {
         $this->purchaseRow();
@@ -356,5 +525,61 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
         $this->assertDatabaseHas('vat_inputs', ['supplier_name' => 'OLD SUPPLIER']);
         $this->assertSame(1, VatInput::count());
+    }
+
+    public function test_purchase_bir_info_preflight_rejects_missing_supplier_info_before_replacing_rows(): void
+    {
+        $this->purchaseRow();
+
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->purchaseWorkbook(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'purchase',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error', 'Purchase upload rejected. Fix supplier BIR info before importing.');
+        $response->assertSessionHas('uploadIssueDialog');
+
+        $dialog = session('uploadIssueDialog');
+        $this->assertSame('purchase', $dialog['record_type']);
+        $this->assertSame('Purchase upload needs BIR info fixes', $dialog['title']);
+        $this->assertSame('/suppliers', $dialog['issues'][0]['fix_route']);
+        $this->assertSame('Master Data > Suppliers', $dialog['issues'][0]['fix_location']);
+        $this->assertSame('ABC SUPPLIER', $dialog['issues'][0]['name']);
+        $this->assertContains($dialog['issues'][0]['field'], ['vendor_tin', 'address1']);
+
+        $this->assertDatabaseHas('vat_inputs', ['supplier_name' => 'OLD SUPPLIER']);
+        $this->assertDatabaseMissing('vat_inputs', ['supplier_name' => 'ABC SUPPLIER']);
+        $this->assertSame(1, VatInput::count());
+    }
+
+    public function test_sales_bir_info_preflight_rejects_missing_customer_info_before_replacing_rows(): void
+    {
+        $this->salesRow();
+
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->simpleSalesSummaryCsv(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'sales',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error', 'Sales upload rejected. Fix customer BIR info before importing.');
+        $response->assertSessionHas('uploadIssueDialog');
+
+        $dialog = session('uploadIssueDialog');
+        $this->assertSame('sales', $dialog['record_type']);
+        $this->assertSame('Sales upload needs BIR info fixes', $dialog['title']);
+        $this->assertSame('/customers', $dialog['issues'][0]['fix_route']);
+        $this->assertSame('Master Data > Customers', $dialog['issues'][0]['fix_location']);
+        $this->assertSame('SECOND SONS CONSTRUCTION', $dialog['issues'][0]['name']);
+        $this->assertContains($dialog['issues'][0]['field'], ['customer_tin', 'address1']);
+
+        $this->assertDatabaseHas('sales_vatsinputs', ['document_no' => 'SI#OLD']);
+        $this->assertDatabaseMissing('sales_vatsinputs', ['document_no' => 'SI#13940']);
+        $this->assertSame(1, SalesVatInput::count());
     }
 }

@@ -70,6 +70,20 @@ const expandedUploadErrorDetails = (message = "") => {
     .filter(Boolean);
 };
 
+const issueDialogText = (dialog) => {
+  if (!dialog) return "";
+
+  return (dialog.issues || [])
+    .map((issue) => [
+      `Row ${issue.row} - ${issue.name || "Unnamed record"}`,
+      `Problem: ${issue.problem}`,
+      `Fix in: ${issue.fix_location}`,
+      `Needed fields: ${(issue.needed_fields || []).join(", ")}`,
+      `Match used: ${issue.match_basis}`,
+    ].filter(Boolean).join("\n"))
+    .join("\n\n");
+};
+
 function RecordEntry() {
   const { flash, birCompanies = [] } = usePage().props;
   const defaultBirCompany = birCompanies[0] || { tin: "008791976", branch_code: "0000", name: "FORTRESS STEEL INC." };
@@ -79,6 +93,7 @@ function RecordEntry() {
   const [uploadedType, setUploadedType] = useState(null);
   const [uploadErrorDialogOpen, setUploadErrorDialogOpen] = useState(false);
   const [uploadErrorDetails, setUploadErrorDetails] = useState([]);
+  const [uploadIssueDialog, setUploadIssueDialog] = useState(null);
   const fileInputRef = useRef(null);
 
   // Inertia Form Setup para sa File Upload
@@ -125,9 +140,19 @@ function RecordEntry() {
       toast.warning(flash.warning);
     }
     if (flash?.error) {
+      if (flash?.uploadIssueDialog) {
+        setUploadIssueDialog(flash.uploadIssueDialog);
+        setUploadErrorDetails([]);
+        setUploadErrorDialogOpen(true);
+        toast.error("Upload rejected. Fix BIR info before importing.");
+
+        return;
+      }
+
       const details = expandedUploadErrorDetails(flash.error);
 
       if (details.length > 0) {
+        setUploadIssueDialog(null);
         setUploadErrorDetails(details);
         setUploadErrorDialogOpen(true);
         toast.error("Upload rejected. Review the workbook corrections.");
@@ -138,7 +163,9 @@ function RecordEntry() {
   }, [flash]);
 
   const copyUploadErrorDetails = async () => {
-    const text = uploadErrorDetails.join("\n\n");
+    const text = uploadIssueDialog
+      ? issueDialogText(uploadIssueDialog)
+      : uploadErrorDetails.join("\n\n");
 
     try {
       await navigator.clipboard.writeText(text);
@@ -556,25 +583,57 @@ function RecordEntry() {
               </span>
               <div>
                 <DialogTitle className="text-base font-semibold text-slate-900">
-                  Upload Rejected
+                  {uploadIssueDialog?.title || "Upload Rejected"}
                 </DialogTitle>
                 <DialogDescription className="mt-1 text-sm text-slate-500">
-                  Some company names use more than one TIN. Correct the workbook and upload it again.
+                  {uploadIssueDialog?.message || "Some company names use more than one TIN. Correct the workbook and upload it again."}
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
-          <div className="space-y-3">
-            {uploadErrorDetails.map((detail, index) => (
-              <div
-                key={`${detail}-${index}`}
-                className="rounded-lg border border-red-100 bg-red-50/70 p-4 text-sm leading-relaxed text-red-950"
-              >
-                {detail}
-              </div>
-            ))}
-          </div>
+          {uploadIssueDialog ? (
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-slate-700">
+                {uploadIssueDialog.summary || `${uploadIssueDialog.issues?.length || 0} issue(s) found. No records were imported or replaced.`}
+              </p>
+
+              {(uploadIssueDialog.issues || []).map((issue, index) => (
+                <div
+                  key={`${issue.row}-${issue.field}-${index}`}
+                  className="rounded-lg border border-red-100 bg-red-50/70 p-4 text-sm leading-relaxed text-red-950"
+                >
+                  <p className="font-semibold">
+                    Row {issue.row} - {issue.name || "Unnamed record"}
+                  </p>
+                  <p className="mt-2">
+                    <span className="font-medium">Problem:</span> {issue.problem}
+                  </p>
+                  <p>
+                    <span className="font-medium">Fix in:</span> {issue.fix_location}
+                  </p>
+                  <p>
+                    <span className="font-medium">Needed fields:</span>{" "}
+                    {(issue.needed_fields || []).join(", ")}
+                  </p>
+                  <p>
+                    <span className="font-medium">Match used:</span> {issue.match_basis}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {uploadErrorDetails.map((detail, index) => (
+                <div
+                  key={`${detail}-${index}`}
+                  className="rounded-lg border border-red-100 bg-red-50/70 p-4 text-sm leading-relaxed text-red-950"
+                >
+                  {detail}
+                </div>
+              ))}
+            </div>
+          )}
 
           <DialogFooter className="border-t border-slate-100 pt-4">
             <Button
@@ -586,6 +645,13 @@ function RecordEntry() {
               <Copy className="h-4 w-4" />
               Copy Errors
             </Button>
+            {uploadIssueDialog?.issues?.[0]?.fix_route && (
+              <Button asChild type="button" variant="outline">
+                <Link href={uploadIssueDialog.issues[0].fix_route}>
+                  Open {uploadIssueDialog.record_type === "sales" ? "Customers" : "Suppliers"}
+                </Link>
+              </Button>
+            )}
             <Button
               type="button"
               onClick={() => setUploadErrorDialogOpen(false)}

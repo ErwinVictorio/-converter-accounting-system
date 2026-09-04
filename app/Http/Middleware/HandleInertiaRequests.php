@@ -39,6 +39,7 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn() => $request->session()->get('success'),
                 'warning' => fn() => $request->session()->get('warning'),
                 'error'   => fn() => $request->session()->get('error'),
+                'uploadIssueDialog' => fn() => $request->session()->get('uploadIssueDialog'),
             ],
         ]);
     }

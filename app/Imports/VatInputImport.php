@@ -17,6 +17,8 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
     }
 
     protected string $uploadDate;
+    protected int $importedRows = 0;
+    protected int $skippedExcludedSupplierRows = 0;
 
     // Tatanggapin nito ang date mula sa Controller (o magde-default sa kasalukuyang petsa)
     public function __construct(?string $uploadDate = null)
@@ -29,7 +31,14 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         $data = $row->toArray();
 
         $rawTin = (string) $this->value($data, ['vendor_tin', 'tin', 'tin_number']);
-        $systemSupplierName = strtoupper(trim((string) $this->value($data, ['supplier_name', 'company_name', 'companyname'])));
+        $systemSupplierName = $this->birText((string) $this->value($data, ['supplier_name', 'company_name', 'companyname']));
+
+        if ($this->isSkippedPurchaseSupplier($systemSupplierName)) {
+            $this->skippedExcludedSupplierRows++;
+
+            return;
+        }
+
         $supplier = $this->findSupplier($rawTin, $systemSupplierName);
         [$address1, $address2] = $this->supplierAddress($supplier, $data);
 
@@ -108,6 +117,8 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
                 'total' => $newTotal,
             ]);
 
+            $this->importedRows++;
+
             return;
         }
 
@@ -138,6 +149,18 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             'date_uploaded' => $this->uploadDate,
             'is_adjusted' => false,
         ]);
+
+        $this->importedRows++;
+    }
+
+    public function importedRows(): int
+    {
+        return $this->importedRows;
+    }
+
+    public function skippedExcludedSupplierRows(): int
+    {
+        return $this->skippedExcludedSupplierRows;
     }
 
     private function parseNumber($value): float
@@ -230,9 +253,11 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             return null;
         }
 
+        $supplierNameKey = Supplier::normalizeName($supplierName);
+
         return Supplier::query()
-            ->where('name', $supplierName)
-            ->first();
+            ->get()
+            ->first(fn (Supplier $supplier) => Supplier::normalizeName($supplier->name) === $supplierNameKey);
     }
 
     private function supplierAddress(?Supplier $supplier, array $data): array
@@ -250,6 +275,23 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             $address1,
             $address2 ?: $this->birText((string) $this->value($data, ['address2', 'address_2'])),
         ];
+    }
+
+    private function isSkippedPurchaseSupplier(string $supplierName): bool
+    {
+        $supplierNameKey = Supplier::normalizeName($supplierName);
+
+        if ($supplierNameKey === '') {
+            return false;
+        }
+
+        foreach (config('bir.purchase.skipped_suppliers', []) as $skippedSupplier) {
+            if ($supplierNameKey === Supplier::normalizeName($skippedSupplier)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function splitAddress(string $value): array

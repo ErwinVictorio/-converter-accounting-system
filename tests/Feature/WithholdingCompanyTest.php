@@ -167,15 +167,15 @@ class WithholdingCompanyTest extends TestCase
         $this->assertSame(1, WithholdingCompany::count());
     }
 
-    public function test_the_same_tin_at_a_different_branch_is_a_different_company(): void
+    public function test_the_same_tin_at_a_different_branch_is_rejected(): void
     {
         $this->company();
 
         $this->post('/withholding-companies', $this->payload([
             'branch_code' => '0002',
-        ]))->assertRedirect()->assertSessionHasNoErrors();
+        ]))->assertSessionHasErrors(['tin' => 'TIN already exists for another company.']);
 
-        $this->assertSame(2, WithholdingCompany::count());
+        $this->assertSame(1, WithholdingCompany::count());
     }
 
     public function test_it_updates_a_company(): void

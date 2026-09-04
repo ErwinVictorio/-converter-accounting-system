@@ -18,11 +18,11 @@ use Illuminate\Database\Eloquent\Model;
  *   branch_code 4 digits, left-padded ('1' -> '0001'), blank -> '0000'
  *   rdo_code    3 digits, or null when not stated
  *
- * tin + branch_code is the identity, unique in the table, and the same pair
- * expanded_wtax_entries stores on every uploaded row. Deactivating is preferred
- * over deleting because those rows are not linked by foreign key: an inactive
- * company disappears from the upload dropdown but a month already filed under it
- * can still be regenerated.
+ * tin is unique in Master Data, while branch_code stays part of the filed
+ * Expanded WTAX row identity. Deactivating is preferred over deleting because
+ * those rows are not linked by foreign key: an inactive company disappears from
+ * the upload dropdown but a month already filed under it can still be
+ * regenerated.
  */
 class WithholdingCompany extends Model
 {

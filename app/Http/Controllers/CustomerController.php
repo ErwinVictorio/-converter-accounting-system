@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\SalesVatInput;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class CustomerController extends Controller
@@ -37,6 +38,7 @@ class CustomerController extends Controller
     public function store(Request $request)
     {
         $validated = $this->validateCustomer($request);
+        $this->rejectInvalidOrDuplicateTin($validated['tin']);
 
         try {
             $customer = Customer::create($this->payload($validated));
@@ -52,8 +54,10 @@ class CustomerController extends Controller
     {
         $validated = $this->validateCustomer($request);
 
+        $customer = Customer::findOrFail($id);
+        $this->rejectInvalidOrDuplicateTin($validated['tin'], $customer->id);
+
         try {
-            $customer = Customer::findOrFail($id);
             $customer->update($this->payload($validated));
             $this->syncSalesRows($customer);
 
@@ -141,6 +145,33 @@ class CustomerController extends Controller
         }
 
         return $digits;
+    }
+
+    private function rejectInvalidOrDuplicateTin(?string $tin, ?int $ignoreId = null): void
+    {
+        $baseTin = $this->baseTin($tin);
+
+        if (strlen($baseTin) !== 9 || $baseTin === '000000000') {
+            throw ValidationException::withMessages([
+                'tin' => 'Customer TIN must contain a valid first 9 digits and cannot be 000000000.',
+            ]);
+        }
+
+        $duplicate = Customer::query()
+            ->when($ignoreId, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->get()
+            ->first(fn (Customer $customer) => $this->baseTin($customer->tin) === $baseTin);
+
+        if ($duplicate) {
+            throw ValidationException::withMessages([
+                'tin' => 'TIN already exists for another customer.',
+            ]);
+        }
+    }
+
+    private function baseTin(?string $value): string
+    {
+        return substr(preg_replace('/\D/', '', (string) $value), 0, 9);
     }
 
     private function birText(?string $value): string

@@ -15,4 +15,11 @@ class Supplier extends Model
         'addr',
     ];
 
+    public static function normalizeName(?string $value): string
+    {
+        $value = strtoupper(trim((string) $value));
+        $value = str_replace('&', 'AND', $value);
+
+        return preg_replace('/[^A-Z0-9]/', '', $value) ?? '';
+    }
 }

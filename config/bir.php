@@ -26,6 +26,16 @@ return [
         'address2' => 'PORT AREA MANILA',
     ],
 
+    'purchase' => [
+        /*
+         * These supplier names are accepted in uploaded workbooks but skipped before
+         * storage, because they are not filed as normal RELIEF Purchase DAT rows.
+         */
+        'skipped_suppliers' => [
+            'BUREAU OF CUSTOMS',
+        ],
+    ],
+
     /*
      * Expanded withholding tax (form 1601EQ/QAP).
      *

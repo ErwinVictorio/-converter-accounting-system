@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Supplier;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class SupplierController extends Controller
@@ -48,6 +49,8 @@ class SupplierController extends Controller
             'city' => ['required', 'string', 'max:100'],
         ]);
 
+        $this->rejectInvalidOrDuplicateTin($validated['tin']);
+
         try {
             Supplier::create([
                 'tin'  => $this->formatTin($validated['tin']),
@@ -82,8 +85,10 @@ class SupplierController extends Controller
             'city' => ['required', 'string', 'max:100'],
         ]);
 
+        $supplier = Supplier::findOrFail($id);
+        $this->rejectInvalidOrDuplicateTin($validated['tin'], $supplier->id);
+
         try {
-            $supplier = Supplier::findOrFail($id);
             $supplier->update([
                 'tin'  => $this->formatTin($validated['tin']),
                 'name' => strtoupper(trim($validated['name'])),
@@ -134,5 +139,32 @@ class SupplierController extends Controller
         }
 
         return $digits;
+    }
+
+    private function rejectInvalidOrDuplicateTin(?string $tin, ?int $ignoreId = null): void
+    {
+        $baseTin = $this->baseTin($tin);
+
+        if (strlen($baseTin) !== 9 || $baseTin === '000000000') {
+            throw ValidationException::withMessages([
+                'tin' => 'Supplier TIN must contain a valid first 9 digits and cannot be 000000000.',
+            ]);
+        }
+
+        $duplicate = Supplier::query()
+            ->when($ignoreId, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->get()
+            ->first(fn (Supplier $supplier) => $this->baseTin($supplier->tin) === $baseTin);
+
+        if ($duplicate) {
+            throw ValidationException::withMessages([
+                'tin' => 'TIN already exists for another supplier.',
+            ]);
+        }
+    }
+
+    private function baseTin(?string $value): string
+    {
+        return substr(preg_replace('/\D/', '', (string) $value), 0, 9);
     }
 }

@@ -139,9 +139,9 @@ class WithholdingCompanyController extends Controller
     }
 
     /**
-     * TIN and branch are validated on their digits, not their formatting, because
-     * the model normalises both before they are stored -- so 008-791-976 and
-     * 008791976 are the same company and must collide on the unique rule.
+     * TIN and branch are validated on their digits, not their formatting. The
+     * company TIN itself is unique in Master Data: a second branch under the same
+     * base TIN would still point to the same company identity.
      */
     private function validated(Request $request, ?WithholdingCompany $company = null): array
     {
@@ -151,7 +151,6 @@ class WithholdingCompanyController extends Controller
         ]);
 
         $identity = Rule::unique('withholding_companies', 'tin')
-            ->where(fn ($query) => $query->where('branch_code', $request->input('branch_code')))
             ->ignore($company?->id);
 
         $validated = $request->validate([
@@ -164,11 +163,17 @@ class WithholdingCompanyController extends Controller
             'address2' => ['nullable', 'string', 'max:150'],
             'is_active' => ['nullable', 'boolean'],
         ], [
-            'tin.unique' => 'A company with this TIN and branch code already exists.',
+            'tin.unique' => 'TIN already exists for another company.',
             'tin.digits' => 'Company TIN must be 9 digits.',
             'branch_code.digits' => 'Branch code must be 4 digits.',
             'rdo_code.digits' => 'RDO code must be 3 digits.',
         ]);
+
+        if ($validated['tin'] === '000000000') {
+            throw ValidationException::withMessages([
+                'tin' => 'Company TIN must contain a valid first 9 digits and cannot be 000000000.',
+            ]);
+        }
 
         $validated['is_active'] = $request->boolean('is_active', true);
 
