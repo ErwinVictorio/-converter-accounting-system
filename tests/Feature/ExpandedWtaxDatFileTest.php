@@ -677,6 +677,43 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->assertSame('C3,1604E,008791976,0000,12/31/2026,15.00', $lines[2]);
     }
 
+    public function test_annual_details_are_filed_in_payee_order(): void
+    {
+        $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2026-05-31',
+            'payee_name' => 'ZETA PAYEE INC',
+            'company_name' => 'ZETA PAYEE INC',
+            'payee_tin' => '333444555',
+        ]);
+        $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2026-08-31',
+            'payee_name' => 'ALPHA PAYEE INC',
+            'company_name' => 'ALPHA PAYEE INC',
+            'payee_tin' => '111222333',
+        ]);
+        $this->entry([
+            'report_type' => 'annual',
+            'reporting_period' => '2026-11-30',
+            'payee_name' => 'BETA PAYEE INC',
+            'company_name' => 'BETA PAYEE INC',
+            'payee_tin' => '222333444',
+        ]);
+
+        $lines = $this->lines(
+            $this->get('/download-datfile?record_type=expanded&report_type=annual&start_date=2026-01-01&end_date=2026-12-31')->getContent()
+        );
+
+        $names = array_map(fn (string $line) => str_getcsv($line)[8], array_slice($lines, 1, 3));
+
+        $this->assertSame([
+            'ALPHA PAYEE INC',
+            'BETA PAYEE INC',
+            'ZETA PAYEE INC',
+        ], $names);
+    }
+
     /**
      * The file is dated from the taxable year the user selected, not from today, and
      * a December row is inside the accepted period rather than past its end.

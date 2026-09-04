@@ -83,17 +83,23 @@ class ImportationDatFileTest extends TestCase
         $this->assertSame('008791976', $detail[14]);
     }
 
-    public function test_entries_are_ordered_by_sequence_number(): void
+    public function test_entries_are_ordered_by_supplier_name(): void
     {
-        $this->post('/importation', $this->payload(['import_entry_no' => 'C2200']))->assertSessionHasNoErrors();
-        $this->post('/importation', $this->payload(['import_entry_no' => 'C2051']))->assertSessionHasNoErrors();
+        $this->post('/importation', $this->payload([
+            'import_entry_no' => 'C2200',
+            'supplier' => 'Zeta Metals Limited',
+        ]))->assertSessionHasNoErrors();
+        $this->post('/importation', $this->payload([
+            'import_entry_no' => 'C2051',
+            'supplier' => 'Alpha Metals Limited',
+        ]))->assertSessionHasNoErrors();
 
         $lines = explode("\r\n", trim(
             $this->get('/download-datfile?period=2026-07-31&record_type=importation')->getContent()
         ));
 
-        $this->assertSame('C2200', str_getcsv($lines[1])[2]);
-        $this->assertSame('C2051', str_getcsv($lines[2])[2]);
+        $this->assertSame('ALPHA METALS LIMITED', str_getcsv($lines[1])[4]);
+        $this->assertSame('ZETA METALS LIMITED', str_getcsv($lines[2])[4]);
     }
 
     public function test_month_with_no_entries_returns_an_error(): void

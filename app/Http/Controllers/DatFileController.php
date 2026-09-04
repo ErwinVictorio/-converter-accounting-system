@@ -412,7 +412,16 @@ class DatFileController extends Controller
                 $period->copy()->endOfMonth()->toDateString(),
             ])
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->sort(fn (VatInput $a, VatInput $b) => $this->compareAlphabetically(
+                $a->supplier_name,
+                $b->supplier_name,
+                $a->tin_number,
+                $b->tin_number,
+                $a->id,
+                $b->id
+            ))
+            ->values();
 
         if ($records->isEmpty()) {
             return back()->with('error', 'No VAT input records found for the selected reporting month.');
@@ -637,6 +646,30 @@ class DatFileController extends Controller
         return $this->companies->companyForDat($withholdingAgent);
     }
 
+    private function compareAlphabetically(
+        ?string $leftName,
+        ?string $rightName,
+        ?string $leftSecondary = null,
+        ?string $rightSecondary = null,
+        ?int $leftId = null,
+        ?int $rightId = null
+    ): int {
+        return [
+            $this->alphabeticalKey($leftName),
+            $this->alphabeticalKey($leftSecondary),
+            $leftId ?? 0,
+        ] <=> [
+            $this->alphabeticalKey($rightName),
+            $this->alphabeticalKey($rightSecondary),
+            $rightId ?? 0,
+        ];
+    }
+
+    private function alphabeticalKey(?string $value): string
+    {
+        return preg_replace('/\s+/', ' ', strtoupper(trim((string) $value)));
+    }
+
     private function downloadSales(
         Carbon $period,
         ReliefSalesDatGenerator $generator,
@@ -654,7 +687,17 @@ class DatFileController extends Controller
             return back()->with('error', 'No Sales VAT records found for the selected reporting month.');
         }
 
-        $salesRows = $this->salesConsolidator->consolidate($records)->values();
+        $salesRows = $this->salesConsolidator
+            ->consolidate($records)
+            ->sort(fn (array $a, array $b) => $this->compareAlphabetically(
+                $a['company_name'] ?: $a['customer_name'],
+                $b['company_name'] ?: $b['customer_name'],
+                $a['customer_tin'],
+                $b['customer_tin'],
+                $a['id'],
+                $b['id']
+            ))
+            ->values();
         $rowErrors = [];
 
         foreach ($salesRows as $index => $row) {
@@ -699,7 +742,16 @@ class DatFileController extends Controller
             ])
             ->orderBy('sequence_number')
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->sort(fn (ImportationEntry $a, ImportationEntry $b) => $this->compareAlphabetically(
+                $a->supplier,
+                $b->supplier,
+                $a->import_entry_no,
+                $b->import_entry_no,
+                $a->id,
+                $b->id
+            ))
+            ->values();
 
         if ($records->isEmpty()) {
             return back()->with('error', 'No importation records found for the selected reporting month.');
