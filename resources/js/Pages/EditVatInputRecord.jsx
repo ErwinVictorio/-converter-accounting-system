@@ -26,7 +26,7 @@ import { birFieldLimits } from "@/lib/FormSchema";
 
 function EditVatInputRecord() {
   const { flash, vatInput } = usePage().props;
-  const [adjustedLookupStatus, setAdjustedLookupStatus] = useState("idle");
+  const [targetLookupStatus, setTargetLookupStatus] = useState("idle");
 
   const { data, setData, put, processing, errors } = useForm({
     supplier_name: "",
@@ -54,12 +54,12 @@ function EditVatInputRecord() {
     const tinDigits = String(data.tin_number || "").replace(/\D/g, "");
 
     if (tinDigits.length < 9) {
-      setAdjustedLookupStatus("idle");
+      setTargetLookupStatus("idle");
       return;
     }
 
     const timeout = setTimeout(() => {
-      setAdjustedLookupStatus("checking");
+      setTargetLookupStatus("checking");
 
       window.axios
         .get(`/records/${vatInput.id}/adjusted-lookup`, {
@@ -69,30 +69,32 @@ function EditVatInputRecord() {
           },
         })
         .then((response) => {
-          const adjustedRecord = response.data?.adjustedRecord;
+          // The endpoint answers with the row a transfer would merge into, which
+          // is an existing uploaded purchase row as readily as an adjusted one.
+          const targetRecord = response.data?.adjustedRecord;
 
-          if (!adjustedRecord) {
-            setAdjustedLookupStatus("empty");
+          if (!targetRecord) {
+            setTargetLookupStatus("empty");
             return;
           }
 
           setData((current) => ({
             ...current,
-            supplier_name: adjustedRecord.supplier_name || "",
-            tin_number: formatTinInput(adjustedRecord.tin_number || current.tin_number),
-            vendor_type: adjustedRecord.vendor_type || "company",
-            company_name: adjustedRecord.company_name || adjustedRecord.supplier_name || "",
-            last_name: adjustedRecord.last_name || "",
-            first_name: adjustedRecord.first_name || "",
-            middle_name: adjustedRecord.middle_name || "",
-            address1: adjustedRecord.address1 || "",
-            address2: adjustedRecord.address2 || "",
-            is_imported: Number(adjustedRecord.is_imported) === 1 ? "1" : "0",
+            supplier_name: targetRecord.supplier_name || "",
+            tin_number: formatTinInput(targetRecord.tin_number || current.tin_number),
+            vendor_type: targetRecord.vendor_type || "company",
+            company_name: targetRecord.company_name || targetRecord.supplier_name || "",
+            last_name: targetRecord.last_name || "",
+            first_name: targetRecord.first_name || "",
+            middle_name: targetRecord.middle_name || "",
+            address1: targetRecord.address1 || "",
+            address2: targetRecord.address2 || "",
+            is_imported: Number(targetRecord.is_imported) === 1 ? "1" : "0",
           }));
-          setAdjustedLookupStatus("found");
+          setTargetLookupStatus("found");
         })
         .catch(() => {
-          setAdjustedLookupStatus("error");
+          setTargetLookupStatus("error");
         });
     }, 350);
 
@@ -267,17 +269,17 @@ function EditVatInputRecord() {
                   placeholder="000-000-000-000"
                   className={errors.tin_number ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />
-                {adjustedLookupStatus === "checking" && (
-                  <p className="text-xs text-slate-400">Checking adjusted record...</p>
+                {targetLookupStatus === "checking" && (
+                  <p className="text-xs text-slate-400">Checking existing records...</p>
                 )}
-                {adjustedLookupStatus === "found" && (
+                {targetLookupStatus === "found" && (
                   <p className="text-xs font-medium text-blue-600">
-                    Existing adjusted record found. Vendor fields were filled.
+                    Existing purchase record found. Vendor fields were filled.
                   </p>
                 )}
-                {adjustedLookupStatus === "error" && (
+                {targetLookupStatus === "error" && (
                   <p className="text-xs font-medium text-red-500">
-                    Unable to check adjusted record.
+                    Unable to check existing records.
                   </p>
                 )}
                 {errors.tin_number && (

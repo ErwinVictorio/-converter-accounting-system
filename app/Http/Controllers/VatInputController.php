@@ -16,6 +16,7 @@ use App\Models\VatInput;
 use App\Services\BIR\AnnualCoveredPeriodValidator;
 use App\Services\BIR\WithholdingCompanyDirectory;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -304,6 +305,14 @@ class VatInputController extends Controller
         ]);
     }
 
+    /**
+     * The purchase row a transfer would land on, answered as the TIN is typed.
+     *
+     * This runs the same target search update() does, so the vendor fields the
+     * edit screen fills in belong to the row the transfer will actually be added
+     * to -- an uploaded vendor row as readily as an adjusted one. The JSON key
+     * stays adjustedRecord: the edit screen reads it by that name.
+     */
     public function adjustedLookup(Request $request, VatInput $vatInput)
     {
         if (!$this->isBrokerRecord($vatInput)) {
@@ -319,7 +328,7 @@ class VatInputController extends Controller
             ]);
         }
 
-        $adjustedRecord = VatInput::query()
+        $targetRecord = $this->transferTargetQuery($vatInput, $tinDigits, $request->boolean('is_imported'))
             ->select([
                 'id',
                 'supplier_name',
@@ -333,14 +342,89 @@ class VatInputController extends Controller
                 'address2',
                 'is_imported',
             ])
-            ->where('is_adjusted', true)
-            ->where('is_imported', $request->boolean('is_imported'))
-            ->whereDate('date_uploaded', $vatInput->getRawOriginal('date_uploaded'))
-            ->whereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 9) = ?", [$tinDigits])
             ->first();
 
         return response()->json([
-            'adjustedRecord' => $adjustedRecord,
+            'adjustedRecord' => $targetRecord,
+        ]);
+    }
+
+    /**
+     * The one purchase row a broker transfer merges into.
+     *
+     * Matching is by month, imported bucket and the first nine TIN digits -- the
+     * nine BIR files a vendor under, so a 9-digit entry and the same TIN with a
+     * branch code are the same vendor here.
+     *
+     * Uploaded rows are ordered ahead of adjusted ones so a transfer joins the
+     * vendor's real row instead of opening a parallel adjusted one beside it; an
+     * adjusted row is the fallback, and creating one is the last resort. The
+     * broker row being adjusted is never its own target.
+     *
+     * Importation mirrors are left out. They all carry the same importation TIN,
+     * they are is_adjusted = false, so they would outrank every real vendor row --
+     * and a transfer merged into one would vanish twice over: the purchase DAT
+     * skips them, and ImportationEntryWriter::syncVatInput() rewrites the whole
+     * row on the next importation edit.
+     */
+    private function transferTargetQuery(VatInput $vatInput, string $tinDigits, bool $isImported): Builder
+    {
+        return VatInput::query()
+            ->excludingImportationMirrors()
+            ->whereKeyNot($vatInput->getKey())
+            ->where('is_imported', $isImported)
+            ->whereDate('date_uploaded', $vatInput->getRawOriginal('date_uploaded'))
+            ->whereRaw("SUBSTR(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 1, 9) = ?", [$tinDigits])
+            ->orderBy('is_adjusted')
+            ->orderBy('id');
+    }
+
+    /**
+     * Adds a transfer to an existing target row and rebuilds its derived purchase
+     * columns, so an uploaded vendor row and an adjusted row are added up by the
+     * same arithmetic.
+     *
+     * $identity carries the submitted vendor information, which only an adjusted
+     * row takes; it is empty for an uploaded row, which keeps the name, address
+     * and flags it was uploaded with.
+     */
+    private function mergeTransferInto(VatInput $target, array $amounts, array $identity): void
+    {
+        $isAdjusted = (bool) $target->is_adjusted;
+
+        $merged = [
+            'purchase_imported' => round((float) $target->purchase_imported + $amounts['purchase_imported'], 2),
+            'purchase_local' => round((float) $target->purchase_local + $amounts['purchase_local'], 2),
+            'services' => round((float) $target->services + $amounts['services'], 2),
+            'others' => round((float) $target->others + $amounts['others'], 2),
+        ];
+        $mergedTotal = round(array_sum($merged), 2);
+
+        /*
+         * Exempt and zero-rated purchases sit outside the four transferable
+         * buckets but are still part of what the row totals. Both are zero on an
+         * adjusted row, so this is the same figure as before there.
+         */
+        $rowTotal = round($mergedTotal + (float) $target->exempt + (float) $target->zero_rated, 2);
+
+        $target->update([
+            ...$identity,
+            ...$merged,
+            /*
+             * An adjusted row carries no capital goods, as before. An uploaded row
+             * does -- VatInputImport files an imported amount there -- and the
+             * purchase DAT sums that column, so a transferred imported amount has
+             * to land there too or it would drop out of the return.
+             */
+            'capital_goods' => $isAdjusted
+                ? 0
+                : round((float) $target->capital_goods + $amounts['purchase_imported'], 2),
+            'other_than_capital_goods' => round($merged['purchase_local'] + $merged['others'], 2),
+            'taxable_net_of_vat' => $mergedTotal,
+            'vat_rate' => 12,
+            'input_vat' => round($mergedTotal * 0.12, 2),
+            'total_purchases' => $rowTotal,
+            'total' => $rowTotal,
         ]);
     }
 
@@ -409,11 +493,7 @@ class VatInputController extends Controller
             $dateUploaded = $vatInput->getRawOriginal('date_uploaded');
             $isImported = (bool) $validated['is_imported'];
 
-            $adjustedRecord = VatInput::query()
-                ->where('is_adjusted', true)
-                ->where('is_imported', $isImported)
-                ->whereDate('date_uploaded', $dateUploaded)
-                ->whereRaw("SUBSTR(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 1, 9) = ?", [$tinDigits])
+            $targetRecord = $this->transferTargetQuery($vatInput, $tinDigits, $isImported)
                 ->lockForUpdate()
                 ->first();
 
@@ -440,26 +520,18 @@ class VatInputController extends Controller
                 'is_adjusted' => true,
             ];
 
-            if ($adjustedRecord) {
-                $updatedAmounts = [
-                    'purchase_imported' => round((float) $adjustedRecord->purchase_imported + $amounts['purchase_imported'], 2),
-                    'purchase_local' => round((float) $adjustedRecord->purchase_local + $amounts['purchase_local'], 2),
-                    'services' => round((float) $adjustedRecord->services + $amounts['services'], 2),
-                    'others' => round((float) $adjustedRecord->others + $amounts['others'], 2),
-                ];
-                $updatedTotal = array_sum($updatedAmounts);
-
-                $adjustedRecord->update([
-                    ...$adjustedPayload,
-                    ...$updatedAmounts,
-                    'capital_goods' => 0,
-                    'other_than_capital_goods' => round($updatedAmounts['purchase_local'] + $updatedAmounts['others'], 2),
-                    'taxable_net_of_vat' => $updatedTotal,
-                    'vat_rate' => 12,
-                    'input_vat' => round($updatedTotal * 0.12, 2),
-                    'total_purchases' => $updatedTotal,
-                    'total' => $updatedTotal,
-                ]);
+            if ($targetRecord) {
+                /*
+                 * A row that came from an upload keeps the identity it was uploaded
+                 * with -- its name, address, is_broker and is_adjusted = false.
+                 * Only an adjusted row, which this controller created in the first
+                 * place, takes the submitted vendor information.
+                 */
+                $this->mergeTransferInto(
+                    $targetRecord,
+                    $amounts,
+                    $targetRecord->is_adjusted ? $adjustedPayload : []
+                );
             } else {
                 VatInput::create([
                     ...$adjustedPayload,

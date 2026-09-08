@@ -345,8 +345,8 @@ flowchart TD
     EP --> LU["GET /records/{id}/adjusted-lookup<br/>(debounced, as the TIN is typed)"]
     LU --> LU1{"9 TIN digits present?"}
     LU1 -->|no| LU2["adjustedRecord: null"]
-    LU1 -->|yes| LU3["find VatInput where is_adjusted<br/>AND is_imported matches<br/>AND same date_uploaded<br/>AND first 9 TIN digits match"]
-    LU3 --> LU4["prefill the form from it,<br/>so the transfer targets<br/>the existing adjusted row"]
+    LU1 -->|yes| LU3["find the merge target:<br/>same date_uploaded, same is_imported,<br/>first 9 TIN digits match, not this row,<br/>importation mirrors excluded.<br/>an uploaded row wins over an adjusted one"]
+    LU3 --> LU4["prefill the form from it,<br/>so the transfer targets<br/>the row it will be added to"]
 
     EP --> PUT["PUT /records/{id}<br/>@update"]
     PUT --> C1{"isBrokerRecord() again"}
@@ -359,19 +359,25 @@ flowchart TD
     C4 -->|yes| CE3["error tin_number"]
     C4 -->|no| TX["DB::transaction"]
 
-    TX --> T1["lockForUpdate() the matching<br/>adjusted row, if any"]
+    TX --> T1["lockForUpdate() the merge target,<br/>found by the same query the lookup runs"]
     T1 --> T2{"found?"}
     T2 -->|yes| T3["<b>add</b> the transferred amounts to it,<br/>recompute other_than_capital_goods,<br/>taxable_net_of_vat, input_vat = total × 0.12,<br/>total_purchases, total"]
+    T3 --> T3A{"is_adjusted?"}
+    T3A -->|yes| T3B["also overwrite its vendor fields<br/>from the form; capital_goods = 0"]
+    T3A -->|"no — an uploaded row"| T3C["keeps its uploaded name, address,<br/>is_broker and is_adjusted = false;<br/>capital_goods grows by purchase_imported,<br/>exempt/zero_rated stay in the row total"]
     T2 -->|no| T4["create it: is_adjusted = true,<br/>is_broker = false, capital_goods = 0,<br/>vat_rate = 12, input_vat = total × 0.12,<br/>same date_uploaded as the broker row"]
-    T3 --> T5["<b>subtract</b> the same amounts<br/>from the broker row,<br/>set its is_broker = true"]
+    T3B --> T5["<b>subtract</b> the same amounts<br/>from the broker row,<br/>set its is_broker = true"]
+    T3C --> T5
     T4 --> T5
     T5 --> Fin["redirect /records with<br/>'VAT input record adjusted successfully.'"]
 ```
 
-The adjustment is a **transfer, not a copy**: the four amounts are subtracted from the broker row
-and added to a real-vendor row that carries `is_adjusted = true`. The pair therefore still sums to
-the original total, and because an `is_adjusted` row is never itself adjustable, the transfer cannot
-cascade.
+The adjustment is a **transfer, not a copy**: the four amounts are subtracted from the broker row and
+added to the real vendor's row for that month. When the month already carries that vendor from an
+upload, the transfer joins that row and it stays `is_adjusted = false` — one row per vendor per
+month, rather than an uploaded row and an adjusted twin beside it. Only a vendor the month has no
+row for gets a new `is_adjusted = true` row. Either way the pair still sums to the original total,
+and because an `is_adjusted` row is never itself adjustable, the transfer cannot cascade.
 
 ### Where row validation actually runs
 
