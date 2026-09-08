@@ -33,7 +33,7 @@ import {
   TableRow,
 } from "@/Components/ui/table";
 import DataTablePagination from "@/Layouts/Pagination";
-import { supplierSchema } from "@/lib/FormSchema";
+import { birFieldLimits, supplierSchema } from "@/lib/FormSchema";
 
 const containerVariants = {
   hidden: { opacity: 0, y: 15 },
@@ -253,6 +253,7 @@ function ManageSupplier() {
                   <Input
                     type="text"
                     placeholder="Enter supplier name"
+                    maxLength={birFieldLimits.companyName}
                     {...register("name")}
                     className={errors.name ? "border-red-500 focus-visible:ring-red-500" : ""}
                   />
@@ -270,6 +271,7 @@ function ManageSupplier() {
                   <Input
                     type="text"
                     placeholder="Enter address"
+                    maxLength={birFieldLimits.address1}
                     {...register("addr")}
                     className={errors.addr ? "border-red-500 focus-visible:ring-red-500" : ""}
                   />
@@ -287,6 +289,7 @@ function ManageSupplier() {
                   <Input
                     type="text"
                     placeholder="Enter city"
+                    maxLength={birFieldLimits.city}
                     {...register("city")}
                     className={errors.city ? "border-red-500 focus-visible:ring-red-500" : ""}
                   />
@@ -483,6 +486,7 @@ function ManageSupplier() {
                 <Input
                   type="text"
                   placeholder="Enter supplier name"
+                  maxLength={birFieldLimits.companyName}
                   {...registerEdit("name")}
                   className={editErrors.name ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />
@@ -500,6 +504,7 @@ function ManageSupplier() {
                 <Input
                   type="text"
                   placeholder="Enter address"
+                  maxLength={birFieldLimits.address1}
                   {...registerEdit("addr")}
                   className={editErrors.addr ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />
@@ -517,6 +522,7 @@ function ManageSupplier() {
                 <Input
                   type="text"
                   placeholder="Enter city"
+                  maxLength={birFieldLimits.city}
                   {...registerEdit("city")}
                   className={editErrors.city ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />

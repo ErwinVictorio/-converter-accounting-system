@@ -238,6 +238,15 @@ class BirExpandedWtaxRowValidatorTest extends TestCase
         $this->assertHasError($errors, 'not both');
     }
 
+    public function test_it_rejects_company_name_past_bir_limit(): void
+    {
+        $errors = $this->validator->validate($this->companyRow([
+            'company_name' => str_repeat('A', 51),
+        ]), 4);
+
+        $this->assertHasError($errors, 'company_name must not exceed 50 characters');
+    }
+
     public function test_it_rejects_a_row_that_names_nobody(): void
     {
         // A payment has a payee. An empty name row would file an amount against a

@@ -79,6 +79,14 @@ class BirExpandedWtaxRowValidator
                 . '. Fill either the company name or the individual name columns, not both.';
         }
 
+        $companyNameLimit = config('bir.field_limits.company_name');
+
+        if ($this->text($row, 'company_name') !== ''
+            && mb_strlen($this->text($row, 'company_name')) > $companyNameLimit
+        ) {
+            $errors[] = "Row {$excelRow}: company_name must not exceed {$companyNameLimit} characters.";
+        }
+
         foreach (self::NAME_FIELDS as $field) {
             $value = $this->text($row, $field);
 

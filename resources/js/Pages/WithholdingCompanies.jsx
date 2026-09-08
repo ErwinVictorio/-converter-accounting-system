@@ -18,6 +18,7 @@ import { motion } from "framer-motion";
 
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
+import { birFieldLimits } from "@/lib/FormSchema";
 import {
   Card,
   CardContent,
@@ -242,6 +243,7 @@ function WithholdingCompanies() {
                     type="text"
                     placeholder="FORTRESS STEEL INC."
                     value={addForm.data.registered_name}
+                    maxLength={birFieldLimits.companyName}
                     onChange={(event) =>
                       addForm.setData("registered_name", event.target.value)
                     }
@@ -317,6 +319,7 @@ function WithholdingCompanies() {
                     type="text"
                     placeholder="LOT 433 J.P RIZAL NANGKA"
                     value={addForm.data.address1}
+                    maxLength={birFieldLimits.address1}
                     onChange={(event) =>
                       addForm.setData("address1", event.target.value)
                     }
@@ -329,6 +332,7 @@ function WithholdingCompanies() {
                     type="text"
                     placeholder="MARIKINA 1808"
                     value={addForm.data.address2}
+                    maxLength={birFieldLimits.city}
                     onChange={(event) =>
                       addForm.setData("address2", event.target.value)
                     }
@@ -570,6 +574,7 @@ function WithholdingCompanies() {
                 <Input
                   type="text"
                   value={editForm.data.registered_name}
+                  maxLength={birFieldLimits.companyName}
                   onChange={(event) =>
                     editForm.setData("registered_name", event.target.value)
                   }
@@ -650,6 +655,7 @@ function WithholdingCompanies() {
                 <Input
                   type="text"
                   value={editForm.data.address1}
+                  maxLength={birFieldLimits.address1}
                   onChange={(event) =>
                     editForm.setData("address1", event.target.value)
                   }
@@ -661,6 +667,7 @@ function WithholdingCompanies() {
                 <Input
                   type="text"
                   value={editForm.data.address2}
+                  maxLength={birFieldLimits.city}
                   onChange={(event) =>
                     editForm.setData("address2", event.target.value)
                   }

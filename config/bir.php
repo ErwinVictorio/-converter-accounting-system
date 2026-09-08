@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'field_limits' => [
+        'company_name' => 50,
+        'address1' => 30,
+        'city' => 30,
+    ],
+
     'companies' => [
         '008791976' => [
             'tin' => '008791976',

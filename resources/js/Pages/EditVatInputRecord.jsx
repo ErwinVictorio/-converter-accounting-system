@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/Components/ui/table";
+import { birFieldLimits } from "@/lib/FormSchema";
 
 function EditVatInputRecord() {
   const { flash, vatInput } = usePage().props;
@@ -140,6 +141,14 @@ function EditVatInputRecord() {
     }, 0);
   }, [data.purchase_imported, data.purchase_local, data.services, data.others, vatInput]);
 
+  const handleSupplierNameChange = (value) => {
+    setData((current) => ({
+      ...current,
+      supplier_name: value,
+      company_name: current.vendor_type === "company" ? value : current.company_name,
+    }));
+  };
+
   const handleAmountChange = (field, value) => {
     const max = Number(vatInput?.[field] || 0);
     const numeric = Number(value);
@@ -171,7 +180,7 @@ function EditVatInputRecord() {
         </div>
 
         <Button asChild variant="outline" className="w-full sm:w-auto gap-2">
-          <Link href="/records">
+          <Link href="/records/purchases">
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
@@ -282,8 +291,9 @@ function EditVatInputRecord() {
                 </label>
                 <Input
                   value={data.supplier_name}
-                  onChange={(e) => setData("supplier_name", e.target.value)}
+                  onChange={(e) => handleSupplierNameChange(e.target.value)}
                   placeholder="Enter supplier name"
+                  maxLength={birFieldLimits.companyName}
                   className={errors.supplier_name ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />
                 {errors.supplier_name && (
@@ -318,6 +328,7 @@ function EditVatInputRecord() {
                       setData("supplier_name", e.target.value);
                     }}
                     placeholder="Enter company name"
+                    maxLength={birFieldLimits.companyName}
                     className={errors.company_name ? "border-red-500 focus-visible:ring-red-500" : ""}
                   />
                   {errors.company_name && (
@@ -375,6 +386,7 @@ function EditVatInputRecord() {
                 <Input
                   value={data.address1}
                   onChange={(e) => setData("address1", e.target.value)}
+                  maxLength={birFieldLimits.address1}
                   className={errors.address1 ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />
                 {errors.address1 && (
@@ -387,6 +399,7 @@ function EditVatInputRecord() {
                 <Input
                   value={data.address2}
                   onChange={(e) => setData("address2", e.target.value)}
+                  maxLength={birFieldLimits.city}
                   className={errors.address2 ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />
                 {errors.address2 && (

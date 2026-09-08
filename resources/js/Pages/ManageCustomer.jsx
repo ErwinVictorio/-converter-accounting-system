@@ -33,7 +33,7 @@ import {
   TableRow,
 } from "@/Components/ui/table";
 import DataTablePagination from "@/Layouts/Pagination";
-import { customerSchema } from "@/lib/FormSchema";
+import { birFieldLimits, customerSchema } from "@/lib/FormSchema";
 
 const containerVariants = {
   hidden: { opacity: 0, y: 15 },
@@ -198,7 +198,7 @@ function ManageCustomer() {
     resetEdit(defaultValues);
   };
 
-  const renderField = (field, label, placeholder, fieldErrors, fieldRegister) => (
+  const renderField = (field, label, placeholder, fieldErrors, fieldRegister, maxLength) => (
     <div className="space-y-2">
       <label className="text-sm font-medium text-slate-700">
         {label} <span className="text-red-500">*</span>
@@ -206,6 +206,7 @@ function ManageCustomer() {
       <Input
         type="text"
         placeholder={placeholder}
+        maxLength={maxLength}
         {...fieldRegister(field)}
         className={fieldErrors[field] ? "border-red-500 focus-visible:ring-red-500" : ""}
       />
@@ -237,9 +238,9 @@ function ManageCustomer() {
             <form id="customer-form" onSubmit={handleSubmit(onSubmit)}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {renderField("tin", "TIN", "000-000-000-000", errors, register)}
-                {renderField("name", "Customer Name", "Enter customer name", errors, register)}
-                {renderField("addr", "Address", "Enter address", errors, register)}
-                {renderField("city", "City", "Enter city", errors, register)}
+                {renderField("name", "Customer Name", "Enter customer name", errors, register, birFieldLimits.companyName)}
+                {renderField("addr", "Address", "Enter address", errors, register, birFieldLimits.address1)}
+                {renderField("city", "City", "Enter city", errors, register, birFieldLimits.city)}
               </div>
             </form>
           </CardContent>
@@ -379,9 +380,9 @@ function ManageCustomer() {
           <form id="edit-customer-form" onSubmit={handleEditSubmit(onEditSubmit)}>
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               {renderField("tin", "TIN", "000-000-000-000", editErrors, registerEdit)}
-              {renderField("name", "Customer Name", "Enter customer name", editErrors, registerEdit)}
-              {renderField("addr", "Address", "Enter address", editErrors, registerEdit)}
-              {renderField("city", "City", "Enter city", editErrors, registerEdit)}
+              {renderField("name", "Customer Name", "Enter customer name", editErrors, registerEdit, birFieldLimits.companyName)}
+              {renderField("addr", "Address", "Enter address", editErrors, registerEdit, birFieldLimits.address1)}
+              {renderField("city", "City", "Enter city", editErrors, registerEdit, birFieldLimits.city)}
             </div>
           </form>
 

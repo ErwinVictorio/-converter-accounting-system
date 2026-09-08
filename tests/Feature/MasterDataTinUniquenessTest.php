@@ -159,4 +159,36 @@ class MasterDataTinUniquenessTest extends TestCase
             'is_active' => true,
         ])->assertSessionHasErrors(['tin' => 'Company TIN must contain a valid first 9 digits and cannot be 000000000.']);
     }
+
+    public function test_master_data_rejects_bir_identity_and_address_values_past_limits(): void
+    {
+        $tooLongCompany = str_repeat('A', 51);
+        $tooLongAddress = str_repeat('B', 31);
+        $tooLongCity = str_repeat('C', 31);
+
+        $this->post('/suppliers', [
+            'tin' => '123-456-789-000',
+            'name' => $tooLongCompany,
+            'addr' => $tooLongAddress,
+            'city' => $tooLongCity,
+        ])->assertSessionHasErrors(['name', 'addr', 'city']);
+
+        $this->post('/customers', [
+            'tin' => '223-456-789-000',
+            'name' => $tooLongCompany,
+            'addr' => $tooLongAddress,
+            'city' => $tooLongCity,
+        ])->assertSessionHasErrors(['name', 'addr', 'city']);
+
+        $this->post('/withholding-companies', [
+            'tin' => '323456789',
+            'branch_code' => '0000',
+            'registered_name' => $tooLongCompany,
+            'trade_name' => '',
+            'rdo_code' => '049',
+            'address1' => $tooLongAddress,
+            'address2' => $tooLongCity,
+            'is_active' => true,
+        ])->assertSessionHasErrors(['registered_name', 'address1', 'address2']);
+    }
 }

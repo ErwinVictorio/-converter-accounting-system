@@ -355,15 +355,15 @@ class VatInputController extends Controller
         ]);
 
         $validated = $request->validate([
-            'supplier_name' => ['nullable', 'string', 'max:255'],
+            'supplier_name' => ['nullable', 'string', 'max:' . config('bir.field_limits.company_name')],
             'tin_number' => ['required', 'regex:/^(\d{9}|\d{12}|\d{3}-\d{3}-\d{3}|\d{3}-\d{3}-\d{3}-\d{3})$/'],
             'vendor_type' => ['required', 'in:company,individual'],
-            'company_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,company'],
+            'company_name' => ['nullable', 'string', 'max:' . config('bir.field_limits.company_name'), 'required_if:vendor_type,company'],
             'last_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
             'first_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
             'middle_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
-            'address1' => ['nullable', 'string', 'max:255'],
-            'address2' => ['nullable', 'string', 'max:255'],
+            'address1' => ['nullable', 'string', 'max:' . config('bir.field_limits.address1')],
+            'address2' => ['nullable', 'string', 'max:' . config('bir.field_limits.city')],
             'is_imported' => ['required', 'boolean'],
             'purchase_imported' => ['nullable', 'numeric', 'min:0'],
             'purchase_local' => ['nullable', 'numeric', 'min:0'],
@@ -413,7 +413,7 @@ class VatInputController extends Controller
                 ->where('is_adjusted', true)
                 ->where('is_imported', $isImported)
                 ->whereDate('date_uploaded', $dateUploaded)
-                ->whereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 9) = ?", [$tinDigits])
+                ->whereRaw("SUBSTR(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 1, 9) = ?", [$tinDigits])
                 ->lockForUpdate()
                 ->first();
 
@@ -506,12 +506,12 @@ class VatInputController extends Controller
         $validated = $request->validate([
             'vendor_type' => ['required', 'in:company,individual'],
             'tin_number' => ['required', 'regex:/^(\d{9}|\d{12}|\d{3}-\d{3}-\d{3}|\d{3}-\d{3}-\d{3}-\d{3})$/'],
-            'company_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,company'],
+            'company_name' => ['nullable', 'string', 'max:' . config('bir.field_limits.company_name'), 'required_if:vendor_type,company'],
             'last_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
             'first_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
             'middle_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
-            'address1' => ['nullable', 'string', 'max:255'],
-            'address2' => ['nullable', 'string', 'max:255'],
+            'address1' => ['nullable', 'string', 'max:' . config('bir.field_limits.address1')],
+            'address2' => ['nullable', 'string', 'max:' . config('bir.field_limits.city')],
         ]);
 
         if (substr(preg_replace('/\D/', '', $validated['tin_number']), 0, 9) === '000000000') {
@@ -566,7 +566,7 @@ class VatInputController extends Controller
         }
 
         return Brokers::query()
-            ->whereRaw("LEFT(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 9) = ?", [$tin])
+            ->whereRaw("SUBSTR(REPLACE(REPLACE(REPLACE(tin_number, '-', ''), ' ', ''), '.', ''), 1, 9) = ?", [$tin])
             ->exists();
     }
 

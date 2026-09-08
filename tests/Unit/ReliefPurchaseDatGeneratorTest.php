@@ -171,6 +171,27 @@ class ReliefPurchaseDatGeneratorTest extends TestCase
         $this->assertNotEmpty($individualErrors);
     }
 
+    public function test_purchase_validator_rejects_company_and_address_values_past_bir_limits(): void
+    {
+        $errors = app(BirPurchaseRowValidator::class)->validate([
+            'vendor_type' => 'company',
+            'vendor_tin' => '236791864',
+            'company_name' => str_repeat('A', 51),
+            'address1' => str_repeat('B', 31),
+            'address2' => str_repeat('C', 31),
+            'exempt' => 0,
+            'zero_rated' => 0,
+            'services' => 0,
+            'capital_goods' => 0,
+            'other_than_capital_goods' => 0,
+            'input_vat' => 0,
+        ], 2);
+
+        $this->assertContains('Row 2: company_name must not exceed 50 characters.', $errors);
+        $this->assertContains('Row 2: address1 must not exceed 30 characters.', $errors);
+        $this->assertContains('Row 2: address2 must not exceed 30 characters.', $errors);
+    }
+
     public function test_vat_input_maps_to_bir_purchase_detail_source_row(): void
     {
         $vatInput = new VatInput([

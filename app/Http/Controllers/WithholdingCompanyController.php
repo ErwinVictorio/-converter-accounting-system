@@ -156,11 +156,11 @@ class WithholdingCompanyController extends Controller
         $validated = $request->validate([
             'tin' => ['required', 'digits:9', $identity],
             'branch_code' => ['required', 'digits:4'],
-            'registered_name' => ['required', 'string', 'max:150'],
+            'registered_name' => ['required', 'string', 'max:' . config('bir.field_limits.company_name')],
             'trade_name' => ['nullable', 'string', 'max:150'],
             'rdo_code' => ['nullable', 'digits:3'],
-            'address1' => ['nullable', 'string', 'max:150'],
-            'address2' => ['nullable', 'string', 'max:150'],
+            'address1' => ['nullable', 'string', 'max:' . config('bir.field_limits.address1')],
+            'address2' => ['nullable', 'string', 'max:' . config('bir.field_limits.city')],
             'is_active' => ['nullable', 'boolean'],
         ], [
             'tin.unique' => 'TIN already exists for another company.',

@@ -1,5 +1,11 @@
 import * as z from "zod";
 
+export const birFieldLimits = {
+    companyName: 50,
+    address1: 30,
+    city: 30,
+};
+
 export const loginSchema = z.object({
     username: z.string().nonempty({ message: "Username is required." }),
     password: z.string().nonempty({ message: "Password is required." }),
@@ -41,15 +47,15 @@ export const supplierSchema = z.object({
     name: z
         .string()
         .nonempty({ message: "Supplier name is required" })
-        .max(60, { message: "Supplier name must not exceed 60 characters." }),
+        .max(birFieldLimits.companyName, { message: `Supplier name must not exceed ${birFieldLimits.companyName} characters.` }),
     addr: z
         .string()
         .nonempty({ message: "Address is required" })
-        .max(100, { message: "Address must not exceed 100 characters." }),
+        .max(birFieldLimits.address1, { message: `Address must not exceed ${birFieldLimits.address1} characters.` }),
     city: z
         .string()
         .nonempty({ message: "City is required" })
-        .max(100, { message: "City must not exceed 100 characters." }),
+        .max(birFieldLimits.city, { message: `City must not exceed ${birFieldLimits.city} characters.` }),
 });
 
 export const customerSchema = z.object({
@@ -60,15 +66,15 @@ export const customerSchema = z.object({
     name: z
         .string()
         .nonempty({ message: "Customer name is required" })
-        .max(300, { message: "Customer name must not exceed 300 characters." }),
+        .max(birFieldLimits.companyName, { message: `Customer name must not exceed ${birFieldLimits.companyName} characters.` }),
     addr: z
         .string()
         .nonempty({ message: "Address is required" })
-        .max(500, { message: "Address must not exceed 500 characters." }),
+        .max(birFieldLimits.address1, { message: `Address must not exceed ${birFieldLimits.address1} characters.` }),
     city: z
         .string()
         .nonempty({ message: "City is required" })
-        .max(100, { message: "City must not exceed 100 characters." }),
+        .max(birFieldLimits.city, { message: `City must not exceed ${birFieldLimits.city} characters.` }),
 });
 
 // Amount fields follow the BIR Excel rule: plain number, no commas, >= 0.

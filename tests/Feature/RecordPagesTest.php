@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Brokers;
 use App\Models\ExpandedWtaxEntry;
 use App\Models\ImportationEntry;
 use App\Models\SalesVatInput;
@@ -258,6 +259,47 @@ class RecordPagesTest extends TestCase
                 ->where('filters.period', '2026-04')
                 ->where('vatInputs.data.0.supplier_name', 'LOCAL HARDWARE INC.')
         );
+    }
+
+    public function test_purchase_bir_info_update_rejects_company_and_address_values_past_bir_limits(): void
+    {
+        $purchase = $this->purchase();
+
+        $this->put("/records/{$purchase->id}/bir-info", [
+            'vendor_type' => 'company',
+            'tin_number' => '123-456-789-000',
+            'company_name' => str_repeat('A', 51),
+            'address1' => str_repeat('B', 31),
+            'address2' => str_repeat('C', 31),
+        ])->assertSessionHasErrors(['company_name', 'address1', 'address2']);
+    }
+
+    public function test_broker_adjustment_rejects_company_and_address_values_past_bir_limits(): void
+    {
+        $purchase = $this->purchase([
+            'tin_number' => '123-456-789-000',
+            'services' => 100.00,
+            'total' => 100.00,
+        ]);
+
+        Brokers::create([
+            'broker_name' => 'LOCAL HARDWARE INC.',
+            'tin_number' => '123-456-789-000',
+        ]);
+
+        $this->put("/records/{$purchase->id}", [
+            'supplier_name' => str_repeat('A', 51),
+            'tin_number' => '123-456-789-000',
+            'vendor_type' => 'company',
+            'company_name' => str_repeat('A', 51),
+            'address1' => str_repeat('B', 31),
+            'address2' => str_repeat('C', 31),
+            'is_imported' => false,
+            'purchase_imported' => 0,
+            'purchase_local' => 0,
+            'services' => 50,
+            'others' => 0,
+        ])->assertSessionHasErrors(['supplier_name', 'company_name', 'address1', 'address2']);
     }
 
     public function test_sales_records_can_be_searched(): void

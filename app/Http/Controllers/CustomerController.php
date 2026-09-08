@@ -83,9 +83,9 @@ class CustomerController extends Controller
     {
         return $request->validate([
             'tin' => ['required', 'string', 'max:20'],
-            'name' => ['required', 'string', 'max:300'],
-            'addr' => ['required', 'string', 'max:500'],
-            'city' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:' . config('bir.field_limits.company_name')],
+            'addr' => ['required', 'string', 'max:' . config('bir.field_limits.address1')],
+            'city' => ['required', 'string', 'max:' . config('bir.field_limits.city')],
         ]);
     }
 

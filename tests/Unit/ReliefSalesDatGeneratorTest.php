@@ -134,4 +134,23 @@ class ReliefSalesDatGeneratorTest extends TestCase
 
         $this->assertNotEmpty($errors);
     }
+
+    public function test_sales_validator_rejects_company_and_address_values_past_bir_limits(): void
+    {
+        $errors = app(BirSalesRowValidator::class)->validate([
+            'customer_type' => 'company',
+            'customer_tin' => '123456789',
+            'company_name' => str_repeat('A', 51),
+            'address1' => str_repeat('B', 31),
+            'address2' => str_repeat('C', 31),
+            'exempt_sales' => 0,
+            'zero_rated_sales' => 0,
+            'taxable_sales' => 100,
+            'output_vat' => 12,
+        ], 2);
+
+        $this->assertContains('Row 2: company_name must not exceed 50 characters.', $errors);
+        $this->assertContains('Row 2: address1 must not exceed 30 characters.', $errors);
+        $this->assertContains('Row 2: address2 must not exceed 30 characters.', $errors);
+    }
 }

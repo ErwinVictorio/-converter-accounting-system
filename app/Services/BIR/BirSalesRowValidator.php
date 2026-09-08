@@ -34,6 +34,18 @@ class BirSalesRowValidator
             $errors[] = "Row {$excelRow}: Customer Address1 is required.";
         }
 
+        foreach ([
+            'company_name' => config('bir.field_limits.company_name'),
+            'address1' => config('bir.field_limits.address1'),
+            'address2' => config('bir.field_limits.city'),
+        ] as $field => $limit) {
+            $value = trim((string) ($row[$field] ?? ''));
+
+            if ($value !== '' && mb_strlen($value) > $limit) {
+                $errors[] = "Row {$excelRow}: {$field} must not exceed {$limit} characters.";
+            }
+        }
+
         foreach (['company_name', 'last_name', 'first_name', 'middle_name', 'address1', 'address2'] as $field) {
             $value = (string) ($row[$field] ?? '');
 

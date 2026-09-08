@@ -11,6 +11,7 @@ import {
     DialogTitle,
 } from "@/Components/ui/dialog";
 import { formatTinInput } from "@/Components/Records/format";
+import { birFieldLimits } from "@/lib/FormSchema";
 
 /**
  * The BIR vendor identity a purchase row is filed under.
@@ -118,6 +119,7 @@ export default function BirVendorDialog({ record, onClose }) {
                             <Input
                                 value={data.company_name}
                                 onChange={(e) => setData("company_name", e.target.value)}
+                                maxLength={birFieldLimits.companyName}
                                 className={`h-10 bg-white ${errors.company_name ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                             />
                             {errors.company_name && (
@@ -175,6 +177,7 @@ export default function BirVendorDialog({ record, onClose }) {
                         <Input
                             value={data.address1}
                             onChange={(e) => setData("address1", e.target.value)}
+                            maxLength={birFieldLimits.address1}
                             className={`h-10 bg-white ${errors.address1 ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                         />
                         <p className="text-xs text-slate-500">
@@ -187,6 +190,7 @@ export default function BirVendorDialog({ record, onClose }) {
                         <Input
                             value={data.address2}
                             onChange={(e) => setData("address2", e.target.value)}
+                            maxLength={birFieldLimits.city}
                             className={`h-10 bg-white ${errors.address2 ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                         />
                         <p className="text-xs text-slate-500">

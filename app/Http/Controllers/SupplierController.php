@@ -44,9 +44,9 @@ class SupplierController extends Controller
     {
         $validated = $request->validate([
             'tin'  => ['required', 'string', 'max:20'],
-            'name' => ['required', 'string', 'max:60'],
-            'addr' => ['required', 'string', 'max:100'],
-            'city' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:' . config('bir.field_limits.company_name')],
+            'addr' => ['required', 'string', 'max:' . config('bir.field_limits.address1')],
+            'city' => ['required', 'string', 'max:' . config('bir.field_limits.city')],
         ]);
 
         $this->rejectInvalidOrDuplicateTin($validated['tin']);
@@ -80,9 +80,9 @@ class SupplierController extends Controller
     {
         $validated = $request->validate([
             'tin'  => ['required', 'string', 'max:20'],
-            'name' => ['required', 'string', 'max:60'],
-            'addr' => ['required', 'string', 'max:100'],
-            'city' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:' . config('bir.field_limits.company_name')],
+            'addr' => ['required', 'string', 'max:' . config('bir.field_limits.address1')],
+            'city' => ['required', 'string', 'max:' . config('bir.field_limits.city')],
         ]);
 
         $supplier = Supplier::findOrFail($id);
