@@ -87,7 +87,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
                 'input_vat' => $this->parseNumber($this->value($data, ['input_vat', 'inputvat'])),
             ], $index + 1);
 
-            foreach ($rowIssues as $error) {
+            foreach ($this->uploadBlockingErrors($rowIssues) as $error) {
                 $issues[] = $this->issue(
                     $index + 1,
                     $supplierName,
@@ -310,7 +310,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             'output_vat' => $this->parseNumber($data[12] ?? null),
         ], $rowNumber);
 
-        return $this->salesIssuesFromErrors($rowIssues, $rowNumber, $customerName, $customer);
+        return $this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer);
     }
 
     /**
@@ -345,7 +345,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             'output_vat' => $this->parseNumber($data[11] ?? null),
         ], $rowNumber);
 
-        return $this->salesIssuesFromErrors($rowIssues, $rowNumber, $customerName, $customer);
+        return $this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer);
     }
 
     /**
@@ -505,6 +505,28 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
     private function stripRowPrefix(string $error): string
     {
         return preg_replace('/^Row \d+:\s*/', '', $error) ?? $error;
+    }
+
+    /**
+     * Upload preflight should block missing/invalid BIR identity and amount data,
+     * but text length and punctuation are maintained on Supplier/Customer entry.
+     * The full DAT validators still run at DAT download time as the final guard.
+     *
+     * @param  string[]  $errors
+     * @return string[]
+     */
+    private function uploadBlockingErrors(array $errors): array
+    {
+        return array_values(array_filter(
+            $errors,
+            fn (string $error) => ! $this->isUploadAllowedTextError($error)
+        ));
+    }
+
+    private function isUploadAllowedTextError(string $error): bool
+    {
+        return str_contains($error, 'must not exceed')
+            || str_contains($error, 'cannot contain comma or ampersand');
     }
 
     private function value(array $data, array $keys): mixed

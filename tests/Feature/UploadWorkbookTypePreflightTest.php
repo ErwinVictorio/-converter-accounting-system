@@ -10,6 +10,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use App\Models\VatInput;
 use App\Services\BIR\BirPurchaseRowValidator;
+use App\Services\BIR\BirSalesRowValidator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -445,7 +446,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
         Supplier::create([
             'name' => 'MIT-AIR INC.',
             'tin' => '136-001-760-000',
-            'addr' => 'AVANCENA SUBD. STO. NINO SUR AREVALO',
+            'addr' => 'AVANCENA SUBD STO NINO',
             'city' => 'ILOILO CITY',
         ]);
 
@@ -463,7 +464,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
         $this->assertSame('MIT-AIR INC.', $record->supplier_name);
         $this->assertSame('136-001-760-000', $record->tin_number);
-        $this->assertSame('AVANCENA SUBD. STO. NINO SUR AREVALO', $record->address1);
+        $this->assertSame('AVANCENA SUBD STO NINO', $record->address1);
         $this->assertSame('ILOILO CITY', $record->address2);
         $this->assertSame([], app(BirPurchaseRowValidator::class)->validate($record->toBirPurchaseRow(), 2));
     }
@@ -601,6 +602,33 @@ class UploadWorkbookTypePreflightTest extends TestCase
         $this->assertSame(1, VatInput::count());
     }
 
+    public function test_purchase_upload_allows_text_length_issues_until_dat_generation(): void
+    {
+        Supplier::create([
+            'name' => 'ABC SUPPLIER',
+            'tin' => '000-330-774-000',
+            'addr' => 'THIS ADDRESS IS LONGER THAN THE BIR DETAIL LIMIT',
+            'city' => 'SUPPLIER CITY',
+        ]);
+
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->purchaseWorkbook(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'purchase',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+        $response->assertSessionMissing('uploadIssueDialog');
+
+        $record = VatInput::firstOrFail();
+
+        $this->assertContains(
+            'Row 2: address1 must not exceed 30 characters.',
+            app(BirPurchaseRowValidator::class)->validate($record->toBirPurchaseRow(), 2)
+        );
+    }
+
     public function test_sales_bir_info_preflight_rejects_missing_customer_info_before_replacing_rows(): void
     {
         $this->salesRow();
@@ -627,5 +655,33 @@ class UploadWorkbookTypePreflightTest extends TestCase
         $this->assertDatabaseHas('sales_vatsinputs', ['document_no' => 'SI#OLD']);
         $this->assertDatabaseMissing('sales_vatsinputs', ['document_no' => 'SI#13940']);
         $this->assertSame(1, SalesVatInput::count());
+    }
+
+    public function test_sales_upload_allows_text_length_issues_until_dat_generation(): void
+    {
+        Customer::create([
+            'name' => 'SECOND SONS CONSTRUCTION',
+            'name_key' => Customer::normalizeName('SECOND SONS CONSTRUCTION'),
+            'tin' => '111-222-333-000',
+            'addr' => 'THIS CUSTOMER ADDRESS IS TOO LONG FOR DAT',
+            'city' => 'CUSTOMER CITY',
+        ]);
+
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->simpleSalesSummaryCsv(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'sales',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+        $response->assertSessionMissing('uploadIssueDialog');
+
+        $record = SalesVatInput::firstOrFail();
+
+        $this->assertContains(
+            'Row 2: address1 must not exceed 30 characters.',
+            app(BirSalesRowValidator::class)->validate($record->toBirSalesRow(), 2)
+        );
     }
 }
