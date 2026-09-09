@@ -265,7 +265,7 @@ class DatFileController extends Controller
                 $errors = [];
 
                 foreach ($records->values() as $index => $record) {
-                    foreach ($validator->validate($record->toBirPurchaseRow(), $index + 2) as $error) {
+                    foreach ($this->datBlockingErrors($validator->validate($record->toBirPurchaseRow(), $index + 2)) as $error) {
                         $errors[] = "Record #{$record->id} {$record->supplier_name}: {$error}";
                     }
                 }
@@ -301,7 +301,7 @@ class DatFileController extends Controller
                 $errors = [];
 
                 foreach ($this->salesConsolidator->consolidate($records)->values() as $index => $row) {
-                    foreach ($validator->validate($row, $index + 2) as $error) {
+                    foreach ($this->datBlockingErrors($validator->validate($row, $index + 2)) as $error) {
                         $errors[] = "Sales group {$row['customer_name']}: {$error}";
                     }
                 }
@@ -437,7 +437,7 @@ class DatFileController extends Controller
 
         $rowErrors = [];
         foreach ($records as $index => $record) {
-            foreach ($validator->validate($record->toBirPurchaseRow(), $index + 2) as $error) {
+            foreach ($this->datBlockingErrors($validator->validate($record->toBirPurchaseRow(), $index + 2)) as $error) {
                 $rowErrors[] = "Record #{$record->id} {$record->supplier_name}: {$error}";
             }
         }
@@ -699,7 +699,7 @@ class DatFileController extends Controller
         $rowErrors = [];
 
         foreach ($salesRows as $index => $row) {
-            foreach ($validator->validate($row, $index + 2) as $error) {
+            foreach ($this->datBlockingErrors($validator->validate($row, $index + 2)) as $error) {
                 $rowErrors[] = "Sales group {$row['customer_name']}: {$error}";
             }
         }
@@ -768,6 +768,18 @@ class DatFileController extends Controller
         $fileName = $generator->filename($company, $period);
 
         return $this->downloadDatPackage('importation', $fileName, $content, $attachmentBuilder, $pdfRenderer, $records, $company, $period);
+    }
+
+    private function datBlockingErrors(array $errors): array
+    {
+        return array_values(array_filter($errors, fn (string $error) => ! $this->isRelaxedDatTextError($error)));
+    }
+
+    private function isRelaxedDatTextError(string $error): bool
+    {
+        // Purchase/Sales download policy only; shared validators retain full constraints.
+        return preg_match('/ must not exceed \d+ characters\.$/', $error) === 1
+            || str_ends_with($error, ' cannot contain comma or ampersand.');
     }
 
     private function defaultReliefCompany(): array
