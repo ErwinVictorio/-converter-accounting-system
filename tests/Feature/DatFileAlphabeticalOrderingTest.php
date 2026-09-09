@@ -7,11 +7,13 @@ use App\Models\SalesVatInput;
 use App\Models\User;
 use App\Models\VatInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\DatPackageAssertions;
 use Tests\TestCase;
 
 class DatFileAlphabeticalOrderingTest extends TestCase
 {
     use RefreshDatabase;
+    use DatPackageAssertions;
 
     protected function setUp(): void
     {
@@ -26,7 +28,10 @@ class DatFileAlphabeticalOrderingTest extends TestCase
         $this->purchase(['supplier_name' => 'ALPHA SUPPLY CORP', 'tin_number' => '111222333']);
         $this->purchase(['supplier_name' => 'BETA SUPPLY CORP', 'tin_number' => '222333444']);
 
-        $lines = $this->lines($this->get('/download-datfile?period=2026-07-31&record_type=purchase')->getContent());
+        $lines = $this->lines($this->datFromPackage(
+            $this->get('/download-datfile?period=2026-07-31&record_type=purchase'),
+            '008791976P072026.DAT'
+        ));
 
         $names = array_map(fn (string $line) => str_getcsv($line)[3], array_slice($lines, 1));
 
@@ -43,7 +48,10 @@ class DatFileAlphabeticalOrderingTest extends TestCase
         $this->sale(['customer_name' => 'ALPHA CUSTOMER CORP', 'customer_tin' => '111222333']);
         $this->sale(['customer_name' => 'BETA CUSTOMER CORP', 'customer_tin' => '222333444']);
 
-        $lines = $this->lines($this->get('/download-datfile?period=2026-07-31&record_type=sales')->getContent());
+        $lines = $this->lines($this->datFromPackage(
+            $this->get('/download-datfile?period=2026-07-31&record_type=sales'),
+            '008791976S072026.DAT'
+        ));
 
         $names = array_map(fn (string $line) => str_getcsv($line)[3], array_slice($lines, 1));
 
@@ -60,7 +68,10 @@ class DatFileAlphabeticalOrderingTest extends TestCase
         $this->importation(['supplier' => 'ALPHA METALS LIMITED', 'import_entry_no' => 'C2051', 'sequence_number' => 2]);
         $this->importation(['supplier' => 'BETA METALS LIMITED', 'import_entry_no' => 'C2100', 'sequence_number' => 3]);
 
-        $lines = $this->lines($this->get('/download-datfile?period=2026-07-31&record_type=importation')->getContent());
+        $lines = $this->lines($this->datFromPackage(
+            $this->get('/download-datfile?period=2026-07-31&record_type=importation'),
+            '008791976I072026.DAT'
+        ));
 
         $names = array_map(fn (string $line) => str_getcsv($line)[4], array_slice($lines, 1));
 

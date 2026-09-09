@@ -54,6 +54,7 @@ function GenerateDatFile() {
     const datHeading = data.record_type === "expanded" && data.report_type === "annual"
         ? "1604E Expanded WTAX"
         : datType.heading;
+    const downloadsAttachment = ["purchase", "sales", "importation"].includes(data.record_type);
 
     const selectedPeriod = useMemo(() => {
         return availablePeriods.find((period) => period.value === data.period);
@@ -264,7 +265,7 @@ function GenerateDatFile() {
                         Generate {datHeading} DAT
                     </h2>
                     <p className="text-xs text-gray-500">
-                        Select a type and covered period to download one DAT file from your uploaded records.
+                        Select a type and covered period to download files from your uploaded records.
                     </p>
                 </div>
 
@@ -523,7 +524,9 @@ function GenerateDatFile() {
                                 {selectedPeriod.records_count} {datType.rows} rows found.
                                 {selectedIssues.invalid_count > 0
                                     ? ` ${selectedIssues.invalid_count} need BIR info fixes.`
-                                    : " Ready for DAT generation."}
+                                    : downloadsAttachment
+                                        ? " Ready for DAT and attachment generation."
+                                        : " Ready for DAT generation."}
                             </p>
                         )}
                         {!isAnnualExpanded && availablePeriods.length === 0 && (
@@ -554,7 +557,7 @@ function GenerateDatFile() {
                                 disabled={downloadDisabled}
                                 className="h-11 rounded-lg bg-blue-600 px-8 font-medium text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                Download DAT
+                                {downloadsAttachment ? "Download DAT + Attachment" : "Download DAT"}
                             </Button>
                         </motion.div>
                     </div>

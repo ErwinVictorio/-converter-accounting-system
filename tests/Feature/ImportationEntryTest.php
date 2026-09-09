@@ -7,11 +7,13 @@ use App\Models\User;
 use App\Models\VatInput;
 use App\Services\BIR\BirPurchaseRowValidator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\DatPackageAssertions;
 use Tests\TestCase;
 
 class ImportationEntryTest extends TestCase
 {
     use RefreshDatabase;
+    use DatPackageAssertions;
 
     protected function setUp(): void
     {
@@ -162,10 +164,7 @@ class ImportationEntryTest extends TestCase
 
         $importation = $this->get('/download-datfile?period=2026-04-30&record_type=importation');
 
-        $importation->assertOk();
-        $importation->assertHeader('content-disposition', 'attachment; filename="008791976I042026.DAT"');
-
-        $content = $importation->getContent();
+        $content = $this->datFromPackage($importation, '008791976I042026.DAT');
         [$header, $detail] = explode("\r\n", trim($content));
 
         $this->assertCount(18, str_getcsv($header));

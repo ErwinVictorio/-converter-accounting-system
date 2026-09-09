@@ -6,11 +6,13 @@ use App\Models\ImportationEntry;
 use App\Models\User;
 use App\Models\VatInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\DatPackageAssertions;
 use Tests\TestCase;
 
 class ImportationDatFileTest extends TestCase
 {
     use RefreshDatabase;
+    use DatPackageAssertions;
 
     protected function setUp(): void
     {
@@ -56,10 +58,7 @@ class ImportationDatFileTest extends TestCase
 
         $response = $this->get('/download-datfile?period=2026-07-31&record_type=importation');
 
-        $response->assertOk();
-        $response->assertHeader('content-disposition', 'attachment; filename="008791976I072026.DAT"');
-
-        $lines = explode("\r\n", trim($response->getContent()));
+        $lines = explode("\r\n", trim($this->datFromPackage($response, '008791976I072026.DAT')));
         $this->assertCount(3, $lines); // 1 header + 2 details
 
         $header = str_getcsv($lines[0]);
@@ -94,9 +93,10 @@ class ImportationDatFileTest extends TestCase
             'supplier' => 'Alpha Metals Limited',
         ]))->assertSessionHasNoErrors();
 
-        $lines = explode("\r\n", trim(
-            $this->get('/download-datfile?period=2026-07-31&record_type=importation')->getContent()
-        ));
+        $lines = explode("\r\n", trim($this->datFromPackage(
+            $this->get('/download-datfile?period=2026-07-31&record_type=importation'),
+            '008791976I072026.DAT'
+        )));
 
         $this->assertSame('ALPHA METALS LIMITED', str_getcsv($lines[1])[4]);
         $this->assertSame('ZETA METALS LIMITED', str_getcsv($lines[2])[4]);

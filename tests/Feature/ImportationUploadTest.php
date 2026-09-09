@@ -8,11 +8,13 @@ use App\Models\VatInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\DatPackageAssertions;
 use Tests\TestCase;
 
 class ImportationUploadTest extends TestCase
 {
     use RefreshDatabase;
+    use DatPackageAssertions;
 
     private const WORKBOOK = 'Docs/Importaion/Importation_Upload_Template_Updated.xlsx';
 
@@ -256,10 +258,8 @@ class ImportationUploadTest extends TestCase
         $purchase->assertSessionHas('error');
 
         $importation = $this->get('/download-datfile?period=2026-07-31&record_type=importation');
-        $importation->assertOk();
-        $importation->assertHeader('content-disposition', 'attachment; filename="008791976I072026.DAT"');
 
-        $lines = explode("\r\n", trim($importation->getContent()));
+        $lines = explode("\r\n", trim($this->datFromPackage($importation, '008791976I072026.DAT')));
         $this->assertCount(4, $lines);
         $this->assertSame('C-12345', str_getcsv($lines[1])[2]);
         $this->assertSame('C-12346', str_getcsv($lines[2])[2]);

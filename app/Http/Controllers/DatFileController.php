@@ -12,6 +12,8 @@ use App\Services\BIR\BirExpandedWtaxRowValidator;
 use App\Services\BIR\BirImportationRowValidator;
 use App\Services\BIR\BirPurchaseRowValidator;
 use App\Services\BIR\BirSalesRowValidator;
+use App\Services\BIR\DatAttachmentPdfRenderer;
+use App\Services\BIR\DatAttachmentReportBuilder;
 use App\Services\BIR\ReliefExpandedWtaxAnnualDatGenerator;
 use App\Services\BIR\ReliefExpandedWtaxDatGenerator;
 use App\Services\BIR\ReliefImportationDatGenerator;
@@ -24,6 +26,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use RuntimeException;
+use ZipArchive;
 
 class DatFileController extends Controller
 {
@@ -148,7 +152,9 @@ class DatFileController extends Controller
         BirPurchaseRowValidator $purchaseValidator,
         BirSalesRowValidator $salesValidator,
         BirImportationRowValidator $importationValidator,
-        BirExpandedWtaxRowValidator $expandedValidator
+        BirExpandedWtaxRowValidator $expandedValidator,
+        DatAttachmentReportBuilder $attachmentBuilder,
+        DatAttachmentPdfRenderer $pdfRenderer
     )
     {
         $validated = $request->validate([
@@ -208,11 +214,11 @@ class DatFileController extends Controller
         $period = Carbon::parse($validated['period'])->endOfMonth();
 
         if ($recordType === 'sales') {
-            return $this->downloadSales($period, $salesGenerator, $salesValidator);
+            return $this->downloadSales($period, $salesGenerator, $salesValidator, $attachmentBuilder, $pdfRenderer);
         }
 
         if ($recordType === 'importation') {
-            return $this->downloadImportation($period, $importationGenerator, $importationValidator);
+            return $this->downloadImportation($period, $importationGenerator, $importationValidator, $attachmentBuilder, $pdfRenderer);
         }
 
         if ($recordType === 'expanded') {
@@ -224,7 +230,7 @@ class DatFileController extends Controller
             );
         }
 
-        return $this->downloadPurchase($period, $purchaseGenerator, $purchaseValidator);
+        return $this->downloadPurchase($period, $purchaseGenerator, $purchaseValidator, $attachmentBuilder, $pdfRenderer);
     }
 
     /**
@@ -403,7 +409,9 @@ class DatFileController extends Controller
     private function downloadPurchase(
         Carbon $period,
         ReliefPurchaseDatGenerator $generator,
-        BirPurchaseRowValidator $validator
+        BirPurchaseRowValidator $validator,
+        DatAttachmentReportBuilder $attachmentBuilder,
+        DatAttachmentPdfRenderer $pdfRenderer
     ) {
         $records = VatInput::query()
             ->excludingImportationMirrors()
@@ -438,17 +446,7 @@ class DatFileController extends Controller
             return back()->with('error', 'Cannot generate DAT. Fix these VAT input rows first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
         }
 
-        $defaultCompany = config('bir.companies.008791976');
-
-        $company = [
-            'tin' => $defaultCompany['tin'],
-            'name' => $defaultCompany['name'],
-            'registered_name' => $defaultCompany['registered_name'],
-            'address1' => $defaultCompany['address1'],
-            'address2' => $defaultCompany['address2'],
-            'rdo_code' => $defaultCompany['rdo_code'],
-            'final_header_field' => '12',
-        ];
+        $company = $this->defaultReliefCompany();
 
         $content = $generator->generate(
             $company,
@@ -459,9 +457,7 @@ class DatFileController extends Controller
 
         $fileName = $generator->filename($company, $period);
 
-        return response($content)
-            ->header('Content-Type', 'text/plain')
-            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+        return $this->downloadDatPackage('purchase', $fileName, $content, $attachmentBuilder, $pdfRenderer, $records, $company, $period);
     }
 
     /**
@@ -673,7 +669,9 @@ class DatFileController extends Controller
     private function downloadSales(
         Carbon $period,
         ReliefSalesDatGenerator $generator,
-        BirSalesRowValidator $validator
+        BirSalesRowValidator $validator,
+        DatAttachmentReportBuilder $attachmentBuilder,
+        DatAttachmentPdfRenderer $pdfRenderer
     ) {
         $records = SalesVatInput::query()
             ->whereBetween('reporting_period', [
@@ -710,30 +708,20 @@ class DatFileController extends Controller
             return back()->with('error', 'Cannot generate Sales DAT. Fix these sales rows first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
         }
 
-        $defaultCompany = config('bir.companies.008791976');
-
-        $company = [
-            'tin' => $defaultCompany['tin'],
-            'name' => $defaultCompany['name'],
-            'registered_name' => $defaultCompany['registered_name'],
-            'address1' => $defaultCompany['address1'],
-            'address2' => $defaultCompany['address2'],
-            'rdo_code' => $defaultCompany['rdo_code'],
-            'final_header_field' => '12',
-        ];
+        $company = $this->defaultReliefCompany();
 
         $content = $generator->generate($company, $salesRows, $period);
         $fileName = $generator->filename($company, $period);
 
-        return response($content)
-            ->header('Content-Type', 'text/plain')
-            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+        return $this->downloadDatPackage('sales', $fileName, $content, $attachmentBuilder, $pdfRenderer, $salesRows, $company, $period);
     }
 
     private function downloadImportation(
         Carbon $period,
         ReliefImportationDatGenerator $generator,
-        BirImportationRowValidator $validator
+        BirImportationRowValidator $validator,
+        DatAttachmentReportBuilder $attachmentBuilder,
+        DatAttachmentPdfRenderer $pdfRenderer
     ) {
         $records = ImportationEntry::query()
             ->whereBetween('tax_month', [
@@ -769,17 +757,7 @@ class DatFileController extends Controller
             return back()->with('error', 'Cannot generate Importation DAT. Fix these entries first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
         }
 
-        $defaultCompany = config('bir.companies.008791976');
-
-        $company = [
-            'tin' => $defaultCompany['tin'],
-            'name' => $defaultCompany['name'],
-            'registered_name' => $defaultCompany['registered_name'],
-            'address1' => $defaultCompany['address1'],
-            'address2' => $defaultCompany['address2'],
-            'rdo_code' => $defaultCompany['rdo_code'],
-            'final_header_field' => '12',
-        ];
+        $company = $this->defaultReliefCompany();
 
         $content = $generator->generate(
             $company,
@@ -789,9 +767,58 @@ class DatFileController extends Controller
 
         $fileName = $generator->filename($company, $period);
 
-        return response($content)
-            ->header('Content-Type', 'text/plain')
-            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+        return $this->downloadDatPackage('importation', $fileName, $content, $attachmentBuilder, $pdfRenderer, $records, $company, $period);
+    }
+
+    private function defaultReliefCompany(): array
+    {
+        $defaultCompany = config('bir.companies.008791976');
+
+        return [
+            'tin' => $defaultCompany['tin'],
+            'name' => $defaultCompany['name'],
+            'registered_name' => $defaultCompany['registered_name'],
+            'address1' => $defaultCompany['address1'],
+            'address2' => $defaultCompany['address2'],
+            'rdo_code' => $defaultCompany['rdo_code'],
+            'final_header_field' => '12',
+        ];
+    }
+
+    private function downloadDatPackage(
+        string $recordType,
+        string $datFileName,
+        string $datContent,
+        DatAttachmentReportBuilder $attachmentBuilder,
+        DatAttachmentPdfRenderer $pdfRenderer,
+        Collection $records,
+        array $company,
+        Carbon $period
+    ) {
+        $report = $attachmentBuilder->build($recordType, $records, $company, $period);
+        $pdfContent = $pdfRenderer->render($report);
+        $pdfFileName = $this->attachmentFileName($datFileName);
+        $zipFileName = preg_replace('/\.DAT$/i', '.zip', $datFileName);
+        $zipPath = tempnam(sys_get_temp_dir(), 'dat-package-');
+
+        $zip = new ZipArchive();
+
+        if ($zip->open($zipPath, ZipArchive::OVERWRITE) !== true) {
+            throw new RuntimeException('Unable to create DAT download package.');
+        }
+
+        $zip->addFromString($datFileName, $datContent);
+        $zip->addFromString($pdfFileName, $pdfContent);
+        $zip->close();
+
+        return response()->download($zipPath, $zipFileName, [
+            'Content-Type' => 'application/zip',
+        ])->deleteFileAfterSend(true);
+    }
+
+    private function attachmentFileName(string $datFileName): string
+    {
+        return preg_replace('/\.DAT$/i', '-ATTACHMENT.pdf', $datFileName);
     }
 
 }
