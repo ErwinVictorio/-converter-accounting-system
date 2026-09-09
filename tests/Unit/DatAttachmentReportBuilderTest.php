@@ -33,6 +33,7 @@ class DatAttachmentReportBuilderTest extends TestCase
             ]),
             'sales' => [
                 'customer_tin' => '111222333', 'customer_type' => 'company', 'company_name' => 'CUSTOMER',
+                'customer_name' => 'SAVED CUSTOMER NAME',
                 'address1' => 'ADDRESS', 'exempt_sales' => 10, 'zero_rated_sales' => 50,
                 'taxable_sales' => 1000, 'output_vat' => 120,
             ],
@@ -55,6 +56,10 @@ class DatAttachmentReportBuilderTest extends TestCase
             $this->assertNotContains('07/31/2026', $row);
             $this->assertSame($type === 'importation' ? 'C2051' : '111-222-333', $row[0]);
             $this->assertSame($amounts, array_slice($row, $amountOffset, count($amounts)));
+            if ($type === 'sales') {
+                $this->assertSame('CUSTOMER', $row[1]);
+                $this->assertSame('SAVED CUSTOMER NAME', $row[2]);
+            }
         }
         $this->assertCount($columnCount, $report['totals']);
         $this->assertSame('Grand Total :', $report['totals'][$amountOffset - 1]);

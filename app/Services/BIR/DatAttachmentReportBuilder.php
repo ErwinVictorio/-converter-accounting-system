@@ -94,7 +94,7 @@ class DatAttachmentReportBuilder
                 + $this->amount($row, 'taxable_sales');
             $grossTaxableSales = $this->amount($row, 'taxable_sales')
                 + $this->amount($row, 'output_vat');
-            [$registeredName, $displayName] = $this->partyNames(
+            [$registeredName] = $this->partyNames(
                 (string) ($row['customer_type'] ?? 'company'),
                 $row['company_name'] ?? '',
                 $row['last_name'] ?? '',
@@ -105,7 +105,7 @@ class DatAttachmentReportBuilder
             return [
                 $this->tin((string) ($row['customer_tin'] ?? '')),
                 $registeredName,
-                $displayName,
+                (string) ($row['customer_name'] ?? ''),
                 $this->address($row['address1'] ?? '', $row['address2'] ?? ''),
                 $this->money($grossSales),
                 $this->money($this->amount($row, 'exempt_sales')),
