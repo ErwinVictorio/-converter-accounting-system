@@ -21,7 +21,6 @@ class DatAttachmentReportBuilder
     private function purchase(Collection $records, array $company, Carbon $period): array
     {
         $columns = [
-            'Taxable Month',
             'Taxpayer Identification Number',
             'Registered Name',
             'Name of Supplier',
@@ -37,7 +36,7 @@ class DatAttachmentReportBuilder
             'Amount of Gross Taxable Purchase',
         ];
 
-        $rows = $records->map(function (VatInput $record) use ($period) {
+        $rows = $records->map(function (VatInput $record) {
             $row = $record->toBirPurchaseRow();
             $taxablePurchase = $this->amount($row, 'services')
                 + $this->amount($row, 'capital_goods')
@@ -55,7 +54,6 @@ class DatAttachmentReportBuilder
             );
 
             return [
-                $this->reportDate($period),
                 $this->tin((string) ($row['vendor_tin'] ?? '')),
                 $registeredName,
                 $displayName,
@@ -78,7 +76,6 @@ class DatAttachmentReportBuilder
     private function sales(Collection $records, array $company, Carbon $period): array
     {
         $columns = [
-            'Taxable Month',
             'Taxpayer Identification Number',
             'Registered Name',
             'Name of Customer',
@@ -91,7 +88,7 @@ class DatAttachmentReportBuilder
             'Amount of Gross Taxable Sales',
         ];
 
-        $rows = $records->map(function (array $row) use ($period) {
+        $rows = $records->map(function (array $row) {
             $grossSales = $this->amount($row, 'exempt_sales')
                 + $this->amount($row, 'zero_rated_sales')
                 + $this->amount($row, 'taxable_sales');
@@ -106,7 +103,6 @@ class DatAttachmentReportBuilder
             );
 
             return [
-                $this->reportDate($period),
                 $this->tin((string) ($row['customer_tin'] ?? '')),
                 $registeredName,
                 $displayName,
@@ -126,7 +122,6 @@ class DatAttachmentReportBuilder
     private function importation(Collection $records, array $company, Carbon $period): array
     {
         $columns = [
-            'Taxable Month',
             'Import Entry Number',
             'Assessment/Release Date',
             'Registered Name',
@@ -143,7 +138,6 @@ class DatAttachmentReportBuilder
         ];
 
         $rows = $records->map(fn (ImportationEntry $record) => [
-            $this->reportDate($period),
             (string) $record->import_entry_no,
             $this->date($record->assessment_date),
             (string) $record->supplier,

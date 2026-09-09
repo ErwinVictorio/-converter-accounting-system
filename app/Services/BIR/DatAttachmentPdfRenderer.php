@@ -113,6 +113,7 @@ class DatAttachmentPdfRenderer
             "OWNER'S NAME: " . ($company['name'] ?? ''),
             "OWNER'S TRADE NAME : " . ($company['trade_name'] ?? ''),
             "OWNER'S ADDRESS: " . ($company['address'] ?? ''),
+            'TAXABLE MONTH: ' . ($report['period'] ?? ''),
             '',
             implode(' | ', $report['columns'] ?? []),
         ];

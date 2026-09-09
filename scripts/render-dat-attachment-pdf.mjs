@@ -86,6 +86,7 @@ function AttachmentDocument({ report }) {
             React.createElement(Text, { style: styles.meta }, `OWNER'S NAME: ${company.name || ""}`),
             React.createElement(Text, { style: styles.meta }, `OWNER'S TRADE NAME : ${company.trade_name || ""}`),
             React.createElement(Text, { style: styles.meta }, `OWNER'S ADDRESS: ${company.address || ""}`),
+            React.createElement(Text, { style: styles.meta }, `TAXABLE MONTH: ${report.period || ""}`),
             React.createElement(
                 View,
                 { style: styles.table },
