@@ -79,6 +79,19 @@ return [
         ],
 
         /*
+         * Human-readable labels for the PDF attachment only. DAT generation still
+         * writes the uploaded ATC code, never this description text.
+         */
+        'atc_descriptions' => [
+            'WC158' => 'Income payment made by top withholding agents to their local/resident supplier of goods other than those covered by other rates of withholding tax - Corporate',
+            'WC160' => 'Income payment made by top withholding agents to their local/resident supplier of services other than those covered by other rates of withholding tax - Corporate',
+            'WC100' => 'Income payments subject to expanded withholding tax',
+            'WI010' => 'Income payments subject to expanded withholding tax',
+            'WC139' => 'Income payments subject to expanded withholding tax',
+            'WI516' => 'Income payments subject to expanded withholding tax',
+        ],
+
+        /*
          * DEPRECATED, and read by nothing since the BIR-format upload landed.
          *
          * The in-house workbook this module first read had a tax-withheld column per

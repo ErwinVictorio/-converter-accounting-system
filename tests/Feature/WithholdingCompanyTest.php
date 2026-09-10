@@ -8,6 +8,7 @@ use App\Models\WithholdingCompany;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Testing\AssertableInertia;
+use Tests\Support\DatPackageAssertions;
 use Tests\TestCase;
 
 /**
@@ -26,6 +27,7 @@ use Tests\TestCase;
 class WithholdingCompanyTest extends TestCase
 {
     use RefreshDatabase;
+    use DatPackageAssertions;
 
     protected function setUp(): void
     {
@@ -79,6 +81,11 @@ class WithholdingCompanyTest extends TestCase
             'income_payment' => 100000.00,
             'tax_withheld' => 1000.00,
         ], $overrides));
+    }
+
+    private function expandedDatHeader($response, string $fileName = '12345678900000720261601EQ.DAT'): string
+    {
+        return explode("\r\n", $this->datFromPackage($response, $fileName))[0];
     }
 
     public function test_it_lists_companies(): void
@@ -368,10 +375,10 @@ class WithholdingCompanyTest extends TestCase
 
         $response->assertOk()->assertHeader(
             'content-disposition',
-            'attachment; filename="12345678900000720261601EQ.DAT"'
+            'attachment; filename=12345678900000720261601EQ.zip'
         );
 
-        $header = explode("\r\n", $response->getContent())[0];
+        $header = $this->expandedDatHeader($response);
 
         $this->assertSame('HQAP,H1601EQ,123456789,0000,"OTHER COMPANY INC",07/2026,049', $header);
     }
@@ -395,7 +402,7 @@ class WithholdingCompanyTest extends TestCase
 
         $this->assertSame(
             'HQAP,H1601EQ,123456789,0000,"OTHER COMPANY INC",07/2026,049',
-            explode("\r\n", $response->getContent())[0]
+            $this->expandedDatHeader($response)
         );
     }
 
@@ -412,7 +419,7 @@ class WithholdingCompanyTest extends TestCase
 
         $this->assertStringContainsString(
             '"OTHER COMPANY INCORPORATED"',
-            explode("\r\n", $response->getContent())[0]
+            $this->expandedDatHeader($response)
         );
     }
 

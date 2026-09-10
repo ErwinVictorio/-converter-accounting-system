@@ -21,6 +21,84 @@ class DatAttachmentReportBuilderTest extends TestCase
         ];
     }
 
+    public function test_expanded_report_uses_sawt_attachment_shape_without_changing_dat_fields(): void
+    {
+        $report = app(DatAttachmentReportBuilder::class)->build(
+            'expanded',
+            collect([
+                [
+                    'payee_type' => 'company',
+                    'payee_tin' => '007-086-184',
+                    'payee_branch_code' => '0000',
+                    'company_name' => 'ACERSTEEL INDUSTRIAL SALES INC',
+                    'last_name' => null,
+                    'first_name' => null,
+                    'middle_name' => null,
+                    'atc_code' => 'WC158',
+                    'tax_rate' => 1.00,
+                    'income_payment' => 3682716.00,
+                    'tax_withheld' => 36827.16,
+                ],
+                [
+                    'payee_type' => 'individual',
+                    'payee_tin' => '220052738',
+                    'payee_branch_code' => '0000',
+                    'company_name' => 'SHOULD NOT PRINT',
+                    'last_name' => 'BANSIL',
+                    'first_name' => 'ANNIE',
+                    'middle_name' => '',
+                    'atc_code' => 'WI516',
+                    'tax_rate' => 10.00,
+                    'income_payment' => 5865.60,
+                    'tax_withheld' => 586.56,
+                ],
+            ]),
+            ['tin' => '008791976', 'branch_code' => '0000', 'name' => 'FORTRESS STEEL INC.'],
+            Carbon::parse('2026-05-31')
+        );
+
+        $this->assertSame('BIR FORM 1702Q', $report['title']);
+        $this->assertSame('SUMMARY ALPHALIST OF WITHHOLDING TAXES (SAWT)', $report['subtitle']);
+        $this->assertSame('FOR THE MONTH OF MAY, 2026', $report['period_label']);
+        $this->assertSame("PAYEE'S NAME", $report['name_label']);
+        $this->assertNull($report['address_label']);
+        $this->assertFalse($report['show_trade_name']);
+        $this->assertFalse($report['show_taxable_month']);
+        $this->assertSame('008-791-976-0000', $report['company']['tin']);
+
+        $this->assertSame([
+            'Seq No',
+            'Taxpayer Identification Number',
+            'Corporation Registered Name',
+            'Individual Name',
+            'ATC Code',
+            'Nature of Payment',
+            'Amount of Income Payment',
+            'Tax Rate',
+            'Amount of Tax Withheld',
+        ], $report['columns']);
+
+        $this->assertSame('007-086-184-0000', $report['rows'][0][1]);
+        $this->assertSame('ACERSTEEL INDUSTRIAL SALES INC', $report['rows'][0][2]);
+        $this->assertSame('', $report['rows'][0][3]);
+        $this->assertStringStartsWith('Income payment made by top withholding agents', $report['rows'][0][5]);
+        $this->assertSame('1', $report['rows'][0][7]);
+        $this->assertSame('220-052-738-0000', $report['rows'][1][1]);
+        $this->assertSame('', $report['rows'][1][2]);
+        $this->assertSame('BANSIL ANNIE', $report['rows'][1][3]);
+        $this->assertSame('10', $report['rows'][1][7]);
+        $this->assertSame(['Grand Total :', '', '', '', '', '', '3688581.60', '', '37413.72'], $report['totals']);
+
+        $render = new \ReflectionMethod(DatAttachmentPdfRenderer::class, 'renderFallbackPdf');
+        $pdf = $render->invoke(app(DatAttachmentPdfRenderer::class), $report);
+        $this->assertStringStartsWith('%PDF-', $pdf);
+        $this->assertStringContainsString("PAYEE'S NAME: FORTRESS STEEL INC.", $pdf);
+        $this->assertStringContainsString('FOR THE MONTH OF MAY, 2026', $pdf);
+        $this->assertStringNotContainsString("OWNER'S TRADE NAME", $pdf);
+        $this->assertStringNotContainsString("OWNER'S ADDRESS", $pdf);
+        $this->assertStringNotContainsString('TAXABLE MONTH:', $pdf);
+    }
+
     #[DataProvider('reports')]
     public function test_period_is_header_metadata_and_remaining_cells_and_totals_align(
         string $type, int $columnCount, int $amountOffset, array $amounts

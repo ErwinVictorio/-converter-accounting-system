@@ -226,7 +226,9 @@ class DatFileController extends Controller
                 $period,
                 $expandedGenerator,
                 $expandedValidator,
-                $this->selectedWithholdingAgent($request)
+                $this->selectedWithholdingAgent($request),
+                $attachmentBuilder,
+                $pdfRenderer
             );
         }
 
@@ -468,7 +470,9 @@ class DatFileController extends Controller
         Carbon $period,
         ReliefExpandedWtaxDatGenerator $generator,
         BirExpandedWtaxRowValidator $validator,
-        array $withholdingAgent
+        array $withholdingAgent,
+        DatAttachmentReportBuilder $attachmentBuilder,
+        DatAttachmentPdfRenderer $pdfRenderer
     ) {
         $records = ExpandedWtaxEntry::query()
             ->where('withholding_agent_tin', $withholdingAgent['tin'])
@@ -519,9 +523,7 @@ class DatFileController extends Controller
 
         $fileName = $generator->filename($company, $period);
 
-        return response($content)
-            ->header('Content-Type', 'text/plain')
-            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+        return $this->downloadDatPackage('expanded', $fileName, $content, $attachmentBuilder, $pdfRenderer, $records, $company, $period);
     }
 
     private function downloadExpandedAnnual(

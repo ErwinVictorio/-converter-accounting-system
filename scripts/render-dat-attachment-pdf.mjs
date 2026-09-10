@@ -73,6 +73,12 @@ function Cell({ children, header = false, total = false }) {
 
 function AttachmentDocument({ report }) {
     const company = report.company || {};
+    const addressLabel = Object.prototype.hasOwnProperty.call(report, "address_label")
+        ? report.address_label
+        : "OWNER'S ADDRESS";
+    const showAddress = addressLabel !== null && addressLabel !== false;
+    const showTradeName = report.show_trade_name !== false;
+    const showTaxableMonth = report.show_taxable_month !== false;
 
     return React.createElement(
         Document,
@@ -82,11 +88,12 @@ function AttachmentDocument({ report }) {
             { size: "LEGAL", orientation: "landscape", style: styles.page },
             React.createElement(Text, { style: styles.title }, report.title || "DAT ATTACHMENT REPORT"),
             React.createElement(Text, { style: styles.subtitle }, report.subtitle || ""),
+            report.period_label && React.createElement(Text, { style: styles.meta }, report.period_label),
             React.createElement(Text, { style: styles.meta }, `TIN : ${company.tin || ""}`),
-            React.createElement(Text, { style: styles.meta }, `OWNER'S NAME: ${company.name || ""}`),
-            React.createElement(Text, { style: styles.meta }, `OWNER'S TRADE NAME : ${company.trade_name || ""}`),
-            React.createElement(Text, { style: styles.meta }, `OWNER'S ADDRESS: ${company.address || ""}`),
-            React.createElement(Text, { style: styles.meta }, `TAXABLE MONTH: ${report.period || ""}`),
+            React.createElement(Text, { style: styles.meta }, `${report.name_label || "OWNER'S NAME"}: ${company.name || ""}`),
+            showTradeName && React.createElement(Text, { style: styles.meta }, `OWNER'S TRADE NAME : ${company.trade_name || ""}`),
+            showAddress && React.createElement(Text, { style: styles.meta }, `${addressLabel}: ${company.address || ""}`),
+            showTaxableMonth && React.createElement(Text, { style: styles.meta }, `TAXABLE MONTH: ${report.period || ""}`),
             React.createElement(
                 View,
                 { style: styles.table },

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ExpandedWtaxEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\DatPackageAssertions;
 use Tests\TestCase;
 
 /**
@@ -20,6 +21,7 @@ use Tests\TestCase;
 class ExpandedWtaxDatFileTest extends TestCase
 {
     use RefreshDatabase;
+    use DatPackageAssertions;
 
     protected function setUp(): void
     {
@@ -68,6 +70,13 @@ class ExpandedWtaxDatFileTest extends TestCase
     private function lines(string $content): array
     {
         return explode("\r\n", rtrim($content, "\r\n"));
+    }
+
+    private function expandedDat(
+        string $url = '/download-datfile?period=2026-07-31&record_type=expanded',
+        string $fileName = '00879197600000720261601EQ.DAT'
+    ): string {
+        return $this->datFromPackage($this->get($url), $fileName);
     }
 
     public function test_the_generate_page_lists_expanded_reporting_months(): void
@@ -127,7 +136,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         ]);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         $this->assertStringContainsString('ACERSTEEL INDUSTRIAL SALES INC', implode('', $lines));
@@ -166,15 +175,14 @@ class ExpandedWtaxDatFileTest extends TestCase
         $response = $this->get('/download-datfile?period=2026-07-31&record_type=expanded');
 
         $response->assertOk();
-        $response->assertHeader('content-type', 'text/plain; charset=UTF-8');
         // Company TIN + branch + month/year + form type, the naming shape the
         // BIR 1601EQ validator requires.
         $response->assertHeader(
             'content-disposition',
-            'attachment; filename="00879197600000720261601EQ.DAT"'
+            'attachment; filename=00879197600000720261601EQ.zip'
         );
 
-        $lines = $this->lines($response->getContent());
+        $lines = $this->lines($this->datFromPackage($response, '00879197600000720261601EQ.DAT'));
 
         $this->assertCount(4, $lines); // header + 2 details + trailer
         $this->assertSame('HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",07/2026,045', $lines[0]);
@@ -228,18 +236,18 @@ class ExpandedWtaxDatFileTest extends TestCase
             'tax_withheld' => 1000.00,
         ]);
 
-        $first = $this->lines($this->get(
+        $first = $this->lines($this->expandedDat(
             '/download-datfile?period=2026-07-31&record_type=expanded&withholding_agent_tin=008791976&withholding_agent_branch_code=0000'
-        )->getContent());
+        ));
 
         $secondResponse = $this->get(
             '/download-datfile?period=2026-07-31&record_type=expanded&withholding_agent_tin=123456789&withholding_agent_branch_code=0002'
         );
-        $second = $this->lines($secondResponse->getContent());
+        $second = $this->lines($this->datFromPackage($secondResponse, '12345678900020720261601EQ.DAT'));
 
         $secondResponse->assertHeader(
             'content-disposition',
-            'attachment; filename="12345678900020720261601EQ.DAT"'
+            'attachment; filename=12345678900020720261601EQ.zip'
         );
 
         $this->assertSame('HQAP,H1601EQ,008791976,0000,"FORTRESS STEEL INC",07/2026,045', $first[0]);
@@ -264,7 +272,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         ]);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         // Negative amounts keep their sign and their two decimals.
@@ -286,7 +294,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->entry(['payee_name' => 'ACERSTEEL INDUSTRIAL SALES INC']);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         $names = array_map(fn ($line) => str_getcsv($line)[5], array_slice($lines, 1, 3));
@@ -324,7 +332,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->prudential(['income_payment' => 1988.50, 'tax_withheld' => 39.77]);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         // Two stored rows, one detail line: header + 1 detail + trailer.
@@ -349,7 +357,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->prudential(['income_payment' => 1988.50, 'tax_withheld' => 39.77]);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         // Three stored rows, two detail lines.
@@ -376,7 +384,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->prudential(['income_payment' => 1988.50, 'tax_withheld' => 39.77]);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         $this->assertCount(5, $lines); // 4 stored rows, 3 detail lines
@@ -410,7 +418,7 @@ class ExpandedWtaxDatFileTest extends TestCase
 
         // ...is what the file delivers.
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         $this->assertCount($count, array_slice($lines, 1, -1));
@@ -427,7 +435,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->entry(['payee_tin' => '007-086-184-000', 'income_payment' => 500.00, 'tax_withheld' => 5.00]);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         // Three stored rows, one detail line: header + 1 detail + trailer.
@@ -453,7 +461,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->entry(['atc_code' => 'WC160', 'tax_rate' => 2.00, 'income_payment' => 100000.00, 'tax_withheld' => 2000.00]);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         $this->assertCount(4, $lines);
@@ -475,7 +483,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->individual(['payee_tin' => '119999999', 'income_payment' => 100.00, 'tax_withheld' => 10.00]);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         // Four stored rows, two detail lines -- one per payee per rate.
@@ -509,7 +517,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->individual();
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-31&record_type=expanded')->getContent()
+            $this->expandedDat()
         );
 
         $this->assertCount(7, str_getcsv($lines[0]));
@@ -536,7 +544,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         $this->entry(['reporting_period' => '2026-06-30', 'payee_name' => 'JUNE PAYEE INC', 'company_name' => 'JUNE PAYEE INC']);
 
         $lines = $this->lines(
-            $this->get('/download-datfile?period=2026-07-15&record_type=expanded')->getContent()
+            $this->expandedDat('/download-datfile?period=2026-07-15&record_type=expanded')
         );
 
         // Any day inside the month resolves to the same month-end file.

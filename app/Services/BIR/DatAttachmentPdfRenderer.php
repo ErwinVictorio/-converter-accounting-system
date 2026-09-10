@@ -109,14 +109,32 @@ class DatAttachmentPdfRenderer
         $lines = [
             (string) ($report['title'] ?? 'DAT ATTACHMENT REPORT'),
             (string) ($report['subtitle'] ?? 'RECONCILIATION OF LISTING FOR ENFORCEMENT'),
-            'TIN : ' . ($company['tin'] ?? ''),
-            "OWNER'S NAME: " . ($company['name'] ?? ''),
-            "OWNER'S TRADE NAME : " . ($company['trade_name'] ?? ''),
-            "OWNER'S ADDRESS: " . ($company['address'] ?? ''),
-            'TAXABLE MONTH: ' . ($report['period'] ?? ''),
-            '',
-            implode(' | ', $report['columns'] ?? []),
         ];
+
+        if (($report['period_label'] ?? null) !== null) {
+            $lines[] = (string) $report['period_label'];
+        }
+
+        $lines[] = 'TIN : ' . ($company['tin'] ?? '');
+        $lines[] = (string) ($report['name_label'] ?? "OWNER'S NAME") . ': ' . ($company['name'] ?? '');
+
+        if (($report['show_trade_name'] ?? true) !== false) {
+            $lines[] = "OWNER'S TRADE NAME : " . ($company['trade_name'] ?? '');
+        }
+
+        $addressLabel = array_key_exists('address_label', $report)
+            ? $report['address_label']
+            : "OWNER'S ADDRESS";
+        if ($addressLabel !== null && $addressLabel !== false) {
+            $lines[] = (string) $addressLabel . ': ' . ($company['address'] ?? '');
+        }
+
+        if (($report['show_taxable_month'] ?? true) !== false) {
+            $lines[] = 'TAXABLE MONTH: ' . ($report['period'] ?? '');
+        }
+
+        $lines[] = '';
+        $lines[] = implode(' | ', $report['columns'] ?? []);
 
         foreach (($report['rows'] ?? []) as $row) {
             $lines[] = implode(' | ', array_map(fn ($value) => (string) $value, $row));

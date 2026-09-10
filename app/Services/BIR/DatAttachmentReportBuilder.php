@@ -5,6 +5,7 @@ namespace App\Services\BIR;
 use App\Models\ImportationEntry;
 use App\Models\VatInput;
 use Carbon\Carbon;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 
 class DatAttachmentReportBuilder
@@ -14,6 +15,7 @@ class DatAttachmentReportBuilder
         return match ($recordType) {
             'sales' => $this->sales($records, $company, $period),
             'importation' => $this->importation($records, $company, $period),
+            'expanded' => $this->expanded($records, $company, $period),
             default => $this->purchase($records, $company, $period),
         };
     }
@@ -156,14 +158,76 @@ class DatAttachmentReportBuilder
         return $this->report('IMPORTS TRANSACTION', $columns, $rows, $company, $period);
     }
 
-    private function report(string $title, array $columns, Collection $rows, array $company, Carbon $period): array
+    private function expanded(Collection $records, array $company, Carbon $period): array
+    {
+        $columns = [
+            'Seq No',
+            'Taxpayer Identification Number',
+            'Corporation Registered Name',
+            'Individual Name',
+            'ATC Code',
+            'Nature of Payment',
+            'Amount of Income Payment',
+            'Tax Rate',
+            'Amount of Tax Withheld',
+        ];
+
+        $rows = $records->values()->map(function (array $row, int $index) {
+            return [
+                (string) ($index + 1),
+                $this->tinWithBranch((string) ($row['payee_tin'] ?? ''), (string) ($row['payee_branch_code'] ?? '0000')),
+                ($row['payee_type'] ?? 'company') === 'individual' ? '' : (string) ($row['company_name'] ?? ''),
+                $this->individualName($row),
+                (string) ($row['atc_code'] ?? ''),
+                $this->atcDescription((string) ($row['atc_code'] ?? '')),
+                $this->money($this->amount($row, 'income_payment')),
+                $this->rate($this->amount($row, 'tax_rate')),
+                $this->money($this->amount($row, 'tax_withheld')),
+            ];
+        });
+
+        $report = $this->report(
+            'BIR FORM 1702Q',
+            $columns,
+            $rows,
+            $company,
+            $period,
+            [
+                'subtitle' => 'SUMMARY ALPHALIST OF WITHHOLDING TAXES (SAWT)',
+                'period_label' => 'FOR THE MONTH OF ' . strtoupper($period->copy()->endOfMonth()->format('F')) . ', ' . $period->copy()->endOfMonth()->format('Y'),
+                'name_label' => "PAYEE'S NAME",
+                'address_label' => null,
+                'show_trade_name' => false,
+                'show_taxable_month' => false,
+                'tin' => $this->tinWithBranch((string) ($company['tin'] ?? ''), (string) ($company['branch_code'] ?? '0000')),
+            ]
+        );
+
+        $report['totals'] = $this->expandedTotals($rows);
+
+        return $report;
+    }
+
+    private function report(
+        string $title,
+        array $columns,
+        Collection $rows,
+        array $company,
+        Carbon $period,
+        array $options = []
+    ): array
     {
         return [
             'title' => $title,
-            'subtitle' => 'RECONCILIATION OF LISTING FOR ENFORCEMENT',
+            'subtitle' => $options['subtitle'] ?? 'RECONCILIATION OF LISTING FOR ENFORCEMENT',
             'period' => $this->reportDate($period),
+            'period_label' => $options['period_label'] ?? null,
+            'name_label' => $options['name_label'] ?? "OWNER'S NAME",
+            'address_label' => array_key_exists('address_label', $options) ? $options['address_label'] : "OWNER'S ADDRESS",
+            'show_trade_name' => $options['show_trade_name'] ?? true,
+            'show_taxable_month' => $options['show_taxable_month'] ?? true,
             'company' => [
-                'tin' => $this->tin((string) ($company['tin'] ?? '')),
+                'tin' => $options['tin'] ?? $this->tin((string) ($company['tin'] ?? '')),
                 'name' => (string) ($company['name'] ?? ''),
                 'trade_name' => (string) ($company['registered_name'] ?? $company['name'] ?? ''),
                 'address' => $this->address($company['address1'] ?? '', $company['address2'] ?? ''),
@@ -193,6 +257,20 @@ class DatAttachmentReportBuilder
         if ($firstMoneyIndex !== false) {
             $totals[$firstMoneyIndex - 1] = 'Grand Total :';
         }
+
+        return $totals;
+    }
+
+    private function expandedTotals(Collection $rows): array
+    {
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        $totals = array_fill(0, count($rows->first()), '');
+        $totals[0] = 'Grand Total :';
+        $totals[6] = $this->money($rows->sum(fn (array $row) => $this->amount($row[6] ?? 0)));
+        $totals[8] = $this->money($rows->sum(fn (array $row) => $this->amount($row[8] ?? 0)));
 
         return $totals;
     }
@@ -243,6 +321,46 @@ class DatAttachmentReportBuilder
         }
 
         return substr($digits, 0, 3) . '-' . substr($digits, 3, 3) . '-' . substr($digits, 6, 3);
+    }
+
+    private function tinWithBranch(string $tin, string $branchCode): string
+    {
+        $tinDigits = substr(preg_replace('/\D/', '', $tin), 0, 9);
+
+        if (strlen($tinDigits) !== 9) {
+            return $tin;
+        }
+
+        $branchDigits = preg_replace('/\D/', '', $branchCode);
+        $branchDigits = $branchDigits === ''
+            ? '0000'
+            : substr(str_pad($branchDigits, 4, '0', STR_PAD_LEFT), 0, 4);
+
+        return substr($tinDigits, 0, 3) . '-'
+            . substr($tinDigits, 3, 3) . '-'
+            . substr($tinDigits, 6, 3) . '-'
+            . $branchDigits;
+    }
+
+    private function individualName(array $row): string
+    {
+        return trim(implode(' ', array_filter([
+            $row['last_name'] ?? '',
+            $row['first_name'] ?? '',
+            $row['middle_name'] ?? '',
+        ])));
+    }
+
+    private function atcDescription(string $atc): string
+    {
+        $atc = strtoupper(trim($atc));
+
+        return (string) (Arr::get(config('bir.expanded_wtax.atc_descriptions', []), $atc) ?: "ATC {$atc}");
+    }
+
+    private function rate(float $value): string
+    {
+        return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
     }
 
     private function address(?string $address1, ?string $address2): string

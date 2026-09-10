@@ -54,7 +54,8 @@ function GenerateDatFile() {
     const datHeading = data.record_type === "expanded" && data.report_type === "annual"
         ? "1604E Expanded WTAX"
         : datType.heading;
-    const downloadsAttachment = ["purchase", "sales", "importation"].includes(data.record_type);
+    const downloadsAttachment = ["purchase", "sales", "importation"].includes(data.record_type)
+        || (data.record_type === "expanded" && data.report_type === "quarterly");
 
     const selectedPeriod = useMemo(() => {
         return availablePeriods.find((period) => period.value === data.period);
