@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   Building,
   CheckCircle2,
+  Eye,
   Loader2,
   Lock,
   Pencil,
@@ -44,6 +45,7 @@ import {
   TableRow,
 } from "@/Components/ui/table";
 import DataTablePagination from "@/Layouts/Pagination";
+import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 
 const containerVariants = {
   hidden: { opacity: 0, y: 15 },
@@ -93,6 +95,7 @@ function WithholdingCompanies() {
   const rows = companies?.data || [];
 
   const [editing, setEditing] = useState(null);
+  const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
   const [search, setSearch] = useState(filters.search || "");
 
   const addForm = useForm({ ...emptyCompany });
@@ -479,6 +482,16 @@ function WithholdingCompanies() {
                       <TableCell className="text-right pr-6 py-4 whitespace-nowrap">
                         <Button
                           type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedInfoRecord(company)}
+                          className="mr-1 h-8 gap-1.5"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View Info
+                        </Button>
+                        <Button
+                          type="button"
                           variant="ghost"
                           size="icon"
                           title="Edit"
@@ -722,6 +735,14 @@ function WithholdingCompanies() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ViewInfoDialog
+        open={Boolean(selectedInfoRecord)}
+        onOpenChange={(open) => !open && setSelectedInfoRecord(null)}
+        resourceType="withholding-company"
+        recordId={selectedInfoRecord?.id}
+        fallbackTitle="Withholding Company Information"
+        fallbackSubtitle={selectedInfoRecord?.registered_name}
+      />
     </motion.section>
   );
 }

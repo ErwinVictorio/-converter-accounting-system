@@ -3,7 +3,7 @@ import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Pencil, Trash2, Loader2, Plus, RefreshCw } from "lucide-react";
+import { Eye, Pencil, Trash2, Loader2, Plus, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import MainLayout from "@/Layouts/MainLayout";
@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/Components/ui/table";
 import DataTablePagination from "@/Layouts/Pagination";
+import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { brokerSchema } from "@/lib/FormSchema";
 
 const containerVariants = {
@@ -45,6 +46,7 @@ function ManageBrokers() {
   const { flash, brokerList = [] } = usePage().props;
   const [editingId, setEditingId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
   const {
     register,
@@ -273,6 +275,16 @@ function ManageBrokers() {
                       <TableCell className="text-right pr-6 py-4 space-x-1">
                         <Button
                           type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedInfoRecord(broker)}
+                          className="h-8 gap-1.5"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View Info
+                        </Button>
+                        <Button
+                          type="button"
                           variant="ghost"
                           size="icon"
                           onClick={() => handleEdit(broker)}
@@ -314,6 +326,14 @@ function ManageBrokers() {
           )}
         </Card>
       </motion.div>
+      <ViewInfoDialog
+        open={Boolean(selectedInfoRecord)}
+        onOpenChange={(open) => !open && setSelectedInfoRecord(null)}
+        resourceType="broker"
+        recordId={selectedInfoRecord?.id}
+        fallbackTitle="Broker Information"
+        fallbackSubtitle={selectedInfoRecord?.broker_name}
+      />
     </motion.section>
   );
 }

@@ -1,9 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePage } from "@inertiajs/react";
 import { toast } from "sonner";
+import { Eye } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
 import { Badge } from "@/Components/ui/badge";
+import { Button } from "@/Components/ui/button";
 import {
     Table,
     TableBody,
@@ -15,6 +17,7 @@ import {
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
 import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
+import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import WithholdingTaxRateSummary from "@/Components/Records/WithholdingTaxRateSummary";
 import { formatCurrency, formatMonth } from "@/Components/Records/format";
 
@@ -31,6 +34,7 @@ function ExpandedWtaxRecords() {
         months = [],
         filters = {},
     } = usePage().props;
+    const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
@@ -78,6 +82,7 @@ function ExpandedWtaxRecords() {
                             <TableHead className="font-semibold text-slate-700">Reporting Month</TableHead>
                             <TableHead className="font-semibold text-slate-700">Report Type</TableHead>
                             <TableHead className="font-semibold text-slate-700">Status</TableHead>
+                            <TableHead className="text-right font-semibold text-slate-700">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -177,11 +182,23 @@ function ExpandedWtaxRecords() {
                                             </Badge>
                                         )}
                                     </TableCell>
+                                    <TableCell className="whitespace-nowrap text-right">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setSelectedInfoRecord(item)}
+                                            className="h-8 gap-1.5"
+                                        >
+                                            <Eye className="h-3.5 w-3.5" />
+                                            View Info
+                                        </Button>
+                                    </TableCell>
                                 </TableRow>
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={11} className="h-32 text-center text-slate-500">
+                                <TableCell colSpan={12} className="h-32 text-center text-slate-500">
                                     No expanded withholding tax records found.
                                 </TableCell>
                             </TableRow>
@@ -189,6 +206,14 @@ function ExpandedWtaxRecords() {
                     </TableBody>
                 </Table>
             </RecordTableShell>
+            <ViewInfoDialog
+                open={Boolean(selectedInfoRecord)}
+                onOpenChange={(open) => !open && setSelectedInfoRecord(null)}
+                resourceType="expanded-wtax"
+                recordId={selectedInfoRecord?.source_record_id}
+                fallbackTitle="Expanded WTAX Information"
+                fallbackSubtitle={selectedInfoRecord?.payee_name}
+            />
         </section>
     );
 }

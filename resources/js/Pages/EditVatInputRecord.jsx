@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Eye, Loader2, Save } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
@@ -23,10 +23,12 @@ import {
   TableRow,
 } from "@/Components/ui/table";
 import { birFieldLimits } from "@/lib/FormSchema";
+import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 
 function EditVatInputRecord() {
   const { flash, vatInput } = usePage().props;
   const [targetLookupStatus, setTargetLookupStatus] = useState("idle");
+  const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
   const { data, setData, put, processing, errors, reset } = useForm({
     supplier_name: "",
@@ -212,6 +214,7 @@ function EditVatInputRecord() {
                 <TableHead className="font-semibold text-slate-700 text-right">Services</TableHead>
                 <TableHead className="font-semibold text-slate-700 text-right">Others</TableHead>
                 <TableHead className="font-semibold text-slate-700 text-right">Total</TableHead>
+                <TableHead className="font-semibold text-slate-700 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -248,6 +251,18 @@ function EditVatInputRecord() {
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
                   {formatCurrency(vatInput.total)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedInfoRecord(vatInput)}
+                    className="h-8 gap-1.5"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    View Info
+                  </Button>
                 </TableCell>
               </TableRow>
             </TableBody>
@@ -493,6 +508,14 @@ function EditVatInputRecord() {
           </Button>
         </CardFooter>
       </Card>
+      <ViewInfoDialog
+        open={Boolean(selectedInfoRecord)}
+        onOpenChange={(open) => !open && setSelectedInfoRecord(null)}
+        resourceType="purchase"
+        recordId={selectedInfoRecord?.id}
+        fallbackTitle="Purchase Information"
+        fallbackSubtitle={selectedInfoRecord?.supplier_name}
+      />
     </section>
   );
 }

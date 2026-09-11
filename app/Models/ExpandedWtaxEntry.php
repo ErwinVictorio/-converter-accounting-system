@@ -108,9 +108,9 @@ class ExpandedWtaxEntry extends Model
      * about the TIN. A detail line can only carry one TIN, so the group takes the
      * first usable one it finds along with that row's branch code, and records
      * every distinct value it saw in distinct_payee_tins /
-     * distinct_payee_branch_codes. Those four metadata keys exist for the records
-     * screen and for tests; the generator never reads them, so nothing about them
-     * reaches the DAT.
+     * distinct_payee_branch_codes. The metadata keys and source_record_id exist
+     * for the records screen, View Info, and tests; the generator never reads
+     * them, so nothing about them reaches the DAT.
      *
      * Two rows for the same payee at different rates, or under different ATCs,
      * still file separately -- that is what the BIR schedule asks for.
@@ -135,6 +135,7 @@ class ExpandedWtaxEntry extends Model
                     'withholding_agent_tin' => $row->withholding_agent_tin,
                     'withholding_agent_branch_code' => $row->withholding_agent_branch_code,
                     'withholding_agent_name' => $row->withholding_agent_name,
+                    'source_record_id' => $row->id,
                     'merged_rows' => 0,
                     'distinct_payee_tins' => [],
                     'distinct_payee_branch_codes' => [],
@@ -192,7 +193,7 @@ class ExpandedWtaxEntry extends Model
      * string and so never merges with a real code -- such rows are unfilable
      * anyway and the validator reports them.
      */
-    private static function consolidationKey(self $row): string
+    public static function consolidationKey(self $row): string
     {
         return implode('|', [
             $row->reporting_period?->format('Y-m') ?? '',

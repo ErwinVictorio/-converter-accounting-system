@@ -3,7 +3,7 @@ import { router, usePage } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Loader2, Pencil, Trash2 } from "lucide-react";
+import { Eye, Loader2, Pencil, Trash2 } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
@@ -31,6 +31,7 @@ import ImportationFormFields, {
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
 import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
+import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { importationSchema } from "@/lib/FormSchema";
 
 /**
@@ -45,6 +46,7 @@ function ImportationRecords() {
     const rows = entries?.data || [];
     const [isUpdating, setIsUpdating] = useState(false);
     const [editingEntry, setEditingEntry] = useState(null);
+    const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
     const {
         register: registerEdit,
@@ -187,6 +189,16 @@ function ImportationRecords() {
                                     <TableCell className="whitespace-nowrap py-3 pr-6 text-right">
                                         <Button
                                             type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setSelectedInfoRecord(entry)}
+                                            className="mr-1 h-8 gap-1.5"
+                                        >
+                                            <Eye className="h-3.5 w-3.5" />
+                                            View Info
+                                        </Button>
+                                        <Button
+                                            type="button"
                                             variant="ghost"
                                             size="icon"
                                             onClick={() => handleOpenEdit(entry)}
@@ -249,6 +261,14 @@ function ImportationRecords() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            <ViewInfoDialog
+                open={Boolean(selectedInfoRecord)}
+                onOpenChange={(open) => !open && setSelectedInfoRecord(null)}
+                resourceType="importation"
+                recordId={selectedInfoRecord?.id}
+                fallbackTitle="Importation Information"
+                fallbackSubtitle={selectedInfoRecord?.import_entry_no}
+            />
         </section>
     );
 }

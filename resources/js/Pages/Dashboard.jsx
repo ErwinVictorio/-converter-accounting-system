@@ -17,6 +17,7 @@ import {
   BarChart3,
   Calculator,
   Database,
+  Eye,
   FileText,
   Loader2,
   Percent,
@@ -30,7 +31,9 @@ import {
 } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
+import { Button } from "@/Components/ui/button";
 import { Card } from "@/Components/ui/card";
+import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import {
   Select,
   SelectContent,
@@ -381,6 +384,7 @@ export default function Dashboard({
 }) {
   const [selectedMonth, setSelectedMonth] = useState(filters.tax_month ?? "");
   const [loading, setLoading] = useState(false);
+  const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
   // Keeps the trigger honest if the props change from anywhere but the select.
   useEffect(() => {
@@ -810,12 +814,13 @@ export default function Dashboard({
                       <th className="px-5 py-3 text-right font-bold">Taxable Goods</th>
                       <th className="px-5 py-3 text-right font-bold">VAT</th>
                       <th className="px-5 py-3 text-left font-bold">Date Added</th>
+                      <th className="px-5 py-3 text-right font-bold">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {recent.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-500">
+                        <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-500">
                           No importation entries for {monthLabel}.
                         </td>
                       </tr>
@@ -848,6 +853,18 @@ export default function Dashboard({
                           <td className="whitespace-nowrap px-5 py-3.5 text-slate-500">
                             {entry.created_at}
                           </td>
+                          <td className="whitespace-nowrap px-5 py-3.5 text-right">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedInfoRecord(entry)}
+                              className="h-8 gap-1.5"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              View Info
+                            </Button>
+                          </td>
                         </motion.tr>
                       ))
                     )}
@@ -857,8 +874,16 @@ export default function Dashboard({
             </Card>
           </motion.div>
         </motion.div>
-      </motion.div>
-    </>
+        </motion.div>
+        <ViewInfoDialog
+          open={Boolean(selectedInfoRecord)}
+          onOpenChange={(open) => !open && setSelectedInfoRecord(null)}
+          resourceType="importation"
+          recordId={selectedInfoRecord?.id}
+          fallbackTitle="Importation Information"
+          fallbackSubtitle={selectedInfoRecord?.import_entry_no}
+        />
+      </>
   );
 }
 

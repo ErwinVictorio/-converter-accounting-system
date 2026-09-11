@@ -9,6 +9,7 @@ use App\Http\Controllers\ManageBrokerController;
 use App\Http\Controllers\RecordController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\VatInputController;
+use App\Http\Controllers\ViewInfoController;
 use App\Http\Controllers\WithholdingCompanyController;
 use Illuminate\Support\Facades\Route;
 
@@ -45,6 +46,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/records/expanded-wtax', [RecordController::class, 'expandedWtax'])->name('records.expanded-wtax.index');
     // The manual-entry module owns this listing; the Record page is just its table.
     Route::get('/records/importations', [ImportationController::class, 'records'])->name('records.importations.index');
+
+    Route::get('/view-info/{resource}/{id}', [ViewInfoController::class, 'show'])
+        ->name('view-info.show');
 
     Route::get('/records/{vatInput}/adjusted-lookup', [VatInputController::class, 'adjustedLookup']);
     Route::get('/records/{vatInput}/edit', [VatInputController::class, 'edit']);

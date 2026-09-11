@@ -19,7 +19,11 @@ class SalesSiCmConsolidator
             ->values();
     }
 
-    private function identityKey(SalesVatInput $record): string
+    /**
+     * Shared with the read-only View Info lookup so its source documents use
+     * exactly the same customer identity as the listing and DAT consolidation.
+     */
+    public function identityKey(SalesVatInput $record): string
     {
         $tin = substr(preg_replace('/\D/', '', (string) $record->customer_tin), 0, 9);
         $name = preg_replace('/\s+/', '', strtoupper((string) ($record->company_name ?: $record->customer_name)));

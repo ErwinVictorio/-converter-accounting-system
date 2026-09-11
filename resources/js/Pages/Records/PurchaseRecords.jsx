@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { router, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
-import { Pencil } from "lucide-react";
+import { Eye, Pencil } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
@@ -18,6 +18,7 @@ import BirVendorDialog from "@/Components/Records/BirVendorDialog";
 import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
+import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { formatCurrency } from "@/Components/Records/format";
 
 // A DAT detail line needs 9 or 12 digits, dashed or not.
@@ -34,6 +35,7 @@ const computedPurchaseTotal = (item) => {
 function PurchaseRecords() {
     const { flash, vatInputs, months = [], filters = {} } = usePage().props;
     const [selectedBirRecord, setSelectedBirRecord] = useState(null);
+    const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
@@ -74,7 +76,7 @@ function PurchaseRecords() {
                             <TableHead className="text-right font-semibold text-slate-700">Services</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Others</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Total</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Action</TableHead>
+                            <TableHead className="text-right font-semibold text-slate-700">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -135,6 +137,16 @@ function PurchaseRecords() {
                                             <div className="flex justify-end gap-2">
                                                 <Button
                                                     type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setSelectedInfoRecord(item)}
+                                                    className="h-8 gap-1.5"
+                                                >
+                                                    <Eye className="h-3.5 w-3.5" />
+                                                    View Info
+                                                </Button>
+                                                <Button
+                                                    type="button"
                                                     variant={hasBirTin && hasBirName ? "outline" : "default"}
                                                     size="sm"
                                                     onClick={() => setSelectedBirRecord(item)}
@@ -178,6 +190,14 @@ function PurchaseRecords() {
             <BirVendorDialog
                 record={selectedBirRecord}
                 onClose={() => setSelectedBirRecord(null)}
+            />
+            <ViewInfoDialog
+                open={Boolean(selectedInfoRecord)}
+                onOpenChange={(open) => !open && setSelectedInfoRecord(null)}
+                resourceType="purchase"
+                recordId={selectedInfoRecord?.id}
+                fallbackTitle="Purchase Information"
+                fallbackSubtitle={selectedInfoRecord?.supplier_name}
             />
         </section>
     );

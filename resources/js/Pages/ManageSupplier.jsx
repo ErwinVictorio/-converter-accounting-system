@@ -3,7 +3,7 @@ import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Eye, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { motion } from "framer-motion";
 
 import MainLayout from "@/Layouts/MainLayout";
@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/Components/ui/table";
 import DataTablePagination from "@/Layouts/Pagination";
+import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { birFieldLimits, supplierSchema } from "@/lib/FormSchema";
 
 const containerVariants = {
@@ -55,6 +56,7 @@ function ManageSupplier() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
+  const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
   const [filterValues, setFilterValues] = useState({
     tin: filters.tin || "",
     name: filters.name || "",
@@ -412,6 +414,16 @@ function ManageSupplier() {
                       <TableCell className="text-right pr-6 py-4">
                         <Button
                           type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedInfoRecord(supplier)}
+                          className="mr-1 h-8 gap-1.5"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View Info
+                        </Button>
+                        <Button
+                          type="button"
                           variant="ghost"
                           size="icon"
                           onClick={() => handleOpenEdit(supplier)}
@@ -559,6 +571,14 @@ function ManageSupplier() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ViewInfoDialog
+        open={Boolean(selectedInfoRecord)}
+        onOpenChange={(open) => !open && setSelectedInfoRecord(null)}
+        resourceType="supplier"
+        recordId={selectedInfoRecord?.id}
+        fallbackTitle="Supplier Information"
+        fallbackSubtitle={selectedInfoRecord?.name}
+      />
     </motion.section>
   );
 }

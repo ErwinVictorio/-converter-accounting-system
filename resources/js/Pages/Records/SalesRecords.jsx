@@ -1,9 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePage } from "@inertiajs/react";
 import { toast } from "sonner";
+import { Eye } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
 import { Badge } from "@/Components/ui/badge";
+import { Button } from "@/Components/ui/button";
 import {
     Table,
     TableBody,
@@ -15,10 +17,12 @@ import {
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
 import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
+import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { formatCurrency } from "@/Components/Records/format";
 
 function SalesRecords() {
     const { flash, salesVatInputs, months = [], filters = {} } = usePage().props;
+    const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
@@ -61,6 +65,7 @@ function SalesRecords() {
                             <TableHead className="text-right font-semibold text-slate-700">Taxable Net of VAT</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Output VAT</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Gross Taxable</TableHead>
+                            <TableHead className="text-right font-semibold text-slate-700">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -99,11 +104,23 @@ function SalesRecords() {
                                     <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
                                         {formatCurrency(item.gross_amount)}
                                     </TableCell>
+                                    <TableCell className="whitespace-nowrap text-right">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setSelectedInfoRecord(item)}
+                                            className="h-8 gap-1.5"
+                                        >
+                                            <Eye className="h-3.5 w-3.5" />
+                                            View Info
+                                        </Button>
+                                    </TableCell>
                                 </TableRow>
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={10} className="h-32 text-center text-slate-500">
+                                <TableCell colSpan={11} className="h-32 text-center text-slate-500">
                                     No sales records found.
                                 </TableCell>
                             </TableRow>
@@ -111,6 +128,15 @@ function SalesRecords() {
                     </TableBody>
                 </Table>
             </RecordTableShell>
+            <ViewInfoDialog
+                open={Boolean(selectedInfoRecord)}
+                onOpenChange={(open) => !open && setSelectedInfoRecord(null)}
+                resourceType="sales"
+                recordId={selectedInfoRecord?.id}
+                period={filters.period || ""}
+                fallbackTitle="Sales Information"
+                fallbackSubtitle={selectedInfoRecord?.customer_name}
+            />
         </section>
     );
 }
