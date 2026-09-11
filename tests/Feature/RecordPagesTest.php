@@ -486,6 +486,337 @@ class RecordPagesTest extends TestCase
         );
     }
 
+    /**
+     * A spread of rates in one month, holding the shapes the rate summary has to
+     * get right: two payees on one rate, a fractional rate, centavo amounts, and
+     * a reversal that cancels its own rate back to zero.
+     *
+     * Rate totals, in the order the cards must appear:
+     *
+     *   1.00 -> 38515.97    1.50 -> 79.13    2.00 -> 12345.67
+     *   5.00 -> 0.30       10.00 -> 0.00
+     *
+     * which is 50941.07 across every row the table lists.
+     */
+    private function seedRateSpread(): void
+    {
+        $this->withholding([
+            'payee_name' => 'ALPHA STEEL INC',
+            'company_name' => 'ALPHA STEEL INC',
+            'payee_tin' => '111111111',
+            'atc_code' => 'WC158',
+            'tax_rate' => 1.00,
+            'income_payment' => 3682716.00,
+            'tax_withheld' => 36827.16,
+        ]);
+
+        $this->withholding([
+            'payee_name' => 'BRAVO HARDWARE INC',
+            'company_name' => 'BRAVO HARDWARE INC',
+            'payee_tin' => '222222222',
+            'atc_code' => 'WC158',
+            'tax_rate' => 1.00,
+            'income_payment' => 168881.00,
+            'tax_withheld' => 1688.81,
+        ]);
+
+        /*
+         * 1.5% is not the rate of any allowed ATC, so this row also carries a
+         * validation warning. Its amount still belongs in the totals: a warning
+         * says the row needs BIR info before it can be filed, not that the
+         * uploaded amount is wrong, and the table lists it either way.
+         */
+        $this->withholding([
+            'payee_name' => 'CHARLIE FREIGHT INC',
+            'company_name' => 'CHARLIE FREIGHT INC',
+            'payee_tin' => '333333333',
+            'atc_code' => 'WC158',
+            'tax_rate' => 1.50,
+            'income_payment' => 5275.33,
+            'tax_withheld' => 79.13,
+        ]);
+
+        $this->withholding([
+            'payee_name' => 'DELTA RENTALS INC',
+            'company_name' => 'DELTA RENTALS INC',
+            'payee_tin' => '444444444',
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+            'income_payment' => 617283.50,
+            'tax_withheld' => 12345.67,
+        ]);
+
+        // Two centavo amounts on one rate: 0.10 + 0.20 is the float sum that
+        // lands on 0.30000000000000004.
+        $this->withholding([
+            'payee_name' => 'ECHO SERVICES INC',
+            'company_name' => 'ECHO SERVICES INC',
+            'payee_tin' => '555555555',
+            'atc_code' => 'WC100',
+            'tax_rate' => 5.00,
+            'income_payment' => 2.00,
+            'tax_withheld' => 0.10,
+        ]);
+
+        $this->withholding([
+            'payee_name' => 'FOXTROT SERVICES INC',
+            'company_name' => 'FOXTROT SERVICES INC',
+            'payee_tin' => '666666666',
+            'atc_code' => 'WC100',
+            'tax_rate' => 5.00,
+            'income_payment' => 4.00,
+            'tax_withheld' => 0.20,
+        ]);
+
+        // A payment and its reversal consolidate into one line at zero. The rate
+        // still has matching records, so it still gets a card.
+        foreach ([25800.00, -25800.00] as $income) {
+            $this->withholding([
+                'payee_name' => 'GOLF CONSULTING INC',
+                'company_name' => 'GOLF CONSULTING INC',
+                'payee_tin' => '777777777',
+                'atc_code' => 'WC139',
+                'tax_rate' => 10.00,
+                'income_payment' => $income,
+                'tax_withheld' => round($income * 0.10, 2),
+            ]);
+        }
+    }
+
+    public function test_expanded_records_total_tax_withheld_per_rate(): void
+    {
+        $this->seedRateSpread();
+
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->component('Records/ExpandedWtaxRecords')
+                // Seven consolidated lines out of eight uploaded rows.
+                ->has('expandedWtaxEntries.data', 7)
+                ->has('withholdingTaxRateSummary.rates', 5)
+                /*
+                 * Ascending by rate as a number. Sorted as strings, "10.00"
+                 * would file between "1.00" and "2.00" and the cards would read
+                 * 1%, 10%, 1.5%, 2%, 5%.
+                 */
+                ->where('withholdingTaxRateSummary.rates.0.tax_rate', '1.00')
+                ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '38515.97')
+                ->where('withholdingTaxRateSummary.rates.1.tax_rate', '1.50')
+                ->where('withholdingTaxRateSummary.rates.1.tax_withheld_total', '79.13')
+                ->where('withholdingTaxRateSummary.rates.2.tax_rate', '2.00')
+                ->where('withholdingTaxRateSummary.rates.2.tax_withheld_total', '12345.67')
+                ->where('withholdingTaxRateSummary.rates.3.tax_rate', '5.00')
+                ->where('withholdingTaxRateSummary.rates.3.tax_withheld_total', '0.30')
+                // A rate whose records cancel out keeps its card at zero.
+                ->where('withholdingTaxRateSummary.rates.4.tax_rate', '10.00')
+                ->where('withholdingTaxRateSummary.rates.4.tax_withheld_total', '0.00')
+        );
+    }
+
+    /**
+     * The cards are a partition of the filtered listing: every centavo in the
+     * table is on exactly one card, and no centavo is on one twice.
+     */
+    public function test_expanded_rate_totals_account_for_the_whole_filtered_listing(): void
+    {
+        $this->seedRateSpread();
+
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia(
+            fn ($page) => $page->where(
+                'withholdingTaxRateSummary.rates',
+                function ($rates) {
+                    $this->assertSame(
+                        (int) round((float) ExpandedWtaxEntry::sum('tax_withheld') * 100),
+                        $rates->sum(fn (array $rate) => (int) round((float) $rate['tax_withheld_total'] * 100)),
+                        'The rate cards must add up to the Tax Withheld sum of the filtered rows.'
+                    );
+
+                    return true;
+                }
+            )
+        );
+    }
+
+    /**
+     * A consolidated line is one amount, not one amount per row merged into it.
+     */
+    public function test_expanded_rate_totals_count_a_merged_line_once(): void
+    {
+        foreach ([10011.00, 20022.00, 30033.00] as $income) {
+            $this->withholding([
+                'payee_name' => 'MERGED SUPPLY INC',
+                'company_name' => 'MERGED SUPPLY INC',
+                'payee_tin' => '888888888',
+                'atc_code' => 'WC158',
+                'tax_rate' => 1.00,
+                'income_payment' => $income,
+                'tax_withheld' => round($income * 0.01, 2),
+            ]);
+        }
+
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('expandedWtaxEntries.data', 1)
+                ->where('expandedWtaxEntries.data.0.merged_rows', 3)
+                ->where(
+                    'expandedWtaxEntries.data.0.tax_withheld',
+                    fn ($value) => number_format((float) $value, 2, '.', '') === '600.66'
+                )
+                // 600.66, the consolidated amount -- not 1801.98, which is what
+                // multiplying by merged_rows would give.
+                ->has('withholdingTaxRateSummary.rates', 1)
+                ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '600.66')
+        );
+    }
+
+    /**
+     * The cards total the filtered listing, not the page of it on screen.
+     */
+    public function test_expanded_rate_totals_are_the_same_on_every_page(): void
+    {
+        // Twelve 1% payees then eight 2% payees, listed by name: page one holds
+        // fifteen of them, so five of the 2% amounts are only ever on page two.
+        foreach (range(1, 20) as $index) {
+            $isOnePercent = $index <= 12;
+
+            $this->withholding([
+                'payee_name' => sprintf('PAYEE %02d INC', $index),
+                'company_name' => sprintf('PAYEE %02d INC', $index),
+                'payee_tin' => sprintf('1000000%02d', $index),
+                'atc_code' => $isOnePercent ? 'WC158' : 'WC160',
+                'tax_rate' => $isOnePercent ? 1.00 : 2.00,
+                'income_payment' => 1001.00,
+                'tax_withheld' => $isOnePercent ? 10.01 : 20.02,
+            ]);
+        }
+
+        $summary = fn ($page) => $page
+            ->has('withholdingTaxRateSummary.rates', 2)
+            ->where('withholdingTaxRateSummary.rates.0.tax_rate', '1.00')
+            ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '120.12')
+            ->where('withholdingTaxRateSummary.rates.1.tax_rate', '2.00')
+            ->where('withholdingTaxRateSummary.rates.1.tax_withheld_total', '160.16');
+
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia(
+            fn ($page) => $summary($page)
+                ->has('expandedWtaxEntries.data', 15)
+                ->where('expandedWtaxEntries.data.0.payee_name', 'PAYEE 01 INC')
+        );
+
+        // 100.10 of the 2% total is on this page alone, and the card does not move.
+        $this->get('/records/expanded-wtax?page=2')->assertOk()->assertInertia(
+            fn ($page) => $summary($page)
+                ->has('expandedWtaxEntries.data', 5)
+                ->where('expandedWtaxEntries.data.0.payee_name', 'PAYEE 16 INC')
+        );
+    }
+
+    /**
+     * Search and month narrow the cards and the table together, and clearing
+     * them puts the totals back.
+     */
+    public function test_expanded_rate_totals_follow_the_search_and_month_filters(): void
+    {
+        $this->withholding([
+            'payee_name' => 'ALPHA STEEL INC',
+            'company_name' => 'ALPHA STEEL INC',
+            'payee_tin' => '111111111',
+            'atc_code' => 'WC158',
+            'tax_rate' => 1.00,
+            'income_payment' => 10000.00,
+            'tax_withheld' => 100.00,
+        ]);
+
+        $this->withholding([
+            'payee_name' => 'BRAVO HARDWARE INC',
+            'company_name' => 'BRAVO HARDWARE INC',
+            'payee_tin' => '222222222',
+            'atc_code' => 'WC160',
+            'tax_rate' => 2.00,
+            'income_payment' => 10000.00,
+            'tax_withheld' => 200.00,
+        ]);
+
+        $this->withholding([
+            'reporting_period' => '2026-05-31',
+            'payee_name' => 'CHARLIE FREIGHT INC',
+            'company_name' => 'CHARLIE FREIGHT INC',
+            'payee_tin' => '333333333',
+            'atc_code' => 'WC158',
+            'tax_rate' => 1.00,
+            'income_payment' => 30000.00,
+            'tax_withheld' => 300.00,
+        ]);
+
+        $unfiltered = fn ($page) => $page
+            ->has('expandedWtaxEntries.data', 3)
+            ->has('withholdingTaxRateSummary.rates', 2)
+            ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '400.00')
+            ->where('withholdingTaxRateSummary.rates.1.tax_withheld_total', '200.00');
+
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia($unfiltered);
+
+        // Month only: April keeps both rates, May keeps the 1% payee alone.
+        $this->get('/records/expanded-wtax?period=2026-04')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('expandedWtaxEntries.data', 2)
+                ->has('withholdingTaxRateSummary.rates', 2)
+                ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '100.00')
+                ->where('withholdingTaxRateSummary.rates.1.tax_withheld_total', '200.00')
+        );
+
+        $this->get('/records/expanded-wtax?period=2026-05')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('expandedWtaxEntries.data', 1)
+                ->has('withholdingTaxRateSummary.rates', 1)
+                ->where('withholdingTaxRateSummary.rates.0.tax_rate', '1.00')
+                ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '300.00')
+        );
+
+        // The three columns the search box covers: payee, TIN and ATC.
+        $this->get('/records/expanded-wtax?search=CHARLIE')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('withholdingTaxRateSummary.rates', 1)
+                ->where('withholdingTaxRateSummary.rates.0.tax_rate', '1.00')
+                ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '300.00')
+        );
+
+        $this->get('/records/expanded-wtax?search=222222222')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('withholdingTaxRateSummary.rates', 1)
+                ->where('withholdingTaxRateSummary.rates.0.tax_rate', '2.00')
+                ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '200.00')
+        );
+
+        $this->get('/records/expanded-wtax?search=WC160')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('withholdingTaxRateSummary.rates', 1)
+                ->where('withholdingTaxRateSummary.rates.0.tax_rate', '2.00')
+                ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '200.00')
+        );
+
+        // Both together: WC158 is on two payees, April keeps one of them.
+        $this->get('/records/expanded-wtax?period=2026-04&search=WC158')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('expandedWtaxEntries.data', 1)
+                ->has('withholdingTaxRateSummary.rates', 1)
+                ->where('withholdingTaxRateSummary.rates.0.tax_rate', '1.00')
+                ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '100.00')
+        );
+
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia($unfiltered);
+    }
+
+    public function test_expanded_rate_summary_is_empty_when_nothing_matches(): void
+    {
+        $this->seedRateSpread();
+
+        $this->get('/records/expanded-wtax?search=ZULU')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('expandedWtaxEntries.data', 0)
+                ->has('withholdingTaxRateSummary.rates', 0)
+        );
+    }
+
     public function test_the_record_pages_are_behind_auth(): void
     {
         Auth::logout();

@@ -15,6 +15,7 @@ import {
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
 import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
+import WithholdingTaxRateSummary from "@/Components/Records/WithholdingTaxRateSummary";
 import { formatCurrency, formatMonth } from "@/Components/Records/format";
 
 /**
@@ -23,7 +24,13 @@ import { formatCurrency, formatMonth } from "@/Components/Records/format";
  * exist so a consolidated list cannot be mistaken for missing data.
  */
 function ExpandedWtaxRecords() {
-    const { flash, expandedWtaxEntries, months = [], filters = {} } = usePage().props;
+    const {
+        flash,
+        expandedWtaxEntries,
+        withholdingTaxRateSummary = { rates: [] },
+        months = [],
+        filters = {},
+    } = usePage().props;
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
@@ -32,6 +39,10 @@ function ExpandedWtaxRecords() {
 
     return (
         <section className="w-full max-w-full space-y-6 overflow-hidden">
+            {/* Above the shell rather than inside it: the table area scrolls
+                horizontally at 1100px, and the cards should not scroll with it. */}
+            <WithholdingTaxRateSummary rates={withholdingTaxRateSummary?.rates || []} />
+
             <RecordTableShell
                 title="Expanded Withholding Tax Records"
                 description="Consolidated 1601EQ lines per agent, payee, ATC and rate. Upload new files under Import Data."

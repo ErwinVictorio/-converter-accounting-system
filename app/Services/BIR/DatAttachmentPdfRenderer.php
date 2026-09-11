@@ -136,12 +136,27 @@ class DatAttachmentPdfRenderer
         $lines[] = '';
         $lines[] = implode(' | ', $report['columns'] ?? []);
 
+        $formatRow = function (array $row) use ($report): string {
+            $cells = [];
+            foreach ($row as $index => $value) {
+                $text = (string) $value;
+                if (str_starts_with($report['columns'][$index] ?? '', 'Amount of ')
+                    && preg_match('/^-?\d+\.\d{2}$/', $text)) {
+                    [$whole, $decimals] = explode('.', $text);
+                    $text = preg_replace('/\B(?=(\d{3})+(?!\d))/', ',', $whole) . '.' . $decimals;
+                }
+                $cells[] = $text;
+            }
+
+            return implode(' | ', $cells);
+        };
+
         foreach (($report['rows'] ?? []) as $row) {
-            $lines[] = implode(' | ', array_map(fn ($value) => (string) $value, $row));
+            $lines[] = $formatRow($row);
         }
 
         if (($report['totals'] ?? []) !== []) {
-            $lines[] = implode(' | ', array_map(fn ($value) => (string) $value, $report['totals']));
+            $lines[] = $formatRow($report['totals']);
         }
 
         $lines[] = 'END OF REPORT';

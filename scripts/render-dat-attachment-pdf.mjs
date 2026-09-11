@@ -57,6 +57,16 @@ function Row({ children }) {
     return React.createElement(View, { style: styles.row }, children);
 }
 
+function formatAmount(value, column) {
+    const text = String(value ?? "");
+    if (!String(column ?? "").startsWith("Amount of ") || !/^-?\d+\.\d{2}$/.test(text)) {
+        return text;
+    }
+
+    const [whole, decimals] = text.split(".");
+    return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${decimals}`;
+}
+
 function Cell({ children, header = false, total = false }) {
     return React.createElement(
         View,
@@ -100,7 +110,7 @@ function AttachmentDocument({ report }) {
                     React.createElement(
                         Row,
                         { key: `row-${rowIndex}` },
-                        ...row.map((value, cellIndex) => React.createElement(Cell, { key: `cell-${cellIndex}` }, value))
+                        ...row.map((value, cellIndex) => React.createElement(Cell, { key: `cell-${cellIndex}` }, formatAmount(value, report.columns?.[cellIndex])))
                     )
                 ),
                 (report.totals || []).length > 0 &&
@@ -108,7 +118,7 @@ function AttachmentDocument({ report }) {
                         Row,
                         null,
                         ...report.totals.map((value, cellIndex) =>
-                            React.createElement(Cell, { key: `total-${cellIndex}`, total: true }, value)
+                            React.createElement(Cell, { key: `total-${cellIndex}`, total: true }, formatAmount(value, report.columns?.[cellIndex]))
                         )
                     )
             ),

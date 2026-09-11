@@ -10,6 +10,7 @@ use App\Services\BIR\SalesSiCmConsolidator;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 
 /**
@@ -185,12 +186,62 @@ class RecordController extends Controller
 
         return Inertia::render('Records/ExpandedWtaxRecords', [
             'expandedWtaxEntries' => $expandedWtaxEntries,
+            // Built from $expandedRows, not from the page above: the cards total
+            // the whole filtered listing, so paging must not move them.
+            'withholdingTaxRateSummary' => $this->withholdingTaxRateSummary($expandedRows),
             'months' => $this->availableMonths(ExpandedWtaxEntry::query(), 'reporting_period'),
             'filters' => [
                 'search' => $search,
                 'period' => $period?->format('Y-m') ?? '',
             ],
         ]);
+    }
+
+    /**
+     * Tax Withheld totalled per EWT rate over the whole filtered listing.
+     *
+     * Each consolidated line contributes its stored tax_withheld once.
+     * merged_rows is a count for the badge on screen, never a multiplier -- the
+     * amount was already summed by ExpandedWtaxEntry::consolidate() -- and the
+     * rate is not used to re-derive anything, the same rule the listing and the
+     * generator follow.
+     *
+     * Totals accumulate in centavos rather than as floats. A month of these
+     * amounts added as floats lands a centavo off often enough to be seen, and
+     * these are figures a filer reconciles against the DAT.
+     *
+     * Rows the validator flagged are included, exactly as the table lists them:
+     * a warning means the row needs BIR info before it can be filed, not that
+     * its amount is wrong.
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array{rates: array<int, array{tax_rate: string, tax_withheld_total: string}>}
+     */
+    private function withholdingTaxRateSummary(Collection $rows): array
+    {
+        $centavos = [];
+
+        foreach ($rows as $row) {
+            // Two decimals throughout, so 1 and 1.00 cannot key as two rates.
+            $rate = number_format((float) ($row['tax_rate'] ?? 0), 2, '.', '');
+
+            $centavos[$rate] = ($centavos[$rate] ?? 0)
+                + (int) round((float) ($row['tax_withheld'] ?? 0) * 100);
+        }
+
+        // String keys ("1.00", "10.00"), so the sort has to be told they are
+        // numbers -- otherwise 10% files between 1% and 2%.
+        ksort($centavos, SORT_NUMERIC);
+
+        return [
+            'rates' => collect($centavos)
+                ->map(fn (int $total, string $rate) => [
+                    'tax_rate' => $rate,
+                    'tax_withheld_total' => number_format($total / 100, 2, '.', ''),
+                ])
+                ->values()
+                ->all(),
+        ];
     }
 
     private function normalisedMonth(mixed $value): ?Carbon
