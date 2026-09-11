@@ -10,6 +10,24 @@ use Tests\TestCase;
 
 class ReliefSalesDatGeneratorTest extends TestCase
 {
+    public function test_header_vat_sums_only_taxable_customer_details(): void
+    {
+        $content = app(ReliefSalesDatGenerator::class)->generate(
+            ['tin' => '008791976', 'name' => 'FORTRESS STEEL INC.', 'rdo_code' => '045'],
+            collect([
+                ['company_name' => 'ZERO CUSTOMER', 'customer_tin' => '123456789', 'zero_rated_sales' => 1000, 'taxable_sales' => 0, 'output_vat' => 0],
+                ['company_name' => 'MIXED CUSTOMER', 'customer_tin' => '234567891', 'zero_rated_sales' => 500, 'taxable_sales' => 1000, 'output_vat' => 120],
+            ]),
+            Carbon::parse('2026-07-31')
+        );
+        [$header, $zero, $mixed] = array_map('str_getcsv', explode("\r\n", trim($content)));
+        $this->assertSame('1500.00', $header[11]);
+        $this->assertSame('120.00', $header[13]);
+        $this->assertSame('0', $zero[12]);
+        $this->assertSame('120.00', $mixed[12]);
+        $this->assertEquals((float) $header[13], (float) $zero[12] + (float) $mixed[12]);
+    }
+
     public function test_header_and_detail_field_counts_are_fixed(): void
     {
         $content = app(ReliefSalesDatGenerator::class)->generate(

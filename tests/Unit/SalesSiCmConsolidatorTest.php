@@ -9,6 +9,30 @@ use Tests\TestCase;
 
 class SalesSiCmConsolidatorTest extends TestCase
 {
+    public function test_existing_pure_zero_rated_si_and_negative_cm_remain_untaxed(): void
+    {
+        $group = app(SalesSiCmConsolidator::class)->consolidate(collect([
+            $this->saleFromNetAmount('SI#1', 'SI', 1000, 0, 0, ['zero_rated_sales' => 1000]),
+            $this->saleFromNetAmount('CM#1', 'CM', -200, 0, 0, ['zero_rated_sales' => -200]),
+        ]))->sole();
+
+        $this->assertEquals(800, $group['zero_rated_sales']);
+        $this->assertEquals(0, $group['taxable_sales']);
+        $this->assertEquals(0, $group['output_vat']);
+    }
+
+    public function test_zero_rated_credit_memo_only_stays_negative_without_vat(): void
+    {
+        $group = app(SalesSiCmConsolidator::class)->consolidate(collect([
+            $this->saleFromNetAmount('CM#1', 'CM', 200, 0, 0, ['zero_rated_sales' => 200]),
+        ]))->sole();
+
+        $this->assertEquals(-200, $group['zero_rated_sales']);
+        $this->assertEquals(-200, $group['net_amount']);
+        $this->assertEquals(0, $group['taxable_sales']);
+        $this->assertEquals(0, $group['output_vat']);
+    }
+
     public function test_same_customer_si_and_cm_rows_net_to_one_group(): void
     {
         $rows = new Collection([
@@ -91,6 +115,31 @@ class SalesSiCmConsolidatorTest extends TestCase
         $this->assertEqualsWithDelta(40.0, $groups[0]['zero_rated_sales'], 0.001);
         $this->assertEqualsWithDelta(1000.0, $groups[0]['taxable_sales'], 0.001);
         $this->assertEqualsWithDelta(120.0, $groups[0]['output_vat'], 0.001);
+    }
+
+    public function test_flagged_rows_ignore_stale_vat_and_buckets_without_mutating_records(): void
+    {
+        $zero = $this->saleFromNetAmount('SI#ZERO', 'SI', 1000, 900, 100, [
+            's_zero_rated' => true, 'zero_rated_sales' => 50, 'exempt_sales' => 20,
+        ]);
+        $before = $zero->getAttributes();
+        $rows = collect([$zero, $this->saleFromNetAmount('CM#ZERO', 'CM', -200, -180, -20, ['s_zero_rated' => true])]);
+        $group = app(SalesSiCmConsolidator::class)->consolidate($rows)->sole();
+        $this->assertEquals(800, $group['zero_rated_sales']);
+        $this->assertEquals(0, $group['output_vat']);
+        $this->assertEquals(0, $group['taxable_sales']);
+        $this->assertEquals(0, $group['si_output_vat']);
+        $this->assertEquals(0, $group['cm_output_vat']);
+        $rows->push($this->sale('SI#TAX', 'SI', 1000, 120));
+        $group = app(SalesSiCmConsolidator::class)->consolidate($rows)->sole();
+        $this->assertEquals(120, $group['output_vat']);
+        $this->assertEquals(1000, $group['taxable_sales']);
+        $this->assertSame($before, $zero->getAttributes());
+        $cancelled = app(SalesSiCmConsolidator::class)->consolidate(collect([
+            $zero, $this->saleFromNetAmount('CM#ALL', 'CM', 1000, 900, 100, ['s_zero_rated' => true]),
+        ]))->sole();
+        $this->assertEquals(0, $cancelled['output_vat']);
+        $this->assertEquals(0, $cancelled['zero_rated_sales']);
     }
 
     private function sale(string $documentNo, string $documentType, float $taxable, float $vat, array $overrides = []): SalesVatInput

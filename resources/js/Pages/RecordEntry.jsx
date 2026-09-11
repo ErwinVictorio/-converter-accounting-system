@@ -73,15 +73,20 @@ const expandedUploadErrorDetails = (message = "") => {
 const issueDialogText = (dialog) => {
   if (!dialog) return "";
 
-  return (dialog.issues || [])
-    .map((issue) => [
+  const lines = [dialog.summary].filter(Boolean);
+
+  return [
+    ...lines,
+    ...(dialog.issues || []).map((issue) => [
       `Row ${issue.row} - ${issue.name || "Unnamed record"}`,
       `Problem: ${issue.problem}`,
-      `Fix in: ${issue.fix_location}`,
-      `Needed fields: ${(issue.needed_fields || []).join(", ")}`,
-      `Match used: ${issue.match_basis}`,
-    ].filter(Boolean).join("\n"))
-    .join("\n\n");
+      issue.fix_location ? `Fix in: ${issue.fix_location}` : null,
+      (issue.needed_fields || []).length > 0
+        ? `Needed fields: ${issue.needed_fields.join(", ")}`
+        : null,
+      issue.match_basis ? `Match used: ${issue.match_basis}` : null,
+    ].filter(Boolean).join("\n")),
+  ].join("\n\n");
 };
 
 function RecordEntry() {
@@ -609,16 +614,22 @@ function RecordEntry() {
                   <p className="mt-2">
                     <span className="font-medium">Problem:</span> {issue.problem}
                   </p>
-                  <p>
-                    <span className="font-medium">Fix in:</span> {issue.fix_location}
-                  </p>
-                  <p>
-                    <span className="font-medium">Needed fields:</span>{" "}
-                    {(issue.needed_fields || []).join(", ")}
-                  </p>
-                  <p>
-                    <span className="font-medium">Match used:</span> {issue.match_basis}
-                  </p>
+                  {issue.fix_location && (
+                    <p>
+                      <span className="font-medium">Fix in:</span> {issue.fix_location}
+                    </p>
+                  )}
+                  {(issue.needed_fields || []).length > 0 && (
+                    <p>
+                      <span className="font-medium">Needed fields:</span>{" "}
+                      {issue.needed_fields.join(", ")}
+                    </p>
+                  )}
+                  {issue.match_basis && (
+                    <p>
+                      <span className="font-medium">Match used:</span> {issue.match_basis}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

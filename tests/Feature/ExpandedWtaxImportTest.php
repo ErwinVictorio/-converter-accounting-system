@@ -216,20 +216,32 @@ class ExpandedWtaxImportTest extends TestCase
         }
     }
 
-    public function test_an_income_payment_that_contradicts_the_tax_is_stored_as_uploaded(): void
+    /**
+     * The amounts are still never rewritten -- but a row whose two sides disagree
+     * no longer reaches the table at all: the upload is refused and the workbook is
+     * corrected. A stored row that disagrees is covered on the DAT side, where
+     * legacy rows still live; see
+     * ExpandedWtaxUploadBirInfoValidationTest for the upload half.
+     */
+    public function test_an_income_payment_that_contradicts_the_tax_is_refused_at_upload(): void
     {
-        // 1% of 100000.00 is 1000.00, not 4000.00. The row is wrong and the
-        // validator says so -- but neither amount is quietly replaced, because the
-        // workbook is the record of what was withheld and paid.
+        // 1% of 100000.00 is 1000.00, not 4000.00.
         $this->upload($this->csv([
             $this->row([8 => '100000.00', 9 => '1', 10 => '4000.00']),
-        ]))->assertSessionHas('success');
+        ]))->assertSessionMissing('success');
 
-        $entry = ExpandedWtaxEntry::firstOrFail();
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+
+        // The same row, seeded as a legacy record, is still reported rather than
+        // corrected: neither amount is replaced with a computed figure.
+        $entry = $this->storedExpanded([
+            'income_payment' => 100000.00,
+            'tax_withheld' => 4000.00,
+            'tax_rate' => 1.00,
+        ]);
 
         $this->assertEqualsWithDelta(100000.00, (float) $entry->income_payment, 0.001);
         $this->assertEqualsWithDelta(4000.00, (float) $entry->tax_withheld, 0.001);
-        $this->assertEqualsWithDelta(1.00, (float) $entry->tax_rate, 0.001);
 
         $errors = app(BirExpandedWtaxRowValidator::class)->validate($entry->toBirExpandedRow(), 2);
 
@@ -293,15 +305,35 @@ class ExpandedWtaxImportTest extends TestCase
         $this->assertSame('WI010', ExpandedWtaxEntry::where('payee_tin', '188291434')->firstOrFail()->atc_code);
     }
 
-    public function test_a_blank_atc_is_stored_null_and_blocks_the_dat(): void
+    /**
+     * A blank ATC used to import and then block Generate DAT. It is now refused at
+     * upload, which is the same answer given sooner. Inventing a code is still out
+     * of the question: only the taxpayer knows which schedule the payment belongs
+     * on.
+     */
+    public function test_a_blank_atc_rejects_the_upload(): void
     {
-        // Storing the row keeps the money visible; inventing a code would file the
-        // payment on a schedule nobody chose.
-        $this->upload($this->csv([$this->row([7 => ''])]))->assertSessionHas('success');
+        $response = $this->upload($this->csv([$this->row([7 => ''])]));
 
-        $entry = ExpandedWtaxEntry::firstOrFail();
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error');
 
-        $this->assertNull($entry->atc_code);
+        $this->assertSame(0, ExpandedWtaxEntry::count());
+
+        $issues = session('uploadIssueDialog')['issues'];
+
+        $this->assertSame('expanded', $issues[0]['record_type']);
+        $this->assertSame(2, $issues[0]['row']);
+        $this->assertStringContainsString('ATC is blank', $issues[0]['problem']);
+    }
+
+    /**
+     * The stored-and-blocked path still exists for rows that predate the upload
+     * check, so the DAT safeguard keeps its own coverage.
+     */
+    public function test_a_stored_row_without_an_atc_still_blocks_the_dat(): void
+    {
+        $entry = $this->storedExpanded(['atc_code' => null]);
 
         $errors = app(BirExpandedWtaxRowValidator::class)->validate($entry->toBirExpandedRow(), 2);
 
@@ -630,9 +662,27 @@ class ExpandedWtaxImportTest extends TestCase
         $this->assertSame(0, ExpandedWtaxEntry::count());
     }
 
+    /**
+     * The system layout's own reading rules: one line becomes one row per rate
+     * column, the income payment is divided back out of the withheld tax, and a
+     * "SURNAME, FIRST" supplier is filed as an individual.
+     *
+     * The importer is run directly rather than through the upload route, because
+     * this workbook carries blank TIN cells and the route now refuses it -- see
+     * ExpandedWtaxUploadBirInfoValidationTest, which covers that refusal. What is
+     * being checked here is the mapping, which is what the refusal is judged on.
+     */
     public function test_it_reads_the_system_expanded_wtax_export(): void
     {
-        $this->upload($this->systemWorkbook(), '2026-07')->assertSessionHas('success');
+        \Maatwebsite\Excel\Facades\Excel::import(
+            new \App\Imports\ExpandedWtaxImport(
+                '2026-07-31',
+                ['tin' => '008791976', 'branch_code' => '0000', 'name' => 'FORTRESS STEEL INC.'],
+                false,
+                'quarterly'
+            ),
+            $this->systemWorkbook()
+        );
 
         $entries = ExpandedWtaxEntry::orderBy('id')->get();
 

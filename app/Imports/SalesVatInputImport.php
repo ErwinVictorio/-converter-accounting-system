@@ -7,13 +7,15 @@ use App\Models\SalesVatInput;
 use Carbon\Carbon;
 use Maatwebsite\Excel\Concerns\OnEachRow;
 use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
+use Maatwebsite\Excel\Concerns\WithCalculatedFormulas;
 use Maatwebsite\Excel\Row;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
-class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
+class SalesVatInputImport implements OnEachRow, SkipsEmptyRows, WithCalculatedFormulas
 {
     protected string $reportingPeriod;
     protected ?string $format = null;
+    protected ?int $zeroRatedColumn = null;
     protected int $importedRows = 0;
     protected int $skippedDebitMemoRows = 0;
 
@@ -24,11 +26,12 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
 
     public function onRow(Row $row): void
     {
-        $data = array_values($row->toArray());
+        $data = array_values($row->toArray(null, true, false));
         $firstCell = $this->birText((string) ($data[0] ?? ''));
 
         if ($firstCell === 'DOCUMENT NO') {
             $this->format = 'summary';
+            $this->zeroRatedColumn = SalesAmountNormalizer::zeroRatedColumn($data);
 
             return;
         }
@@ -98,6 +101,8 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
             ->first();
         $customer = $this->findCustomer($customerName);
 
+        $amounts = SalesAmountNormalizer::validated(SalesAmountNormalizer::summary($data, $this->zeroRatedColumn), $rowNumber);
+
         SalesVatInput::updateOrCreate(
             [
                 'document_no' => $documentNo,
@@ -112,12 +117,12 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
                 'due_date' => $this->parseDate($data[4] ?? null),
                 'agent_name' => $this->birText((string) ($data[5] ?? '')),
                 'document_refs' => $this->birText((string) ($data[7] ?? '')),
-                'gross_amount' => $this->parseNumber($data[8] ?? null),
+                'gross_amount' => $amounts['gross_amount'],
                 'discount' => $this->parseNumber($data[9] ?? null),
                 'charges' => $this->parseNumber($data[10] ?? null),
-                'net_amount' => $this->parseNumber($data[11] ?? null),
-                'output_vat' => $this->parseNumber($data[12] ?? null),
-                'taxable_net_of_vat' => $this->parseNumber($data[13] ?? null),
+                'net_amount' => $amounts['net_amount'],
+                'output_vat' => $amounts['output_vat'],
+                'taxable_net_of_vat' => $amounts['taxable_net_of_vat'],
                 'customer_tin' => $customer?->tin ?: $existingBirInfo?->customer_tin,
                 'customer_type' => $customer ? 'company' : ($existingBirInfo?->customer_type ?: 'company'),
                 'company_name' => $customer?->name ?: $existingBirInfo?->company_name,
@@ -127,7 +132,8 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
                 'address1' => $customer?->addr ?: $existingBirInfo?->address1,
                 'address2' => $customer?->city ?: $existingBirInfo?->address2,
                 'exempt_sales' => 0,
-                'zero_rated_sales' => 0,
+                'zero_rated_sales' => $amounts['zero_rated_sales'],
+                's_zero_rated' => $amounts['s_zero_rated'],
                 'is_adjusted' => false,
             ]
         );
@@ -150,6 +156,7 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
         $customer = $this->findCustomer($customerName);
         $customerType = $companyName !== '' ? 'company' : 'individual';
         $documentNo = 'BIR-R-SALES-' . $this->reportingPeriod . '-' . $rowNumber;
+        $amounts = SalesAmountNormalizer::validated(SalesAmountNormalizer::bir($data), $rowNumber);
 
         SalesVatInput::updateOrCreate(
             [
@@ -165,12 +172,12 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
                 'due_date' => null,
                 'agent_name' => null,
                 'document_refs' => null,
-                'gross_amount' => $this->parseNumber($data[13] ?? null),
+                'gross_amount' => $amounts['gross_amount'],
                 'discount' => 0,
                 'charges' => 0,
-                'net_amount' => $this->parseNumber($data[12] ?? null),
-                'output_vat' => $this->parseNumber($data[11] ?? null),
-                'taxable_net_of_vat' => $this->parseNumber($data[9] ?? null),
+                'net_amount' => $amounts['net_amount'],
+                'output_vat' => $amounts['output_vat'],
+                'taxable_net_of_vat' => $amounts['taxable_net_of_vat'],
                 'customer_tin' => $customer?->tin ?: $this->formatTin((string) ($data[0] ?? '')),
                 'customer_type' => $customer ? 'company' : $customerType,
                 'company_name' => $customer ? $customer->name : ($customerType === 'company' ? $companyName : null),
@@ -179,8 +186,9 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
                 'middle_name' => $customer ? null : ($customerType === 'individual' ? $middleName : null),
                 'address1' => $customer?->addr ?: ($this->birText((string) ($data[5] ?? '')) ?: null),
                 'address2' => $customer?->city ?: ($this->birText((string) ($data[6] ?? '')) ?: null),
-                'exempt_sales' => $this->parseNumber($data[7] ?? null),
-                'zero_rated_sales' => $this->parseNumber($data[8] ?? null),
+                'exempt_sales' => $amounts['exempt_sales'],
+                'zero_rated_sales' => $amounts['zero_rated_sales'],
+                's_zero_rated' => $amounts['s_zero_rated'],
                 'is_adjusted' => false,
             ]
         );
@@ -222,9 +230,7 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
     private function looksLikeSalesSummaryRow(array $data): bool
     {
         $customerName = $this->birText((string) ($data[6] ?? ''));
-        $hasSalesAmount = $this->parseNumber($data[11] ?? null) !== 0.00
-            || $this->parseNumber($data[12] ?? null) !== 0.00
-            || $this->parseNumber($data[13] ?? null) !== 0.00;
+        $hasSalesAmount = SalesAmountNormalizer::hasSummaryAmount($data, $this->zeroRatedColumn);
 
         return $customerName !== '' && $hasSalesAmount;
     }
@@ -233,9 +239,7 @@ class SalesVatInputImport implements OnEachRow, SkipsEmptyRows
     {
         $hasName = $this->birText((string) ($data[1] ?? '')) !== ''
             || $this->birText((string) ($data[2] ?? '')) !== '';
-        $hasSalesAmount = $this->parseNumber($data[9] ?? null) !== 0.00
-            || $this->parseNumber($data[11] ?? null) !== 0.00
-            || $this->parseNumber($data[12] ?? null) !== 0.00;
+        $hasSalesAmount = SalesAmountNormalizer::hasBirAmount($data);
 
         return $hasName && $hasSalesAmount;
     }

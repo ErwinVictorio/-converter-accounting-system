@@ -96,7 +96,7 @@ class SalesSiCmConsolidator
      */
     private function sumSigned(Collection $records, string $field): float
     {
-        return round($records->sum(fn (SalesVatInput $record) => (float) $record->{$field}), 2);
+        return round($records->sum(fn (SalesVatInput $record) => $this->amount($record, $field)), 2);
     }
 
     /**
@@ -104,7 +104,21 @@ class SalesSiCmConsolidator
      */
     private function sumCreditMemo(Collection $records, string $field): float
     {
-        return round($records->sum(fn (SalesVatInput $record) => abs((float) $record->{$field})), 2);
+        return round($records->sum(fn (SalesVatInput $record) => abs($this->amount($record, $field))), 2);
+    }
+
+    private function amount(SalesVatInput $record, string $field): float
+    {
+        if ($record->s_zero_rated) {
+            if ($field === 'zero_rated_sales') {
+                return (float) $record->net_amount;
+            }
+            if (in_array($field, ['exempt_sales', 'taxable_net_of_vat', 'output_vat'], true)) {
+                return 0.0;
+            }
+        }
+
+        return (float) $record->{$field};
     }
 
     private function documentType(SalesVatInput $record): string

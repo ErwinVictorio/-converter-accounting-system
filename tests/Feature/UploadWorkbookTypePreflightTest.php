@@ -641,12 +641,12 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
         $response->assertRedirect();
         $response->assertSessionMissing('success');
-        $response->assertSessionHas('error', 'Sales upload rejected. Fix customer BIR info before importing.');
+        $response->assertSessionHas('error', 'Sales upload rejected. Fix customer BIR info or Sales amounts before importing.');
         $response->assertSessionHas('uploadIssueDialog');
 
         $dialog = session('uploadIssueDialog');
         $this->assertSame('sales', $dialog['record_type']);
-        $this->assertSame('Sales upload needs BIR info fixes', $dialog['title']);
+        $this->assertSame('Sales upload needs BIR info or amount fixes', $dialog['title']);
         $this->assertSame('/customers', $dialog['issues'][0]['fix_route']);
         $this->assertSame('Master Data > Customers', $dialog['issues'][0]['fix_location']);
         $this->assertSame('SECOND SONS CONSTRUCTION', $dialog['issues'][0]['name']);

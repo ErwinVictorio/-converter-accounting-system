@@ -29,18 +29,12 @@ const styles = StyleSheet.create({
         marginBottom: 2,
     },
     table: {
-        borderTopWidth: 1,
-        borderLeftWidth: 1,
-        borderColor: "#555",
         marginTop: 12,
     },
     row: {
         flexDirection: "row",
     },
     cell: {
-        borderRightWidth: 1,
-        borderBottomWidth: 1,
-        borderColor: "#555",
         padding: 3,
         flexGrow: 1,
         flexBasis: 0,

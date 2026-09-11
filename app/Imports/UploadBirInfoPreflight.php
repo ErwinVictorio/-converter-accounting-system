@@ -15,6 +15,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
 {
     /** @var array<int, array<int, mixed>> */
     private array $rows = [];
+    private ?int $salesZeroRatedColumn = null;
 
     public function array(array $rows): void
     {
@@ -112,6 +113,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
     public function checkSales($file, string $reportingPeriod): array
     {
         $this->load($file);
+        $this->salesZeroRatedColumn = null;
         $issues = [];
         $format = null;
 
@@ -121,6 +123,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
 
             if ($firstCell === 'DOCUMENT NO') {
                 $format = 'summary';
+                $this->salesZeroRatedColumn = SalesAmountNormalizer::zeroRatedColumn($data);
 
                 continue;
             }
@@ -295,6 +298,8 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             ->latest('id')
             ->first();
         $customer = $this->findCustomer($customerName);
+        $result = SalesAmountNormalizer::summary($data, $this->salesZeroRatedColumn);
+        $amounts = $result['amounts'];
         $rowIssues = (new BirSalesRowValidator)->validate([
             'customer_type' => $customer ? 'company' : ($existingBirInfo?->customer_type ?: 'company'),
             'customer_tin' => $customer?->tin ?: $existingBirInfo?->customer_tin,
@@ -305,12 +310,15 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             'address1' => $customer?->addr ?: $existingBirInfo?->address1,
             'address2' => $customer?->city ?: $existingBirInfo?->address2,
             'exempt_sales' => 0,
-            'zero_rated_sales' => 0,
-            'taxable_sales' => $this->parseNumber($data[13] ?? null),
-            'output_vat' => $this->parseNumber($data[12] ?? null),
+            'zero_rated_sales' => $amounts['zero_rated_sales'],
+            'taxable_sales' => $amounts['taxable_net_of_vat'],
+            'output_vat' => $amounts['output_vat'],
         ], $rowNumber);
 
-        return $this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer);
+        return [
+            ...$this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer),
+            ...$this->salesAmountIssues($result['errors'], $rowNumber, $customerName),
+        ];
     }
 
     /**
@@ -330,6 +338,8 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
 
         $customer = $this->findCustomer($customerName);
         $customerType = $companyName !== '' ? 'company' : 'individual';
+        $result = SalesAmountNormalizer::bir($data);
+        $amounts = $result['amounts'];
         $rowIssues = (new BirSalesRowValidator)->validate([
             'customer_type' => $customer ? 'company' : $customerType,
             'customer_tin' => $customer?->tin ?: $this->formatTin((string) ($data[0] ?? '')),
@@ -339,13 +349,24 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             'middle_name' => $customer ? null : ($customerType === 'individual' ? $middleName : null),
             'address1' => $customer?->addr ?: ($this->birText((string) ($data[5] ?? '')) ?: null),
             'address2' => $customer?->city ?: ($this->birText((string) ($data[6] ?? '')) ?: null),
-            'exempt_sales' => $this->parseNumber($data[7] ?? null),
-            'zero_rated_sales' => $this->parseNumber($data[8] ?? null),
-            'taxable_sales' => $this->parseNumber($data[9] ?? null),
-            'output_vat' => $this->parseNumber($data[11] ?? null),
+            'exempt_sales' => $amounts['exempt_sales'],
+            'zero_rated_sales' => $amounts['zero_rated_sales'],
+            'taxable_sales' => $amounts['taxable_net_of_vat'],
+            'output_vat' => $amounts['output_vat'],
         ], $rowNumber);
 
-        return $this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer);
+        return [
+            ...$this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer),
+            ...$this->salesAmountIssues($result['errors'], $rowNumber, $customerName),
+        ];
+    }
+
+    private function salesAmountIssues(array $errors, int $rowNumber, string $customerName): array
+    {
+        return array_map(fn (string $error) => $this->issue(
+            $rowNumber, $customerName, 'sales', 'sales_amounts', $error,
+            'Sales upload workbook', '', ['Sales amounts and zero-rated classification'], 'uploaded transaction amounts'
+        ), $errors);
     }
 
     /**
@@ -418,9 +439,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
     private function looksLikeSalesSummaryRow(array $data): bool
     {
         $customerName = $this->birText((string) ($data[6] ?? ''));
-        $hasSalesAmount = $this->parseNumber($data[11] ?? null) !== 0.00
-            || $this->parseNumber($data[12] ?? null) !== 0.00
-            || $this->parseNumber($data[13] ?? null) !== 0.00;
+        $hasSalesAmount = SalesAmountNormalizer::hasSummaryAmount($data, $this->salesZeroRatedColumn);
 
         return $customerName !== '' && $hasSalesAmount;
     }
@@ -429,9 +448,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
     {
         $hasName = $this->birText((string) ($data[1] ?? '')) !== ''
             || $this->birText((string) ($data[2] ?? '')) !== '';
-        $hasSalesAmount = $this->parseNumber($data[9] ?? null) !== 0.00
-            || $this->parseNumber($data[11] ?? null) !== 0.00
-            || $this->parseNumber($data[12] ?? null) !== 0.00;
+        $hasSalesAmount = SalesAmountNormalizer::hasBirAmount($data);
 
         return $hasName && $hasSalesAmount;
     }

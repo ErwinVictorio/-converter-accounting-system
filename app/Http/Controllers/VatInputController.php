@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Imports\ExpandedWtaxBirInfoPreflight;
 use App\Imports\ExpandedWtaxImport;
 use App\Imports\ExpandedWtaxUploadPreflight;
 use App\Imports\UploadBirInfoPreflight;
@@ -94,10 +95,10 @@ class VatInputController extends Controller
 
                 if ($birIssues !== []) {
                     return back()
-                        ->with('error', 'Sales upload rejected. Fix customer BIR info before importing.')
+                        ->with('error', 'Sales upload rejected. Fix customer BIR info or Sales amounts before importing.')
                         ->with('uploadIssueDialog', [
-                            'title' => 'Sales upload needs BIR info fixes',
-                            'message' => 'Fix customer BIR info before uploading this file.',
+                            'title' => 'Sales upload needs BIR info or amount fixes',
+                            'message' => 'Fix the listed customer BIR info or workbook amounts before uploading this file.',
                             'summary' => count($birIssues) . ' issue(s) found. No records were imported or replaced.',
                             'record_type' => 'sales',
                             'issues' => $birIssues,
@@ -164,6 +165,24 @@ class VatInputController extends Controller
                         );
                     }
 
+                    /*
+                     * Per-row BIR rules, run before the delete for the same reason:
+                     * a payee TIN eight digits long is the workbook's problem, and
+                     * saying so now beats importing the year and blocking Generate
+                     * DAT later. Nothing is written by this check.
+                     */
+                    $birIssues = app(ExpandedWtaxBirInfoPreflight::class)->check(
+                        $file,
+                        $endDate->toDateString(),
+                        $withholdingAgent,
+                        true,
+                        'annual'
+                    );
+
+                    if ($birIssues !== []) {
+                        return $this->expandedBirIssueResponse($birIssues, 'annual');
+                    }
+
                     DB::transaction(function () use ($startDate, $endDate, $file, $withholdingAgent) {
                         ExpandedWtaxEntry::query()
                             ->where('report_type', 'annual')
@@ -200,6 +219,18 @@ class VatInputController extends Controller
                         'error',
                         'Expanded withholding tax upload rejected. ' . implode(' ', $issues)
                     );
+                }
+
+                $birIssues = app(ExpandedWtaxBirInfoPreflight::class)->check(
+                    $file,
+                    $reportingPeriod,
+                    $withholdingAgent,
+                    false,
+                    'quarterly'
+                );
+
+                if ($birIssues !== []) {
+                    return $this->expandedBirIssueResponse($birIssues, 'quarterly');
                 }
 
                 /*
@@ -272,6 +303,30 @@ class VatInputController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Import failed: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * The rejection an invalid Expanded workbook gets: the same dialog Sales and
+     * Purchase use, with the workbook itself named as the place to fix -- an
+     * Expanded payee comes from the file, not from Customers or Suppliers.
+     *
+     * @param  array<int, array<string, mixed>>  $issues
+     */
+    private function expandedBirIssueResponse(array $issues, string $reportType)
+    {
+        $rows = ExpandedWtaxBirInfoPreflight::affectedRows($issues);
+        $label = $reportType === 'annual' ? 'annual upload' : 'upload';
+
+        return back()
+            ->with('error', 'Expanded WTAX ' . $label . ' rejected. Correct the workbook before importing.')
+            ->with('uploadIssueDialog', [
+                'title' => 'Expanded WTAX upload needs BIR info fixes',
+                'message' => 'Correct the listed fields in the workbook and upload again.',
+                'summary' => count($issues) . ' issue(s) found across ' . $rows . ' worksheet row(s). '
+                    . 'No records were imported or replaced.',
+                'record_type' => 'expanded',
+                'issues' => $issues,
+            ]);
     }
 
     /**

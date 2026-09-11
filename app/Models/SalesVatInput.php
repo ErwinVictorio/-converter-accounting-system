@@ -34,6 +34,7 @@ class SalesVatInput extends Model
         'address2',
         'exempt_sales',
         'zero_rated_sales',
+        's_zero_rated',
         'reporting_period',
         'is_adjusted',
     ];
@@ -51,6 +52,7 @@ class SalesVatInput extends Model
         'zero_rated_sales' => 'decimal:2',
         'reporting_period' => 'date:m/d/Y',
         'is_adjusted' => 'boolean',
+        's_zero_rated' => 'boolean',
     ];
 
     public function toBirSalesRow(): array

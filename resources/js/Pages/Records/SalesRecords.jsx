@@ -60,7 +60,6 @@ function SalesRecords() {
                             <TableHead className="text-right font-semibold text-slate-700">Zero Rated</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Taxable Net of VAT</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Output VAT</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Total Sales</TableHead>
                             <TableHead className="text-right font-semibold text-slate-700">Gross Taxable</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -97,9 +96,6 @@ function SalesRecords() {
                                     <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
                                         {formatCurrency(item.output_vat)}
                                     </TableCell>
-                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs font-bold text-slate-900">
-                                        {formatCurrency(item.net_amount)}
-                                    </TableCell>
                                     <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
                                         {formatCurrency(item.gross_amount)}
                                     </TableCell>
@@ -107,7 +103,7 @@ function SalesRecords() {
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={11} className="h-32 text-center text-slate-500">
+                                <TableCell colSpan={10} className="h-32 text-center text-slate-500">
                                     No sales records found.
                                 </TableCell>
                             </TableRow>
