@@ -88,6 +88,10 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
                 'input_vat' => $this->parseNumber($this->value($data, ['input_vat', 'inputvat'])),
             ], $index + 1);
 
+            if ($this->birText($address2) === '') {
+                $rowIssues[] = 'Supplier Address2 (City) is required. Add the supplier City in Master Data > Suppliers, or correct the workbook identity so it matches the intended supplier.';
+            }
+
             foreach ($this->uploadBlockingErrors($rowIssues) as $error) {
                 $issues[] = $this->issue(
                     $index + 1,
@@ -300,6 +304,8 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
         $customer = $this->findCustomer($customerName);
         $result = SalesAmountNormalizer::summary($data, $this->salesZeroRatedColumn);
         $amounts = $result['amounts'];
+        $address1 = $customer?->addr ?: $existingBirInfo?->address1;
+        $address2 = $customer?->city ?: $existingBirInfo?->address2;
         $rowIssues = (new BirSalesRowValidator)->validate([
             'customer_type' => $customer ? 'company' : ($existingBirInfo?->customer_type ?: 'company'),
             'customer_tin' => $customer?->tin ?: $existingBirInfo?->customer_tin,
@@ -307,13 +313,17 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             'last_name' => $existingBirInfo?->last_name,
             'first_name' => $existingBirInfo?->first_name,
             'middle_name' => $existingBirInfo?->middle_name,
-            'address1' => $customer?->addr ?: $existingBirInfo?->address1,
-            'address2' => $customer?->city ?: $existingBirInfo?->address2,
+            'address1' => $address1,
+            'address2' => $address2,
             'exempt_sales' => 0,
             'zero_rated_sales' => $amounts['zero_rated_sales'],
             'taxable_sales' => $amounts['taxable_net_of_vat'],
             'output_vat' => $amounts['output_vat'],
         ], $rowNumber);
+
+        if ($this->birText($address2) === '') {
+            $rowIssues[] = 'Customer Address2 (City) is required. Add the customer City in Master Data > Customers, or correct the workbook customer name so it matches the intended customer.';
+        }
 
         return [
             ...$this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer),
@@ -340,6 +350,8 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
         $customerType = $companyName !== '' ? 'company' : 'individual';
         $result = SalesAmountNormalizer::bir($data);
         $amounts = $result['amounts'];
+        $address1 = $customer?->addr ?: ($this->birText((string) ($data[5] ?? '')) ?: null);
+        $address2 = $customer?->city ?: ($this->birText((string) ($data[6] ?? '')) ?: null);
         $rowIssues = (new BirSalesRowValidator)->validate([
             'customer_type' => $customer ? 'company' : $customerType,
             'customer_tin' => $customer?->tin ?: $this->formatTin((string) ($data[0] ?? '')),
@@ -347,13 +359,17 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             'last_name' => $customer ? null : ($customerType === 'individual' ? $lastName : null),
             'first_name' => $customer ? null : ($customerType === 'individual' ? $firstName : null),
             'middle_name' => $customer ? null : ($customerType === 'individual' ? $middleName : null),
-            'address1' => $customer?->addr ?: ($this->birText((string) ($data[5] ?? '')) ?: null),
-            'address2' => $customer?->city ?: ($this->birText((string) ($data[6] ?? '')) ?: null),
+            'address1' => $address1,
+            'address2' => $address2,
             'exempt_sales' => $amounts['exempt_sales'],
             'zero_rated_sales' => $amounts['zero_rated_sales'],
             'taxable_sales' => $amounts['taxable_net_of_vat'],
             'output_vat' => $amounts['output_vat'],
         ], $rowNumber);
+
+        if ($this->birText($address2) === '') {
+            $rowIssues[] = 'Customer Address2 (City) is required. Add the customer City in Master Data > Customers, or correct the workbook customer name so it matches the intended customer.';
+        }
 
         return [
             ...$this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer),
@@ -504,6 +520,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
         return match (true) {
             str_contains($error, 'Vendor TIN') => 'vendor_tin',
             str_contains($error, 'Address1') => 'address1',
+            str_contains($error, 'Address2') => 'address2',
             str_contains($error, 'Company name') => 'company_name',
             default => 'bir_info',
         };
@@ -514,6 +531,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
         return match (true) {
             str_contains($error, 'Customer TIN') => 'customer_tin',
             str_contains($error, 'Address1') => 'address1',
+            str_contains($error, 'Address2') => 'address2',
             str_contains($error, 'Company name') => 'company_name',
             default => 'bir_info',
         };

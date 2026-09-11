@@ -27,6 +27,7 @@ const styles = StyleSheet.create({
     },
     meta: {
         marginBottom: 2,
+        fontSize: 7,
     },
     table: {
         marginTop: 12,
@@ -38,10 +39,12 @@ const styles = StyleSheet.create({
         padding: 3,
         flexGrow: 1,
         flexBasis: 0,
+        flexBasis: 6,
     },
     headerCell: {
         fontWeight: 700,
         backgroundColor: "#f1f5f9",
+        fontSize: 6.5,
     },
     totalCell: {
         fontWeight: 700,
@@ -114,13 +117,13 @@ function AttachmentDocument({ report }) {
                     )
                 ),
                 (report.totals || []).length > 0 &&
-                    React.createElement(
-                        Row,
-                        null,
-                        ...report.totals.map((value, cellIndex) =>
-                            React.createElement(Cell, { key: `total-${cellIndex}`, total: true }, formatAmount(value, report.columns?.[cellIndex]))
-                        )
+                React.createElement(
+                    Row,
+                    null,
+                    ...report.totals.map((value, cellIndex) =>
+                        React.createElement(Cell, { key: `total-${cellIndex}`, total: true }, formatAmount(value, report.columns?.[cellIndex]))
                     )
+                )
             ),
             React.createElement(Text, { style: styles.end }, "END OF REPORT")
         )

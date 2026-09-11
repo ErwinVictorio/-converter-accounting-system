@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Imports\UploadBirInfoPreflight;
 use App\Imports\UploadWorkbookTypePreflight;
 use App\Models\Customer;
 use App\Models\ImportationEntry;
@@ -13,8 +14,10 @@ use App\Services\BIR\BirPurchaseRowValidator;
 use App\Services\BIR\BirSalesRowValidator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Inertia\Testing\AssertableInertia as Assert;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class UploadWorkbookTypePreflightTest extends TestCase
@@ -600,6 +603,189 @@ class UploadWorkbookTypePreflightTest extends TestCase
         $this->assertDatabaseHas('vat_inputs', ['supplier_name' => 'OLD SUPPLIER']);
         $this->assertDatabaseMissing('vat_inputs', ['supplier_name' => 'ABC SUPPLIER']);
         $this->assertSame(1, VatInput::count());
+    }
+
+    public static function blankCities(): array
+    {
+        return ['empty' => [''], 'whitespace' => [" \t "], 'normalized blank' => [',']];
+    }
+
+    #[DataProvider('blankCities')]
+    public function test_purchase_missing_city_reaches_dialog_without_replacing_records(?string $city): void
+    {
+        $this->validSupplier()->update(['city' => $city]);
+        $old = $this->purchaseRow();
+        $before = $old->fresh()->getAttributes();
+
+        $this->from('/records')->post('/vat-import', [
+            'excel_file' => $this->purchaseWorkbookWithBureauOfCustoms(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'purchase',
+        ])->assertRedirect('/records')->assertSessionHas('error')->assertSessionMissing('success');
+
+        $issues = session('uploadIssueDialog.issues');
+        $this->assertCount(1, $issues);
+        $this->assertSame(4, $issues[0]['row']);
+        $this->assertSame('ABC SUPPLIER', $issues[0]['name']);
+        $this->assertSame('address2', $issues[0]['field']);
+        $this->assertSame('/suppliers', $issues[0]['fix_route']);
+        $this->assertSame('Master Data > Suppliers', $issues[0]['fix_location']);
+        $this->assertSame(['TIN', 'Address', 'City'], $issues[0]['needed_fields']);
+        $this->assertStringContainsString('Supplier Address2 (City) is required.', $issues[0]['problem']);
+        $this->assertSame($before, $old->fresh()->getAttributes());
+        $this->assertDatabaseCount('vat_inputs', 1);
+
+        $this->get('/records')->assertInertia(fn (Assert $page) => $page
+            ->has('flash.uploadIssueDialog.issues', 1)
+            ->where('flash.uploadIssueDialog.issues.0.field', 'address2'));
+    }
+
+    public static function purchaseAddressFallbacks(): array
+    {
+        return [
+            'missing' => ['MAIN STREET', '', false],
+            'explicit city' => ['MAIN STREET', 'MANILA', true],
+            'split address' => ['MAIN STREET, MANILA', '', true],
+        ];
+    }
+
+    #[DataProvider('purchaseAddressFallbacks')]
+    public function test_unmatched_purchase_city_uses_existing_workbook_fallback(string $address1, string $address2, bool $allowed): void
+    {
+        // Check preflight directly: the unmatched importer lookup uses MySQL LEFT,
+        // which cannot execute in this SQLite test database.
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getActiveSheet()->fromArray([
+            ['Purchase VAT Report'],
+            ['For May 2026'],
+            ['vendor_tin', 'supplier_name', 'address1', 'address2', 'input_vat', 'total_purchases'],
+            ['123456789000', 'UNMATCHED SUPPLIER', $address1, $address2, 120, 1120],
+        ]);
+        $path = storage_path('app/purchase-address2-fallback-test.xlsx');
+        (new Xlsx($spreadsheet))->save($path);
+        $issues = (new UploadBirInfoPreflight)->checkPurchase(
+            new UploadedFile($path, 'purchase-address2-fallback-test.xlsx', null, null, true),
+            '2026-05-31'
+        );
+
+        if ($allowed) {
+            $this->assertSame([], $issues);
+        } else {
+            $this->assertCount(1, $issues);
+            $this->assertSame('address2', $issues[0]['field']);
+            $this->assertSame(4, $issues[0]['row']);
+        }
+    }
+
+    #[DataProvider('blankCities')]
+    public function test_sales_missing_city_reports_all_importable_rows_and_preserves_month(?string $city): void
+    {
+        $this->validCustomer()->update(['city' => $city]);
+        $old = $this->salesRow();
+        $before = $old->fresh()->getAttributes();
+
+        $this->from('/records')->post('/vat-import', [
+            'excel_file' => $this->salesSummaryWithDocumentTypesCsv(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'sales',
+        ])->assertRedirect('/records')->assertSessionHas('error')->assertSessionMissing('success');
+
+        $issues = session('uploadIssueDialog.issues');
+        $this->assertCount(2, $issues);
+        $this->assertSame([2, 3], array_column($issues, 'row'));
+        $this->assertSame(['address2', 'address2'], array_column($issues, 'field'));
+        $this->assertSame('SECOND SONS CONSTRUCTION', $issues[0]['name']);
+        $this->assertSame('/customers', $issues[0]['fix_route']);
+        $this->assertSame('Master Data > Customers', $issues[0]['fix_location']);
+        $this->assertStringContainsString('Customer Address2 (City) is required.', $issues[0]['problem']);
+        $this->assertSame($before, $old->fresh()->getAttributes());
+        $this->assertDatabaseCount('sales_vatsinputs', 1);
+
+        $this->get('/records')->assertInertia(fn (Assert $page) => $page
+            ->has('flash.uploadIssueDialog.issues', 2)
+            ->where('flash.uploadIssueDialog.issues.0.field', 'address2'));
+    }
+
+    public static function historicalCitySources(): array
+    {
+        return [
+            'previous month' => ['2026-04-30', false, true],
+            'retained adjustment' => ['2026-05-31', true, true],
+            'row about to be replaced' => ['2026-05-31', false, false],
+        ];
+    }
+
+    #[DataProvider('historicalCitySources')]
+    public function test_sales_city_fallback_only_uses_records_retained_after_replacement(string $period, bool $adjusted, bool $allowed): void
+    {
+        $old = $this->salesRow([
+            'customer_name' => 'SECOND SONS CONSTRUCTION',
+            'customer_tin' => '111222333',
+            'company_name' => 'SECOND SONS CONSTRUCTION',
+            'address1' => 'MAIN STREET',
+            'address2' => 'MANILA',
+            'reporting_period' => $period,
+            'is_adjusted' => $adjusted,
+        ]);
+        $before = $old->fresh()->getAttributes();
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->simpleSalesSummaryCsv(),
+            'reporting_month' => '2026-05',
+            'record_type' => 'sales',
+        ]);
+
+        if ($allowed) {
+            $response->assertSessionHas('success')->assertSessionMissing('uploadIssueDialog');
+            $this->assertDatabaseHas('sales_vatsinputs', ['document_no' => 'SI#13940', 'address2' => 'MANILA']);
+        } else {
+            $response->assertSessionHas('error')->assertSessionMissing('success');
+            $this->assertContains('address2', array_column(session('uploadIssueDialog.issues'), 'field'));
+            $this->assertDatabaseCount('sales_vatsinputs', 1);
+        }
+        $this->assertSame($before, $old->fresh()->getAttributes());
+    }
+
+    public static function birSalesCitySources(): array
+    {
+        return [
+            'no master or city' => [false, '', '', null],
+            'blank master and workbook' => [true, '', '', null],
+            'master city' => [true, 'MASTER CITY', '', 'MASTER CITY'],
+            'workbook city' => [false, '', 'WORKBOOK CITY', 'WORKBOOK CITY'],
+            'blank master with workbook fallback' => [true, '', 'WORKBOOK CITY', 'WORKBOOK CITY'],
+            'master takes priority' => [true, 'MASTER CITY', 'WORKBOOK CITY', 'MASTER CITY'],
+        ];
+    }
+
+    #[DataProvider('birSalesCitySources')]
+    public function test_bir_sales_requires_city_and_preserves_source_priority(bool $matched, string $masterCity, string $workbookCity, ?string $expectedCity): void
+    {
+        if ($matched) {
+            $this->validCustomer()->update(['city' => $masterCity]);
+        }
+        $old = $this->salesRow();
+        $before = $old->fresh()->getAttributes();
+        $response = $this->post('/vat-import', [
+            'excel_file' => $this->csv('sales.csv', [
+                'CLIENT TIN,Company Name,Last Name,First Name,Middle Name,Address1,Address2,Exempt Sales,Zero Rated Sales,Taxable Sales,Total Sales,Output VAT,Net Amount,Gross Amount',
+                '111222333,SECOND SONS CONSTRUCTION,,,,MAIN STREET,'.$workbookCity.',0,0,1000,1000,120,1120,1120',
+            ]),
+            'reporting_month' => '2026-05',
+            'record_type' => 'sales',
+        ]);
+
+        if ($expectedCity !== null) {
+            $response->assertSessionHas('success')->assertSessionMissing('uploadIssueDialog');
+            $this->assertSame($expectedCity, SalesVatInput::sole()->address2);
+        } else {
+            $response->assertSessionHas('error')->assertSessionMissing('success');
+            $issues = session('uploadIssueDialog.issues');
+            $this->assertCount(1, $issues);
+            $this->assertSame('address2', $issues[0]['field']);
+            $this->assertSame(2, $issues[0]['row']);
+            $this->assertSame($before, $old->fresh()->getAttributes());
+            $this->assertDatabaseCount('sales_vatsinputs', 1);
+        }
     }
 
     public function test_purchase_upload_allows_text_length_issues_until_dat_generation(): void
