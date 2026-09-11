@@ -121,7 +121,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
         $brokerRow = $this->brokerRow();
         $uploaded = $this->purchase();
 
-        $this->transfer($brokerRow)->assertRedirect('/records');
+        $this->transfer($brokerRow)->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $this->assertSame(2, VatInput::count());
         $this->assertSame(0, VatInput::where('is_adjusted', true)->count());
@@ -137,7 +137,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
         $this->transfer($brokerRow, [
             'supplier_name' => 'RETYPED HARDWARE',
             'company_name' => 'RETYPED HARDWARE',
-        ])->assertRedirect('/records');
+        ])->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $uploaded->refresh();
 
@@ -162,7 +162,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'purchase_local' => 800,
             'services' => 400,
             'others' => 500,
-        ])->assertRedirect('/records');
+        ])->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $brokerRow->refresh();
 
@@ -186,7 +186,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'purchase_local' => 1000,
             'services' => 400,
             'others' => 500,
-        ])->assertRedirect('/records');
+        ])->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $uploaded->refresh();
 
@@ -233,7 +233,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'is_imported' => true,
             'purchase_imported' => 3000,
             'services' => 0,
-        ])->assertRedirect('/records');
+        ])->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $uploaded->refresh();
 
@@ -259,7 +259,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'total' => 6000.00,
         ]);
 
-        $this->transfer($brokerRow)->assertRedirect('/records');
+        $this->transfer($brokerRow)->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $uploaded->refresh();
 
@@ -285,7 +285,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'is_adjusted' => true,
         ]);
 
-        $this->transfer($brokerRow)->assertRedirect('/records');
+        $this->transfer($brokerRow)->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $this->assertSame('400.00', $uploaded->fresh()->services);
         $this->assertSame('100.00', $adjusted->fresh()->services);
@@ -305,7 +305,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'is_adjusted' => true,
         ]);
 
-        $this->transfer($brokerRow)->assertRedirect('/records');
+        $this->transfer($brokerRow)->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $adjusted->refresh();
 
@@ -323,7 +323,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
     {
         $brokerRow = $this->brokerRow();
 
-        $this->transfer($brokerRow)->assertRedirect('/records');
+        $this->transfer($brokerRow)->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $created = VatInput::where('is_adjusted', true)->sole();
 
@@ -341,7 +341,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
         $brokerRow = $this->brokerRow();
         $otherMonth = $this->purchase(['date_uploaded' => '2026-03-31']);
 
-        $this->transfer($brokerRow)->assertRedirect('/records');
+        $this->transfer($brokerRow)->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $this->assertSame('0.00', $otherMonth->fresh()->services);
         $this->assertSame(1, VatInput::where('is_adjusted', true)->count());
@@ -358,7 +358,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'other_than_capital_goods' => 0.00,
         ]);
 
-        $this->transfer($brokerRow)->assertRedirect('/records');
+        $this->transfer($brokerRow)->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $this->assertSame('0.00', $importedRow->fresh()->services);
 
@@ -378,7 +378,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'supplier_name' => 'FAST LANE BROKERAGE INC.',
             'company_name' => 'FAST LANE BROKERAGE INC.',
             'tin_number' => self::BROKER_TIN,
-        ])->assertRedirect('/records');
+        ])->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $brokerRow->refresh();
 
@@ -428,7 +428,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'is_imported' => true,
             'purchase_imported' => 0,
             'services' => 400,
-        ])->assertRedirect('/records');
+        ])->assertRedirect("/records/{$brokerRow->id}/edit");
 
         $this->assertSame('0.00', $mirror->fresh()->services);
         $this->assertSame('400.00', VatInput::where('is_adjusted', true)->sole()->services);

@@ -28,7 +28,7 @@ function EditVatInputRecord() {
   const { flash, vatInput } = usePage().props;
   const [targetLookupStatus, setTargetLookupStatus] = useState("idle");
 
-  const { data, setData, put, processing, errors } = useForm({
+  const { data, setData, put, processing, errors, reset } = useForm({
     supplier_name: "",
     tin_number: "",
     vendor_type: "company",
@@ -168,6 +168,10 @@ function EditVatInputRecord() {
 
     put(`/records/${vatInput.id}`, {
       preserveScroll: true,
+      onSuccess: () => {
+        reset();
+        setTargetLookupStatus("idle");
+      },
     });
   };
 

@@ -621,7 +621,7 @@ class VatInputController extends Controller
             ]);
         });
 
-        return redirect('/records')->with('success', 'VAT input record adjusted successfully.');
+        return redirect("/records/{$vatInput->id}/edit")->with('success', 'VAT input record adjusted successfully.');
     }
 
     public function updateBirInfo(Request $request, VatInput $vatInput)
