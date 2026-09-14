@@ -58,9 +58,13 @@ Route::middleware('auth')->group(function () {
         ->name('view-info.show');
 
     Route::get('/records/{vatInput}/adjusted-lookup', [VatInputController::class, 'adjustedLookup']);
+    Route::get('/records/{vatInput}/adjustment-delete-context', [VatInputController::class, 'adjustmentDeleteContext'])
+        ->name('records.purchases.adjustment-delete-context');
     Route::get('/records/{vatInput}/edit', [VatInputController::class, 'edit']);
     Route::put('/records/{vatInput}', [VatInputController::class, 'update']);
     Route::put('/records/{vatInput}/bir-info', [VatInputController::class, 'updateBirInfo']);
+    Route::delete('/records/{vatInput}', [VatInputController::class, 'destroyAdjusted'])
+        ->name('records.purchases.destroy-adjusted');
 
     Route::get('/generate-datfile', [DatFileController::class, 'index']);
     Route::get('/bir/company/{tin}', [DatFileController::class, 'companyLookup']);

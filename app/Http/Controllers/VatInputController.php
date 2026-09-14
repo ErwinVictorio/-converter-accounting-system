@@ -10,6 +10,8 @@ use App\Imports\UploadBirInfoPreflight;
 use App\Imports\UploadWorkbookTypePreflight;
 use App\Models\Brokers;
 use App\Models\ExpandedWtaxEntry;
+use App\Models\ImportationEntry;
+use App\Models\PurchaseAdjustment;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\AnnualCoveredPeriodValidator;
@@ -19,13 +21,23 @@ use App\Services\PurchaseUploadService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
 
 class VatInputController extends Controller
 {
+    private const PURCHASE_ADJUSTMENT_FIELDS = [
+        'purchase_imported',
+        'purchase_local',
+        'services',
+        'others',
+    ];
+
     /**
      * The Known Company dropdown and the withholding agent an Expanded WTAX upload
      * is stored under both come from here, so this screen and the Generate DAT
@@ -539,15 +551,31 @@ class VatInputController extends Controller
         }
 
         DB::transaction(function () use ($vatInput, $validated, $amounts, $newTotal) {
+            $sourceRecord = VatInput::query()->lockForUpdate()->findOrFail($vatInput->id);
+
+            if (! $this->isBrokerRecord($sourceRecord)) {
+                throw ValidationException::withMessages([
+                    'total' => 'Only broker records can be adjusted.',
+                ]);
+            }
+
+            foreach ($amounts as $field => $amount) {
+                if ($amount > (float) $sourceRecord->{$field}) {
+                    throw ValidationException::withMessages([
+                        $field => 'The broker balance changed. Review the available amounts and try again.',
+                    ]);
+                }
+            }
+
             $supplierName = $validated['vendor_type'] === 'company'
                 ? ($validated['company_name'] ?? $validated['supplier_name'] ?? '')
                 : trim(($validated['last_name'] ?? '').' '.($validated['first_name'] ?? '').' '.($validated['middle_name'] ?? ''));
             $tinNumber = $this->formatTin($validated['tin_number']);
             $tinDigits = substr(preg_replace('/\D/', '', $tinNumber), 0, 9);
-            $dateUploaded = $vatInput->getRawOriginal('date_uploaded');
+            $dateUploaded = $sourceRecord->getRawOriginal('date_uploaded');
             $isImported = (bool) $validated['is_imported'];
 
-            $targetRecord = $this->transferTargetQuery($vatInput, $tinDigits, $isImported)
+            $targetRecord = $this->transferTargetQuery($sourceRecord, $tinDigits, $isImported)
                 ->lockForUpdate()
                 ->first();
 
@@ -587,7 +615,7 @@ class VatInputController extends Controller
                     $targetRecord->is_adjusted ? $adjustedPayload : []
                 );
             } else {
-                VatInput::create([
+                $targetRecord = VatInput::create([
                     ...$adjustedPayload,
                     'exempt' => 0,
                     'zero_rated' => 0,
@@ -606,14 +634,20 @@ class VatInputController extends Controller
                 ]);
             }
 
+            PurchaseAdjustment::create([
+                'source_vat_input_id' => $sourceRecord->id,
+                'target_vat_input_id' => $targetRecord->id,
+                ...$amounts,
+            ]);
+
             $remaining = [
-                'purchase_imported' => round((float) $vatInput->purchase_imported - $amounts['purchase_imported'], 2),
-                'purchase_local' => round((float) $vatInput->purchase_local - $amounts['purchase_local'], 2),
-                'services' => round((float) $vatInput->services - $amounts['services'], 2),
-                'others' => round((float) $vatInput->others - $amounts['others'], 2),
+                'purchase_imported' => round((float) $sourceRecord->purchase_imported - $amounts['purchase_imported'], 2),
+                'purchase_local' => round((float) $sourceRecord->purchase_local - $amounts['purchase_local'], 2),
+                'services' => round((float) $sourceRecord->services - $amounts['services'], 2),
+                'others' => round((float) $sourceRecord->others - $amounts['others'], 2),
             ];
 
-            $vatInput->update([
+            $sourceRecord->update([
                 ...$remaining,
                 'total' => array_sum($remaining),
                 'is_broker' => true,
@@ -621,6 +655,296 @@ class VatInputController extends Controller
         });
 
         return redirect("/records/{$vatInput->id}/edit")->with('success', 'VAT input record adjusted successfully.');
+    }
+
+    /**
+     * The information the Purchase Records confirmation dialog needs.
+     *
+     * A row created before purchase_adjustments existed is not guessed back to a
+     * broker. Instead, its untracked amounts and valid same-period broker choices
+     * are returned so the user can explicitly map every cent before deletion.
+     */
+    public function adjustmentDeleteContext(VatInput $vatInput)
+    {
+        $this->guardAdjustedDeleteTarget($vatInput);
+
+        $histories = PurchaseAdjustment::query()
+            ->where('target_vat_input_id', $vatInput->id)
+            ->get();
+        $coverage = $this->adjustmentCoverage($vatInput, $histories);
+
+        return response()->json([
+            'status' => $coverage['invalid']
+                ? 'invalid'
+                : ($coverage['complete'] ? 'ready' : 'needs_link'),
+            'message' => $coverage['invalid']
+                ? 'Adjustment history exceeds the stored adjusted amounts. The record was not changed.'
+                : null,
+            'target_amounts' => $coverage['target'],
+            'unresolved_amounts' => $coverage['unresolved'],
+            'candidates' => $coverage['complete'] || $coverage['invalid']
+                ? []
+                : $this->adjustmentSourceCandidates($vatInput)->get()->map(fn (VatInput $candidate) => [
+                    'id' => $candidate->id,
+                    'supplier_name' => $candidate->supplier_name,
+                    'tin_number' => $candidate->tin_number,
+                    'purchase_imported' => $candidate->purchase_imported,
+                    'purchase_local' => $candidate->purchase_local,
+                    'services' => $candidate->services,
+                    'others' => $candidate->others,
+                ])->values(),
+        ]);
+    }
+
+    /**
+     * Restore every recorded transfer, then remove its adjusted target.
+     *
+     * All validation, optional legacy linking, source restoration and deletion
+     * share one transaction. A missing cent or source rolls everything back.
+     */
+    public function destroyAdjusted(Request $request, VatInput $vatInput)
+    {
+        $validator = Validator::make($request->all(), [
+            'allocations' => ['nullable', 'array'],
+            'allocations.*.source_vat_input_id' => ['required', 'integer', 'distinct'],
+            'allocations.*.purchase_imported' => ['nullable', 'numeric', 'min:0'],
+            'allocations.*.purchase_local' => ['nullable', 'numeric', 'min:0'],
+            'allocations.*.services' => ['nullable', 'numeric', 'min:0'],
+            'allocations.*.others' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        if ($validator->fails()) {
+            return back()->with('error', $validator->errors()->first());
+        }
+
+        try {
+            DB::transaction(function () use ($vatInput, $validator) {
+                $target = VatInput::query()->lockForUpdate()->findOrFail($vatInput->id);
+                $this->guardAdjustedDeleteTarget($target, true);
+
+                $histories = PurchaseAdjustment::query()
+                    ->where('target_vat_input_id', $target->id)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+                $coverage = $this->adjustmentCoverage($target, $histories);
+
+                if ($coverage['invalid']) {
+                    throw new \DomainException('Adjustment history exceeds the stored adjusted amounts. Nothing was changed.');
+                }
+
+                $allocations = collect($validator->validated()['allocations'] ?? []);
+
+                if (! $coverage['complete']) {
+                    if ($allocations->isEmpty()) {
+                        throw new \DomainException('Link the complete untracked amount to its original broker record before deleting.');
+                    }
+
+                    $this->storeLegacyAdjustmentLinks($target, $coverage['unresolved_cents'], $allocations);
+
+                    // Orphaned links point to a source deleted by a later upload.
+                    // Their amounts were included in the unresolved balance above;
+                    // replace them with the explicit mappings just supplied.
+                    PurchaseAdjustment::query()
+                        ->where('target_vat_input_id', $target->id)
+                        ->whereNull('source_vat_input_id')
+                        ->delete();
+
+                    $histories = PurchaseAdjustment::query()
+                        ->where('target_vat_input_id', $target->id)
+                        ->orderBy('id')
+                        ->lockForUpdate()
+                        ->get();
+                    $coverage = $this->adjustmentCoverage($target, $histories);
+                } elseif ($allocations->isNotEmpty()) {
+                    throw new \DomainException('This adjusted record is already fully linked. Review and confirm the deletion again.');
+                }
+
+                if (! $coverage['complete'] || $coverage['invalid']) {
+                    throw new \DomainException('The linked amounts do not fully match the adjusted record. Nothing was changed.');
+                }
+
+                $sourceIds = $histories->pluck('source_vat_input_id')->unique()->sort()->values();
+                $sources = VatInput::query()
+                    ->whereKey($sourceIds)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
+
+                if ($sources->count() !== $sourceIds->count()) {
+                    throw new \DomainException('An original broker record is missing. Link the adjustment to the correct current broker record first.');
+                }
+
+                foreach ($histories->groupBy('source_vat_input_id') as $sourceId => $sourceHistories) {
+                    $source = $sources->get((int) $sourceId);
+                    $restored = [];
+                    $restoredTotalCents = 0;
+
+                    foreach (self::PURCHASE_ADJUSTMENT_FIELDS as $field) {
+                        $fieldCents = $sourceHistories->sum(fn (PurchaseAdjustment $history) => $this->moneyToCents($history->{$field}));
+                        $restored[$field] = $this->centsToMoney($this->moneyToCents($source->{$field}) + $fieldCents);
+                        $restoredTotalCents += $fieldCents;
+                    }
+
+                    $restored['total'] = $this->centsToMoney(
+                        $this->moneyToCents($source->total) + $restoredTotalCents
+                    );
+
+                    $source->update($restored);
+                }
+
+                $target->delete();
+            });
+        } catch (\DomainException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        return back()->with('success', 'Adjusted Purchase record was undone and deleted. The amounts were returned to the original broker record.');
+    }
+
+    private function guardAdjustedDeleteTarget(VatInput $vatInput, bool $throw = false): void
+    {
+        $message = null;
+
+        if (! $vatInput->is_adjusted) {
+            $message = 'Only adjusted Purchase records can be deleted.';
+        } elseif (ImportationEntry::query()->where('vat_input_id', $vatInput->id)->exists()) {
+            $message = 'Importation-linked Purchase records cannot be deleted here.';
+        }
+
+        if ($message === null) {
+            return;
+        }
+
+        if ($throw) {
+            throw new \DomainException($message);
+        }
+
+        abort(403, $message);
+    }
+
+    /**
+     * @param  Collection<int, PurchaseAdjustment>  $histories
+     * @return array<string, mixed>
+     */
+    private function adjustmentCoverage(VatInput $target, $histories): array
+    {
+        $validHistories = $histories->whereNotNull('source_vat_input_id');
+        $targetAmounts = [];
+        $unresolvedAmounts = [];
+        $unresolvedCents = [];
+        $invalid = false;
+
+        foreach (self::PURCHASE_ADJUSTMENT_FIELDS as $field) {
+            $targetCents = $this->moneyToCents($target->{$field});
+            $trackedCents = $validHistories->sum(
+                fn (PurchaseAdjustment $history) => $this->moneyToCents($history->{$field})
+            );
+            $remainingCents = $targetCents - $trackedCents;
+
+            if ($remainingCents < 0) {
+                $invalid = true;
+            }
+
+            $targetAmounts[$field] = $this->centsToMoney($targetCents);
+            $unresolvedCents[$field] = max($remainingCents, 0);
+            $unresolvedAmounts[$field] = $this->centsToMoney(max($remainingCents, 0));
+        }
+
+        $complete = ! $invalid
+            && $validHistories->isNotEmpty()
+            && collect($unresolvedCents)->every(fn (int $amount) => $amount === 0)
+            && $histories->whereNull('source_vat_input_id')->isEmpty();
+
+        return [
+            'complete' => $complete,
+            'invalid' => $invalid,
+            'target' => $targetAmounts,
+            'unresolved' => $unresolvedAmounts,
+            'unresolved_cents' => $unresolvedCents,
+        ];
+    }
+
+    private function adjustmentSourceCandidates(VatInput $target): Builder
+    {
+        return VatInput::query()
+            ->excludingImportationMirrors()
+            ->whereKeyNot($target->id)
+            ->where('is_adjusted', false)
+            ->where('is_imported', (bool) $target->is_imported)
+            ->whereDate('date_uploaded', $target->getRawOriginal('date_uploaded'))
+            ->whereExists(function ($query) {
+                $query->selectRaw('1')
+                    ->from('brokers')
+                    ->whereRaw("SUBSTR(REPLACE(REPLACE(REPLACE(brokers.tin_number, '-', ''), ' ', ''), '.', ''), 1, 9) = SUBSTR(REPLACE(REPLACE(REPLACE(vat_inputs.tin_number, '-', ''), ' ', ''), '.', ''), 1, 9)");
+            })
+            ->orderBy('supplier_name')
+            ->orderBy('id');
+    }
+
+    /**
+     * @param  array<string, int>  $unresolvedCents
+     * @param  Collection<int, array<string, mixed>>  $allocations
+     */
+    private function storeLegacyAdjustmentLinks(VatInput $target, array $unresolvedCents, $allocations): void
+    {
+        $sourceIds = $allocations->pluck('source_vat_input_id')->map(fn ($id) => (int) $id);
+        $candidates = $this->adjustmentSourceCandidates($target)
+            ->whereKey($sourceIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
+        if ($candidates->count() !== $sourceIds->unique()->count()) {
+            throw new \DomainException('Select only original broker records from the same month and Imported status.');
+        }
+
+        $allocatedCents = array_fill_keys(self::PURCHASE_ADJUSTMENT_FIELDS, 0);
+        $normalized = [];
+
+        foreach ($allocations as $allocation) {
+            $sourceId = (int) $allocation['source_vat_input_id'];
+            $row = [
+                'source_vat_input_id' => $sourceId,
+                'target_vat_input_id' => $target->id,
+            ];
+            $rowTotalCents = 0;
+
+            foreach (self::PURCHASE_ADJUSTMENT_FIELDS as $field) {
+                $cents = $this->moneyToCents($allocation[$field] ?? 0);
+                $allocatedCents[$field] += $cents;
+                $rowTotalCents += $cents;
+                $row[$field] = $this->centsToMoney($cents);
+            }
+
+            if ($rowTotalCents <= 0) {
+                throw new \DomainException('Each selected broker must receive at least one adjustment amount.');
+            }
+
+            $normalized[] = $row;
+        }
+
+        foreach (self::PURCHASE_ADJUSTMENT_FIELDS as $field) {
+            if ($allocatedCents[$field] !== $unresolvedCents[$field]) {
+                throw new \DomainException('The linked amounts must exactly equal every untracked adjusted amount.');
+            }
+        }
+
+        foreach ($normalized as $row) {
+            PurchaseAdjustment::create($row);
+        }
+    }
+
+    private function moneyToCents(mixed $amount): int
+    {
+        return (int) round((float) ($amount ?? 0) * 100);
+    }
+
+    private function centsToMoney(int $cents): string
+    {
+        return number_format($cents / 100, 2, '.', '');
     }
 
     public function updateBirInfo(Request $request, VatInput $vatInput)

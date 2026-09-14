@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ExpandedWtaxEntry;
+use App\Models\PurchaseAdjustment;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\BirExpandedWtaxRowValidator;
@@ -28,6 +29,13 @@ use Inertia\Inertia;
  */
 class RecordController extends Controller
 {
+    private const PURCHASE_ADJUSTMENT_FIELDS = [
+        'purchase_imported',
+        'purchase_local',
+        'services',
+        'others',
+    ];
+
     /**
      * Purchase (VAT input) rows, with the broker flag the Adjust action gates on.
      */
@@ -63,6 +71,37 @@ class RecordController extends Controller
             ->orderBy('id')
             ->paginate(15)
             ->withQueryString();
+
+        $adjustedIds = $vatInputs->getCollection()
+            ->filter(fn (VatInput $record) => (bool) $record->is_adjusted)
+            ->pluck('id');
+        $adjustmentHistory = PurchaseAdjustment::query()
+            ->whereIn('target_vat_input_id', $adjustedIds)
+            ->get()
+            ->groupBy('target_vat_input_id');
+
+        $vatInputs->getCollection()->each(function (VatInput $record) use ($adjustmentHistory) {
+            if (! $record->is_adjusted) {
+                return;
+            }
+
+            $histories = $adjustmentHistory->get($record->id, collect());
+            $validHistories = $histories->whereNotNull('source_vat_input_id');
+            $complete = $validHistories->isNotEmpty()
+                && $histories->whereNull('source_vat_input_id')->isEmpty();
+
+            foreach (self::PURCHASE_ADJUSTMENT_FIELDS as $field) {
+                $tracked = $validHistories->sum(
+                    fn (PurchaseAdjustment $history) => $this->moneyToCents($history->{$field})
+                );
+
+                if ($tracked !== $this->moneyToCents($record->{$field})) {
+                    $complete = false;
+                }
+            }
+
+            $record->setAttribute('adjustment_history_complete', $complete);
+        });
 
         return Inertia::render('Records/PurchaseRecords', [
             'vatInputs' => $vatInputs,
@@ -271,5 +310,10 @@ class RecordController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    private function moneyToCents(mixed $amount): int
+    {
+        return (int) round((float) ($amount ?? 0) * 100);
     }
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
-import { ArrowLeft, Eye, Loader2, Save } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Eye, Loader2, Save } from "lucide-react";
 
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
@@ -278,6 +278,16 @@ function EditVatInputRecord() {
         </CardHeader>
 
         <CardContent className="p-4 sm:p-6">
+          <div className="mb-6 flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-semibold">Important amount reminder</p>
+              <p className="mt-1 text-sm">
+                Enter the VAT amount in the Services field, not the VAT-exclusive purchase amount.
+              </p>
+            </div>
+          </div>
+
           <form id="vat-input-edit-form" onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               <div className="space-y-2">

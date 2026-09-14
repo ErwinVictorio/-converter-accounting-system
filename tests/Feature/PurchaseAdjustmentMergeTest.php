@@ -126,6 +126,11 @@ class PurchaseAdjustmentMergeTest extends TestCase
         $this->assertSame(2, VatInput::count());
         $this->assertSame(0, VatInput::where('is_adjusted', true)->count());
         $this->assertSame('400.00', $uploaded->fresh()->services);
+        $this->assertDatabaseHas('purchase_adjustments', [
+            'source_vat_input_id' => $brokerRow->id,
+            'target_vat_input_id' => $uploaded->id,
+            'services' => 400.00,
+        ]);
     }
 
     public function test_the_matched_uploaded_row_keeps_the_identity_it_was_uploaded_with(): void

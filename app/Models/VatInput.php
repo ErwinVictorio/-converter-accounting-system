@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class VatInput extends Model
 {
@@ -74,6 +75,16 @@ class VatInput extends Model
     return $query->whereNotIn('id', ImportationEntry::query()
       ->whereNotNull('vat_input_id')
       ->select('vat_input_id'));
+  }
+
+  public function outgoingPurchaseAdjustments(): HasMany
+  {
+    return $this->hasMany(PurchaseAdjustment::class, 'source_vat_input_id');
+  }
+
+  public function incomingPurchaseAdjustments(): HasMany
+  {
+    return $this->hasMany(PurchaseAdjustment::class, 'target_vat_input_id');
   }
 
   public function toBirPurchaseRow(): array
