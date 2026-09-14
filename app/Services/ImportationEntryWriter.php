@@ -163,6 +163,7 @@ class ImportationEntryWriter
             'address1' => $entry->country ?: $this->birText((string) config('bir.importation.address2')),
             'address2' => $this->birText((string) config('bir.importation.address2')) ?: null,
             'is_imported' => true,
+            'uses_vat_bucket_amounts' => false,
             'exempt' => $exempt,
             'zero_rated' => 0,
             'purchase_imported' => $taxableGoods,

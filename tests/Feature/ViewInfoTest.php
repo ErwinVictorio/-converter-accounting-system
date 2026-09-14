@@ -52,7 +52,8 @@ class ViewInfoTest extends TestCase
         $fields = $this->fields($response->json('sections'));
 
         $this->assertSame('500.00', $fields['total']['value']);
-        $this->assertSame(1200, $fields['display_calculated_total']['value']);
+        $this->assertSame(1.44, $fields['services']['value']);
+        $this->assertSame(144, $fields['display_calculated_total']['value']);
         $this->assertTrue($fields['broker_eligible']['value']);
         $this->assertFalse($fields['stored_is_broker']['value']);
         $this->assertSame($purchase->id, $fields['id']['value']);

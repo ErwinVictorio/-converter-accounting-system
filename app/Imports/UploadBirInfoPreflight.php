@@ -45,6 +45,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
 
         $headings = $this->headingMap($this->rows[$headingRow]);
         $issues = [];
+        $consolidationGroups = [];
 
         foreach (array_slice($this->rows, $headingRow + 1, null, true) as $index => $row) {
             $data = $this->associateRow($headings, $row);
@@ -72,6 +73,32 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             if (in_array($supplierName, ['TOTAL', 'GRAND TOTAL', 'SUBTOTAL'], true)) {
                 continue;
             }
+
+            $isImported = $this->parseNumber($this->value($data, ['purchase_imported', 'purchaseimported'])) > 0;
+            $groupKey = Supplier::normalizeName($supplierName).'|imported:'.(int) $isImported;
+            $usesVatBucketAmounts = ! $this->hasFilled($data, [
+                'input_vat',
+                'inputvat',
+                'capital_goods',
+                'capitalgoods',
+                'other_than_capital_goods',
+                'otherthancapitalgoods',
+                'taxable_net_of_vat',
+                'taxablenetofvat',
+            ]);
+            $consolidationGroups[$groupKey][] = [
+                'row' => $index + 1,
+                'name' => $supplierName,
+                'base_tin' => $this->birTin($supplier?->tin ?: $rawTin),
+                'supplier_id' => $supplier?->id,
+                'uses_vat_bucket_amounts' => $usesVatBucketAmounts,
+                'prefill' => [
+                    'tin' => $supplier?->tin ?: $this->formatTin($rawTin),
+                    'name' => $supplier?->name ?: $companyName,
+                    'addr' => $supplier?->addr ?: $address1,
+                    'city' => $supplier?->city ?: $address2,
+                ],
+            ];
 
             $rowIssues = (new BirPurchaseRowValidator)->validate([
                 'vendor_type' => $companyName !== '' ? 'company' : 'individual',
@@ -121,6 +148,69 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
                     'city' => $supplier?->city ?: $address2,
                 ];
 
+                $issues[] = $issue;
+            }
+        }
+
+        return [...$issues, ...$this->purchaseConsolidationIssues($consolidationGroups)];
+    }
+
+    /**
+     * Reject cross-row identity and amount-mode conflicts before same-month
+     * replacement. The importer groups on the resolved supplier name and
+     * imported bucket, so the preflight must evaluate that same boundary.
+     *
+     * @param  array<string, array<int, array<string, mixed>>>  $groups
+     * @return array<int, array<string, mixed>>
+     */
+    private function purchaseConsolidationIssues(array $groups): array
+    {
+        $issues = [];
+
+        foreach ($groups as $key => $rows) {
+            if (count($rows) < 2) {
+                continue;
+            }
+
+            $supplierIds = array_values(array_unique(array_filter(array_column($rows, 'supplier_id'))));
+            $baseTins = array_values(array_unique(array_filter(
+                array_column($rows, 'base_tin'),
+                fn (string $tin) => strlen($tin) === 9 && $tin !== '000000000'
+            )));
+            $amountModes = array_values(array_unique(array_column($rows, 'uses_vat_bucket_amounts'), SORT_REGULAR));
+            $sameMasterSupplier = count($supplierIds) === 1
+                && count(array_filter(array_column($rows, 'supplier_id'))) === count($rows);
+
+            $problem = null;
+
+            if (! $sameMasterSupplier && count($baseTins) > 1) {
+                $problem = 'Rows '.implode(', ', array_column($rows, 'row'))
+                    .' would consolidate under one supplier name but use conflicting base TINs: '
+                    .implode(', ', $baseTins).'. Correct the supplier identity before uploading.';
+            } elseif (count($amountModes) > 1) {
+                $problem = 'Rows '.implode(', ', array_column($rows, 'row'))
+                    .' would consolidate VAT-bucket and taxable-base amount formats. Use one amount format for the supplier group.';
+            }
+
+            if ($problem === null) {
+                continue;
+            }
+
+            foreach ($rows as $row) {
+                $issue = $this->issue(
+                    $row['row'],
+                    $row['name'],
+                    'purchase',
+                    'consolidation',
+                    $problem,
+                    'Purchase upload workbook / Master Data > Suppliers',
+                    '/suppliers',
+                    ['TIN', 'Supplier identity', 'Amount format'],
+                    'consolidation group'
+                );
+                $issue['supplier_id'] = null;
+                $issue['identity_key'] = 'consolidation:'.$key;
+                $issue['prefill'] = $row['prefill'];
                 $issues[] = $issue;
             }
         }
@@ -620,6 +710,19 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
         }
 
         return null;
+    }
+
+    private function hasFilled(array $data, array $keys): bool
+    {
+        foreach ($keys as $key) {
+            $value = $this->value($data, [$key]);
+
+            if ($value !== null && trim((string) $value) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function parseNumber($value): float

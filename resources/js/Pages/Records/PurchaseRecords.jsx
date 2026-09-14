@@ -34,14 +34,6 @@ import { formatCurrency } from "@/Components/Records/format";
 // A DAT detail line needs 9 or 12 digits, dashed or not.
 const BIR_TIN = /^(\d{9}|\d{12}|\d{3}-\d{3}-\d{3}|\d{3}-\d{3}-\d{3}-\d{3})$/;
 
-const computedPurchaseTotal = (item) => {
-    const purchaseLocal = Number(item.purchase_local || 0);
-    const services = Number(item.services || 0);
-    const others = Number(item.others || 0);
-
-    return (purchaseLocal + services + others) / 0.12;
-};
-
 const adjustmentAmountFields = [
     { name: "purchase_imported", label: "Purchase Imported" },
     { name: "purchase_local", label: "Purchase Local" },
@@ -233,13 +225,13 @@ function PurchaseRecords() {
                                             {formatCurrency(item.purchase_local)}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
-                                            {formatCurrency(item.services)}
+                                            {formatCurrency(item.display_services_amount)}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
                                             {formatCurrency(item.others)}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-right font-mono text-xs font-bold text-slate-900">
-                                            {formatCurrency(computedPurchaseTotal(item))}
+                                            {formatCurrency(item.display_calculated_total)}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-right">
                                             <div className="flex justify-end gap-2">

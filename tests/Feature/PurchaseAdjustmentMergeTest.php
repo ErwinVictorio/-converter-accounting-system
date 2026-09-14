@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\Brokers;
 use App\Models\ImportationEntry;
+use App\Models\PurchaseAdjustment;
 use App\Models\User;
 use App\Models\VatInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 /**
@@ -99,7 +101,7 @@ class PurchaseAdjustmentMergeTest extends TestCase
      * The adjust form as the edit screen submits it: the vendor the amounts belong
      * to, and how much of each bucket moves across.
      */
-    private function transfer(VatInput $brokerRow, array $overrides = []): \Illuminate\Testing\TestResponse
+    private function transfer(VatInput $brokerRow, array $overrides = []): TestResponse
     {
         return $this->put("/records/{$brokerRow->id}", array_merge([
             'supplier_name' => 'LOCAL HARDWARE INC.',
@@ -341,6 +343,28 @@ class PurchaseAdjustmentMergeTest extends TestCase
         $this->assertSame('600.00', $brokerRow->fresh()->services);
     }
 
+    public function test_services_vat_input_is_converted_once_and_tracked_in_both_units(): void
+    {
+        $brokerRow = $this->brokerRow([
+            'uses_vat_bucket_amounts' => true,
+            'services_vat_amount' => 120.00,
+        ]);
+
+        $this->transfer($brokerRow, [
+            'services_vat_amount' => 48.00,
+        ])->assertRedirect("/records/{$brokerRow->id}/edit");
+
+        $created = VatInput::query()->where('is_adjusted', true)->sole();
+        $history = PurchaseAdjustment::query()->sole();
+
+        $this->assertSame('400.00', $created->services);
+        $this->assertSame('48.00', $created->services_vat_amount);
+        $this->assertSame('400.00', $history->services);
+        $this->assertSame('48.00', $history->services_vat_amount);
+        $this->assertSame('600.00', $brokerRow->fresh()->services);
+        $this->assertSame('72.00', $brokerRow->fresh()->services_vat_amount);
+    }
+
     public function test_a_same_tin_row_from_another_month_is_not_used(): void
     {
         $brokerRow = $this->brokerRow();
@@ -448,20 +472,20 @@ class PurchaseAdjustmentMergeTest extends TestCase
         $brokerRow = $this->brokerRow();
         $uploaded = $this->purchase();
 
-        $this->getJson("/records/{$brokerRow->id}/adjusted-lookup?" . http_build_query([
+        $this->getJson("/records/{$brokerRow->id}/adjusted-lookup?".http_build_query([
             'tin_number' => self::VENDOR_TIN,
             'is_imported' => 0,
         ]))->assertOk()->assertJsonPath('adjustedRecord.id', $uploaded->id);
 
         // The first nine digits are the vendor, so a TIN typed without its branch
         // code still finds the row filed with one.
-        $this->getJson("/records/{$brokerRow->id}/adjusted-lookup?" . http_build_query([
+        $this->getJson("/records/{$brokerRow->id}/adjusted-lookup?".http_build_query([
             'tin_number' => '222-222-222',
             'is_imported' => 0,
         ]))->assertOk()->assertJsonPath('adjustedRecord.id', $uploaded->id);
 
         // A vendor the month has no row for autofills nothing.
-        $this->getJson("/records/{$brokerRow->id}/adjusted-lookup?" . http_build_query([
+        $this->getJson("/records/{$brokerRow->id}/adjusted-lookup?".http_build_query([
             'tin_number' => '999-999-999-000',
             'is_imported' => 0,
         ]))->assertOk()->assertJsonPath('adjustedRecord', null);

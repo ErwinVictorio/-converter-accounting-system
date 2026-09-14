@@ -43,7 +43,7 @@ function EditVatInputRecord() {
     is_imported: Number(vatInput?.is_imported) === 1 ? "1" : "0",
     purchase_imported: "",
     purchase_local: "",
-    services: "",
+    services_vat_amount: "",
     others: "",
   });
 
@@ -123,27 +123,41 @@ function EditVatInputRecord() {
     return parts.join("-");
   };
 
+  const servicesVatBalance = Number(
+    vatInput?.services_vat_amount ?? (Number(vatInput?.services || 0) * 0.12)
+  );
+
+  const availableAmount = (field) => (
+    field === "services_vat_amount" ? servicesVatBalance : Number(vatInput?.[field] || 0)
+  );
+
+  const amountContributionToTotal = (field, value) => {
+    const numeric = Number(value || 0);
+
+    return field === "services_vat_amount" ? numeric / 0.12 : numeric;
+  };
+
   const amountFields = [
     { name: "purchase_imported", label: "Purchase Imported" },
     { name: "purchase_local", label: "Purchase Local" },
-    { name: "services", label: "Services" },
+    { name: "services_vat_amount", label: "Services" },
     { name: "others", label: "Others" },
   ];
 
   const adjustmentTotal = useMemo(() => {
     return amountFields.reduce((sum, field) => {
       const value = Number(data[field.name]);
-      return sum + (Number.isFinite(value) ? value : 0);
+      return sum + (Number.isFinite(value) ? amountContributionToTotal(field.name, value) : 0);
     }, 0);
-  }, [data.purchase_imported, data.purchase_local, data.services, data.others]);
+  }, [data.purchase_imported, data.purchase_local, data.services_vat_amount, data.others]);
 
   const remainingTotal = useMemo(() => {
     return amountFields.reduce((sum, field) => {
-      const original = Number(vatInput?.[field.name] || 0);
+      const original = availableAmount(field.name);
       const adjustment = Number(data[field.name] || 0);
-      return sum + Math.max(original - adjustment, 0);
+      return sum + amountContributionToTotal(field.name, Math.max(original - adjustment, 0));
     }, 0);
-  }, [data.purchase_imported, data.purchase_local, data.services, data.others, vatInput]);
+  }, [data.purchase_imported, data.purchase_local, data.services_vat_amount, data.others, vatInput]);
 
   const handleSupplierNameChange = (value) => {
     setData((current) => ({
@@ -154,7 +168,7 @@ function EditVatInputRecord() {
   };
 
   const handleAmountChange = (field, value) => {
-    const max = Number(vatInput?.[field] || 0);
+    const max = availableAmount(field);
     const numeric = Number(value);
 
     if (value !== "" && Number.isFinite(numeric) && numeric > max) {
@@ -244,7 +258,7 @@ function EditVatInputRecord() {
                   {formatCurrency(vatInput.purchase_local)}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
-                  {formatCurrency(vatInput.services)}
+                  {formatCurrency(servicesVatBalance)}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
                   {formatCurrency(vatInput.others)}
@@ -455,11 +469,13 @@ function EditVatInputRecord() {
 
               {amountFields.map((field) => (
                 <div key={field.name} className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">{field.label}</label>
+                  <label className="text-sm font-medium text-slate-700">
+                    {field.name === "services_vat_amount" ? "Services VAT Amount" : field.label}
+                  </label>
                   <Input
                     type="number"
                     min="0"
-                    max={vatInput?.[field.name] || 0}
+                    max={availableAmount(field.name)}
                     step="0.01"
                     value={data[field.name]}
                     onChange={(e) => handleAmountChange(field.name, e.target.value)}
@@ -467,7 +483,7 @@ function EditVatInputRecord() {
                     className={errors[field.name] ? "border-red-500 focus-visible:ring-red-500" : ""}
                   />
                   <p className="text-xs text-slate-400">
-                    Available: {formatCurrency(vatInput?.[field.name])}
+                    Available: {formatCurrency(availableAmount(field.name))}
                   </p>
                   {errors[field.name] && (
                     <p className="text-xs text-red-500 font-medium">{errors[field.name]}</p>

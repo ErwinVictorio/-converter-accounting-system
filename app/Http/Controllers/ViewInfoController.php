@@ -12,6 +12,7 @@ use App\Models\VatInput;
 use App\Models\WithholdingCompany;
 use App\Services\BIR\BirExpandedWtaxRowValidator;
 use App\Services\BIR\SalesSiCmConsolidator;
+use App\Services\PurchaseAmountPresenter;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
@@ -24,10 +25,11 @@ class ViewInfoController extends Controller
         string $resource,
         string $id,
         SalesSiCmConsolidator $salesConsolidator,
-        BirExpandedWtaxRowValidator $expandedValidator
+        BirExpandedWtaxRowValidator $expandedValidator,
+        PurchaseAmountPresenter $purchaseAmountPresenter
     ): JsonResponse {
         $payload = match ($resource) {
-            'purchase' => $this->purchase($id),
+            'purchase' => $this->purchase($id, $purchaseAmountPresenter),
             'sales' => $this->sales($request, $id, $salesConsolidator),
             'expanded-wtax' => $this->expandedWtax($id, $expandedValidator),
             'importation' => $this->importation($id),
@@ -43,7 +45,7 @@ class ViewInfoController extends Controller
         ]);
     }
 
-    private function purchase(string $id): array
+    private function purchase(string $id, PurchaseAmountPresenter $amountPresenter): array
     {
         $record = VatInput::query()->findOrFail($id);
         $baseTin = $this->baseTin($record->tin_number);
@@ -53,11 +55,7 @@ class ViewInfoController extends Controller
                 fn (Brokers $broker) => $this->baseTin($broker->tin_number) === $baseTin
             );
 
-        $displayTotal = (
-            (float) $record->purchase_local
-            + (float) $record->services
-            + (float) $record->others
-        ) / 0.12;
+        $displayAmounts = $amountPresenter->forRecord($record);
 
         return [
             'title' => 'Purchase Information',
@@ -80,7 +78,7 @@ class ViewInfoController extends Controller
                     $this->field('zero_rated', 'Zero Rated', $record->zero_rated, 'money'),
                     $this->field('purchase_imported', 'Purchase Imported', $record->purchase_imported, 'money'),
                     $this->field('purchase_local', 'Purchase Local', $record->purchase_local, 'money'),
-                    $this->field('services', 'Services', $record->services, 'money'),
+                    $this->field('services', 'Services', $displayAmounts['display_services_amount'], 'money'),
                     $this->field('capital_goods', 'Capital Goods', $record->capital_goods, 'money'),
                     $this->field('other_than_capital_goods', 'Other Than Capital Goods', $record->other_than_capital_goods, 'money'),
                     $this->field('others', 'Others', $record->others, 'money'),
@@ -89,7 +87,7 @@ class ViewInfoController extends Controller
                     $this->field('input_vat', 'Input VAT', $record->input_vat, 'money'),
                     $this->field('total_purchases', 'Total Purchases', $record->total_purchases, 'money'),
                     $this->field('total', 'Stored Total', $record->total, 'money'),
-                    $this->field('display_calculated_total', 'Display-Calculated Total', $displayTotal, 'money'),
+                    $this->field('display_calculated_total', 'Display-Calculated Total', $displayAmounts['display_calculated_total'], 'money'),
                 ]),
                 $this->section('Record Status', [
                     $this->field('date_uploaded', 'Date Uploaded', $this->date($record->date_uploaded), 'date'),

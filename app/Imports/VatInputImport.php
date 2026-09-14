@@ -5,11 +5,11 @@ namespace App\Imports;
 use App\Models\Supplier;
 use App\Models\VatInput;
 use Maatwebsite\Excel\Concerns\OnEachRow;
-use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
+use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Row;
 
-class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
+class VatInputImport implements OnEachRow, SkipsEmptyRows, WithHeadingRow
 {
     public function headingRow(): int
     {
@@ -17,7 +17,9 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
     }
 
     protected string $uploadDate;
+
     protected int $importedRows = 0;
+
     protected int $skippedExcludedSupplierRows = 0;
 
     // Tatanggapin nito ang date mula sa Controller (o magde-default sa kasalukuyang petsa)
@@ -67,7 +69,7 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         $othersValue = $this->parseNumber($this->value($data, ['others']));
         $totalPurchases = $this->parseNumber($this->value($data, ['total_purchases', 'totalpurchases', 'total']));
         $inputVatValue = $this->parseNumber($this->value($data, ['input_vat', 'inputvat']));
-        $usesVatBucketAmounts = !$this->hasFilled($data, [
+        $usesVatBucketAmounts = ! $this->hasFilled($data, [
             'input_vat',
             'inputvat',
             'capital_goods',
@@ -77,6 +79,19 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             'taxable_net_of_vat',
             'taxablenetofvat',
         ]);
+        $vatAmounts = $usesVatBucketAmounts
+            ? [
+                'purchase_imported_vat_amount' => round($purchaseImportedValue, 2),
+                'purchase_local_vat_amount' => round($purchaseLocalValue, 2),
+                'services_vat_amount' => round($servicesValue, 2),
+                'others_vat_amount' => round($othersValue, 2),
+            ]
+            : [
+                'purchase_imported_vat_amount' => null,
+                'purchase_local_vat_amount' => null,
+                'services_vat_amount' => null,
+                'others_vat_amount' => null,
+            ];
 
         if ($usesVatBucketAmounts) {
             $purchaseImported = $this->taxableFromVat($purchaseImportedValue, $vatRate);
@@ -109,9 +124,16 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             ->where('is_imported', $isImported)
             ->where('is_adjusted', false)
             ->whereDate('date_uploaded', $this->uploadDate)
+            ->excludingImportationMirrors()
             ->first();
 
         if ($existingRecord) {
+            if ((bool) $existingRecord->uses_vat_bucket_amounts !== $usesVatBucketAmounts) {
+                throw new \RuntimeException(
+                    "Purchase rows for {$supplierName} mix VAT-bucket and taxable-base amount formats. Correct the workbook before uploading."
+                );
+            }
+
             $newPurchaseImported = round((float) $existingRecord->purchase_imported + $purchaseImported, 2);
             $newPurchaseLocal = round((float) $existingRecord->purchase_local + $purchaseLocal, 2);
             $newServices = round((float) $existingRecord->services + $services, 2);
@@ -132,11 +154,15 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
                 'middle_name' => $existingRecord->middle_name ?: ($middleName ?: null),
                 'address1' => $supplier ? $address1 : ($existingRecord->address1 ?: $address1),
                 'address2' => $supplier ? $address2 : ($existingRecord->address2 ?: $address2),
+                'uses_vat_bucket_amounts' => $usesVatBucketAmounts,
                 'exempt' => $newExempt,
                 'zero_rated' => $newZeroRated,
                 'purchase_imported' => $newPurchaseImported,
+                'purchase_imported_vat_amount' => $this->sumVatAmounts($existingRecord->purchase_imported_vat_amount, $vatAmounts['purchase_imported_vat_amount']),
                 'purchase_local' => $newPurchaseLocal,
+                'purchase_local_vat_amount' => $this->sumVatAmounts($existingRecord->purchase_local_vat_amount, $vatAmounts['purchase_local_vat_amount']),
                 'services' => $newServices,
+                'services_vat_amount' => $this->sumVatAmounts($existingRecord->services_vat_amount, $vatAmounts['services_vat_amount']),
                 'capital_goods' => $newCapitalGoods,
                 'other_than_capital_goods' => $newOtherThanCapitalGoods,
                 'taxable_net_of_vat' => $newTaxableNetOfVat,
@@ -144,6 +170,7 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
                 'input_vat' => $newInputVat,
                 'total_purchases' => $newTotal,
                 'others' => $newOthers,
+                'others_vat_amount' => $this->sumVatAmounts($existingRecord->others_vat_amount, $vatAmounts['others_vat_amount']),
                 'total' => $newTotal,
             ]);
 
@@ -163,11 +190,15 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             'address1' => $address1,
             'address2' => $address2,
             'is_imported' => $isImported,
+            'uses_vat_bucket_amounts' => $usesVatBucketAmounts,
             'exempt' => $exempt,
             'zero_rated' => $zeroRated,
             'purchase_imported' => $purchaseImported,
+            'purchase_imported_vat_amount' => $vatAmounts['purchase_imported_vat_amount'],
             'purchase_local' => $purchaseLocal,
+            'purchase_local_vat_amount' => $vatAmounts['purchase_local_vat_amount'],
             'services' => $services,
+            'services_vat_amount' => $vatAmounts['services_vat_amount'],
             'capital_goods' => $capitalGoods,
             'other_than_capital_goods' => $otherThanCapitalGoods,
             'taxable_net_of_vat' => $taxableNetOfVat,
@@ -175,6 +206,7 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
             'input_vat' => $inputVat,
             'total_purchases' => $totalPurchases,
             'others' => $others,
+            'others_vat_amount' => $vatAmounts['others_vat_amount'],
             'total' => $total,
             'date_uploaded' => $this->uploadDate,
             'is_adjusted' => false,
@@ -202,6 +234,15 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         $cleanValue = preg_replace('/[^\d.-]/', '', (string) $value);
 
         return is_numeric($cleanValue) ? (float) $cleanValue : 0.00;
+    }
+
+    private function sumVatAmounts(mixed $existing, mixed $incoming): ?float
+    {
+        if ($existing === null || $incoming === null) {
+            return null;
+        }
+
+        return round((float) $existing + (float) $incoming, 2);
     }
 
     private function value(array $data, array $keys): mixed
@@ -254,15 +295,15 @@ class VatInputImport implements OnEachRow, WithHeadingRow, SkipsEmptyRows
         }
 
         if (strlen($digits) === 12) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
-                substr($digits, 6, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
+                substr($digits, 6, 3).'-'.
                 substr($digits, 9, 3);
         }
 
         if (strlen($digits) === 9) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
                 substr($digits, 6, 3);
         }
 

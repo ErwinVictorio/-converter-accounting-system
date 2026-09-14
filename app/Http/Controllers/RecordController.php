@@ -8,6 +8,7 @@ use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\BirExpandedWtaxRowValidator;
 use App\Services\BIR\SalesSiCmConsolidator;
+use App\Services\PurchaseAmountPresenter;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -39,7 +40,7 @@ class RecordController extends Controller
     /**
      * Purchase (VAT input) rows, with the broker flag the Adjust action gates on.
      */
-    public function purchases(Request $request)
+    public function purchases(Request $request, PurchaseAmountPresenter $amountPresenter)
     {
         $search = $request->input('search');
         $period = $this->normalisedMonth($request->input('period'));
@@ -80,7 +81,11 @@ class RecordController extends Controller
             ->get()
             ->groupBy('target_vat_input_id');
 
-        $vatInputs->getCollection()->each(function (VatInput $record) use ($adjustmentHistory) {
+        $vatInputs->getCollection()->each(function (VatInput $record) use ($adjustmentHistory, $amountPresenter) {
+            foreach ($amountPresenter->forRecord($record) as $field => $value) {
+                $record->setAttribute($field, $value);
+            }
+
             if (! $record->is_adjusted) {
                 return;
             }
@@ -96,6 +101,19 @@ class RecordController extends Controller
                 );
 
                 if ($tracked !== $this->moneyToCents($record->{$field})) {
+                    $complete = false;
+                }
+            }
+
+            if ($record->services_vat_amount !== null) {
+                $trackedServicesVat = $validHistories->sum(
+                    fn (PurchaseAdjustment $history) => $this->moneyToCents(
+                        $history->services_vat_amount
+                            ?? round((float) $history->services * 0.12, 2)
+                    )
+                );
+
+                if ($trackedServicesVat !== $this->moneyToCents($record->services_vat_amount)) {
                     $complete = false;
                 }
             }
@@ -305,7 +323,7 @@ class RecordController extends Controller
             ->groupBy(fn ($date) => Carbon::parse($date)->format('Y-m'))
             ->map(fn ($group, string $value) => [
                 'value' => $value,
-                'label' => Carbon::parse($value . '-01')->format('F Y'),
+                'label' => Carbon::parse($value.'-01')->format('F Y'),
                 'records_count' => $group->count(),
             ])
             ->values()

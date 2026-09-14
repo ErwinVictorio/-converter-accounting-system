@@ -13,6 +13,7 @@ class PurchaseAdjustment extends Model
         'purchase_imported',
         'purchase_local',
         'services',
+        'services_vat_amount',
         'others',
     ];
 
@@ -20,6 +21,7 @@ class PurchaseAdjustment extends Model
         'purchase_imported' => 'decimal:2',
         'purchase_local' => 'decimal:2',
         'services' => 'decimal:2',
+        'services_vat_amount' => 'decimal:2',
         'others' => 'decimal:2',
     ];
 

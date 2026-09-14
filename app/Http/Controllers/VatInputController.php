@@ -31,6 +31,8 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class VatInputController extends Controller
 {
+    private const PURCHASE_VAT_RATE = 0.12;
+
     private const PURCHASE_ADJUSTMENT_FIELDS = [
         'purchase_imported',
         'purchase_local',
@@ -454,8 +456,12 @@ class VatInputController extends Controller
      * row takes; it is empty for an uploaded row, which keeps the name, address
      * and flags it was uploaded with.
      */
-    private function mergeTransferInto(VatInput $target, array $amounts, array $identity): void
-    {
+    private function mergeTransferInto(
+        VatInput $target,
+        array $amounts,
+        array $identity,
+        float $servicesVatAmount
+    ): void {
         $isAdjusted = (bool) $target->is_adjusted;
 
         $merged = [
@@ -476,6 +482,25 @@ class VatInputController extends Controller
         $target->update([
             ...$identity,
             ...$merged,
+            'purchase_imported_vat_amount' => round(
+                $this->vatAmountBalance($target, 'purchase_imported')
+                    + $this->vatAmountFromBase($amounts['purchase_imported']),
+                2
+            ),
+            'purchase_local_vat_amount' => round(
+                $this->vatAmountBalance($target, 'purchase_local')
+                    + $this->vatAmountFromBase($amounts['purchase_local']),
+                2
+            ),
+            'services_vat_amount' => round(
+                $this->servicesVatBalance($target) + $servicesVatAmount,
+                2
+            ),
+            'others_vat_amount' => round(
+                $this->vatAmountBalance($target, 'others')
+                    + $this->vatAmountFromBase($amounts['others']),
+                2
+            ),
             /*
              * An adjusted row carries no capital goods, as before. An uploaded row
              * does -- VatInputImport files an imported amount there -- and the
@@ -518,20 +543,29 @@ class VatInputController extends Controller
             'purchase_imported' => ['nullable', 'numeric', 'min:0'],
             'purchase_local' => ['nullable', 'numeric', 'min:0'],
             'services' => ['nullable', 'numeric', 'min:0'],
+            'services_vat_amount' => ['nullable', 'numeric', 'min:0'],
             'others' => ['nullable', 'numeric', 'min:0'],
         ]);
 
+        $usesServicesVatInput = $request->exists('services_vat_amount');
+        $servicesVatAmount = $usesServicesVatInput
+            ? round((float) ($validated['services_vat_amount'] ?? 0), 2)
+            : $this->vatAmountFromBase($validated['services'] ?? 0);
         $amounts = [
             'purchase_imported' => round((float) ($validated['purchase_imported'] ?? 0), 2),
             'purchase_local' => round((float) ($validated['purchase_local'] ?? 0), 2),
-            'services' => round((float) ($validated['services'] ?? 0), 2),
+            'services' => $usesServicesVatInput
+                ? $this->taxableBaseFromVat($servicesVatAmount)
+                : round((float) ($validated['services'] ?? 0), 2),
             'others' => round((float) ($validated['others'] ?? 0), 2),
         ];
 
         foreach ($amounts as $field => $amount) {
             if ($amount > (float) $vatInput->{$field}) {
                 return back()
-                    ->withErrors([$field => 'Amount cannot be greater than the original broker amount.'])
+                    ->withErrors([
+                        $field === 'services' && $usesServicesVatInput ? 'services_vat_amount' : $field => 'Amount cannot be greater than the original broker amount.',
+                    ])
                     ->withInput();
             }
         }
@@ -550,7 +584,7 @@ class VatInputController extends Controller
                 ->withInput();
         }
 
-        DB::transaction(function () use ($vatInput, $validated, $amounts, $newTotal) {
+        DB::transaction(function () use ($vatInput, $validated, $amounts, $newTotal, $servicesVatAmount, $usesServicesVatInput) {
             $sourceRecord = VatInput::query()->lockForUpdate()->findOrFail($vatInput->id);
 
             if (! $this->isBrokerRecord($sourceRecord)) {
@@ -562,7 +596,7 @@ class VatInputController extends Controller
             foreach ($amounts as $field => $amount) {
                 if ($amount > (float) $sourceRecord->{$field}) {
                     throw ValidationException::withMessages([
-                        $field => 'The broker balance changed. Review the available amounts and try again.',
+                        $field === 'services' && $usesServicesVatInput ? 'services_vat_amount' : $field => 'The broker balance changed. Review the available amounts and try again.',
                     ]);
                 }
             }
@@ -612,16 +646,21 @@ class VatInputController extends Controller
                 $this->mergeTransferInto(
                     $targetRecord,
                     $amounts,
-                    $targetRecord->is_adjusted ? $adjustedPayload : []
+                    $targetRecord->is_adjusted ? $adjustedPayload : [],
+                    $servicesVatAmount
                 );
             } else {
                 $targetRecord = VatInput::create([
                     ...$adjustedPayload,
+                    'uses_vat_bucket_amounts' => true,
                     'exempt' => 0,
                     'zero_rated' => 0,
                     'purchase_imported' => $amounts['purchase_imported'],
+                    'purchase_imported_vat_amount' => round($amounts['purchase_imported'] * self::PURCHASE_VAT_RATE, 2),
                     'purchase_local' => $amounts['purchase_local'],
+                    'purchase_local_vat_amount' => round($amounts['purchase_local'] * self::PURCHASE_VAT_RATE, 2),
                     'services' => $amounts['services'],
+                    'services_vat_amount' => $servicesVatAmount,
                     'capital_goods' => 0,
                     'other_than_capital_goods' => $amounts['purchase_local'] + $amounts['others'],
                     'taxable_net_of_vat' => $newTotal,
@@ -629,6 +668,7 @@ class VatInputController extends Controller
                     'input_vat' => round($newTotal * 0.12, 2),
                     'total_purchases' => $newTotal,
                     'others' => $amounts['others'],
+                    'others_vat_amount' => round($amounts['others'] * self::PURCHASE_VAT_RATE, 2),
                     'total' => $newTotal,
                     'date_uploaded' => $dateUploaded,
                 ]);
@@ -638,6 +678,7 @@ class VatInputController extends Controller
                 'source_vat_input_id' => $sourceRecord->id,
                 'target_vat_input_id' => $targetRecord->id,
                 ...$amounts,
+                'services_vat_amount' => $servicesVatAmount,
             ]);
 
             $remaining = [
@@ -649,6 +690,25 @@ class VatInputController extends Controller
 
             $sourceRecord->update([
                 ...$remaining,
+                'purchase_imported_vat_amount' => round(
+                    $this->vatAmountBalance($sourceRecord, 'purchase_imported')
+                        - $this->vatAmountFromBase($amounts['purchase_imported']),
+                    2
+                ),
+                'purchase_local_vat_amount' => round(
+                    $this->vatAmountBalance($sourceRecord, 'purchase_local')
+                        - $this->vatAmountFromBase($amounts['purchase_local']),
+                    2
+                ),
+                'services_vat_amount' => round(
+                    $this->servicesVatBalance($sourceRecord) - $servicesVatAmount,
+                    2
+                ),
+                'others_vat_amount' => round(
+                    $this->vatAmountBalance($sourceRecord, 'others')
+                        - $this->vatAmountFromBase($amounts['others']),
+                    2
+                ),
                 'total' => array_sum($remaining),
                 'is_broker' => true,
             ]);
@@ -787,6 +847,27 @@ class VatInputController extends Controller
                         $restoredTotalCents += $fieldCents;
                     }
 
+                    $servicesVatCents = $sourceHistories->sum(
+                        fn (PurchaseAdjustment $history) => $this->moneyToCents(
+                            $history->services_vat_amount ?? $this->vatAmountFromBase($history->services)
+                        )
+                    );
+                    $restored['services_vat_amount'] = $this->centsToMoney(
+                        $this->moneyToCents($this->servicesVatBalance($source)) + $servicesVatCents
+                    );
+
+                    foreach (['purchase_imported', 'purchase_local', 'others'] as $field) {
+                        $rawField = $field.'_vat_amount';
+                        $rawCents = $sourceHistories->sum(
+                            fn (PurchaseAdjustment $history) => $this->moneyToCents(
+                                $this->vatAmountFromBase($history->{$field})
+                            )
+                        );
+                        $restored[$rawField] = $this->centsToMoney(
+                            $this->moneyToCents($this->vatAmountBalance($source, $field)) + $rawCents
+                        );
+                    }
+
                     $restored['total'] = $this->centsToMoney(
                         $this->moneyToCents($source->total) + $restoredTotalCents
                     );
@@ -857,6 +938,21 @@ class VatInputController extends Controller
             && collect($unresolvedCents)->every(fn (int $amount) => $amount === 0)
             && $histories->whereNull('source_vat_input_id')->isEmpty();
 
+        if ($target->services_vat_amount !== null && $validHistories->isNotEmpty()) {
+            $trackedServicesVatCents = $validHistories->sum(
+                fn (PurchaseAdjustment $history) => $this->moneyToCents(
+                    $history->services_vat_amount ?? $this->vatAmountFromBase($history->services)
+                )
+            );
+            $targetServicesVatCents = $this->moneyToCents($target->services_vat_amount);
+
+            if ($trackedServicesVatCents > $targetServicesVatCents) {
+                $invalid = true;
+            }
+
+            $complete = $complete && $trackedServicesVatCents === $targetServicesVatCents;
+        }
+
         return [
             'complete' => $complete,
             'invalid' => $invalid,
@@ -919,6 +1015,10 @@ class VatInputController extends Controller
                 $row[$field] = $this->centsToMoney($cents);
             }
 
+            $row['services_vat_amount'] = $this->centsToMoney(
+                $this->moneyToCents($this->vatAmountFromBase($row['services']))
+            );
+
             if ($rowTotalCents <= 0) {
                 throw new \DomainException('Each selected broker must receive at least one adjustment amount.');
             }
@@ -940,6 +1040,36 @@ class VatInputController extends Controller
     private function moneyToCents(mixed $amount): int
     {
         return (int) round((float) ($amount ?? 0) * 100);
+    }
+
+    private function taxableBaseFromVat(mixed $amount): float
+    {
+        $vatAmount = round((float) ($amount ?? 0), 2);
+
+        return $vatAmount === 0.0
+            ? 0.0
+            : round($vatAmount / self::PURCHASE_VAT_RATE, 2);
+    }
+
+    private function vatAmountFromBase(mixed $amount): float
+    {
+        return round((float) ($amount ?? 0) * self::PURCHASE_VAT_RATE, 2);
+    }
+
+    private function servicesVatBalance(VatInput $record): float
+    {
+        return $record->services_vat_amount === null
+            ? $this->vatAmountFromBase($record->services)
+            : round((float) $record->services_vat_amount, 2);
+    }
+
+    private function vatAmountBalance(VatInput $record, string $field): float
+    {
+        $rawField = $field.'_vat_amount';
+
+        return $record->{$rawField} === null
+            ? $this->vatAmountFromBase($record->{$field})
+            : round((float) $record->{$rawField}, 2);
     }
 
     private function centsToMoney(int $cents): string
