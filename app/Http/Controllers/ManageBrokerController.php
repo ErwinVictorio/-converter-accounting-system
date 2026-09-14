@@ -3,21 +3,49 @@
 namespace App\Http\Controllers;
 
 use App\Models\Brokers;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class ManageBrokerController extends Controller
 {
-    public function index()
+    private const INFORMATION_STATUSES = [
+        'all',
+        'missing_tin',
+        'complete',
+    ];
+
+    public function index(Request $request)
     {
-        $brokerList = Brokers::select('tin_number', 'broker_name', 'id')
+        $filters = $request->only(['tin', 'name', 'information_status']);
+        $informationStatus = $this->normalizeInformationStatus($filters['information_status'] ?? null);
+
+        $brokerList = Brokers::query()
+            ->select('tin_number', 'broker_name', 'id')
+            ->when($filters['tin'] ?? null, function (Builder $query, string $tin) {
+                $query->where('tin_number', 'like', '%'.$tin.'%');
+            })
+            ->when($filters['name'] ?? null, function (Builder $query, string $name) {
+                $query->where('broker_name', 'like', '%'.$name.'%');
+            })
+            ->when($informationStatus === 'missing_tin', function (Builder $query) {
+                $query->whereRaw("TRIM(COALESCE(tin_number, '')) = ''");
+            })
+            ->when($informationStatus === 'complete', function (Builder $query) {
+                $query->whereRaw("TRIM(COALESCE(tin_number, '')) <> ''");
+            })
             ->orderBy('broker_name')
             ->orderBy('id')
             ->get();
 
         return Inertia::render('ManageBrokers', [
             'brokerList' => $brokerList,
+            'filters' => [
+                'tin' => $filters['tin'] ?? '',
+                'name' => $filters['name'] ?? '',
+                'information_status' => $informationStatus,
+            ],
         ]);
     }
 
@@ -25,7 +53,7 @@ class ManageBrokerController extends Controller
     {
         $validated = $request->validate([
             'broker_name' => 'required',
-            'tin'         => 'nullable',
+            'tin' => 'nullable',
         ]);
 
         $this->rejectInvalidOrDuplicateTin($validated['tin'] ?? null);
@@ -33,7 +61,7 @@ class ManageBrokerController extends Controller
         try {
             Brokers::create([
                 'broker_name' => $validated['broker_name'],
-                'tin_number'  => $validated['tin'],
+                'tin_number' => $validated['tin'],
             ]);
 
             return redirect()->back()->with('success', 'Broker created successfully!');
@@ -46,7 +74,7 @@ class ManageBrokerController extends Controller
     {
         $validated = $request->validate([
             'broker_name' => 'required',
-            'tin'         => 'nullable',
+            'tin' => 'nullable',
         ]);
 
         $broker = Brokers::findOrFail($id);
@@ -55,7 +83,7 @@ class ManageBrokerController extends Controller
         try {
             $broker->update([
                 'broker_name' => $validated['broker_name'],
-                'tin_number'  => $validated['tin'],
+                'tin_number' => $validated['tin'],
             ]);
 
             return redirect()->back()->with('success', 'Broker updated successfully!');
@@ -105,5 +133,12 @@ class ManageBrokerController extends Controller
     private function baseTin(?string $value): string
     {
         return substr(preg_replace('/\D/', '', (string) $value), 0, 9);
+    }
+
+    private function normalizeInformationStatus(mixed $value): string
+    {
+        return is_string($value) && in_array($value, self::INFORMATION_STATUSES, true)
+            ? $value
+            : 'all';
     }
 }

@@ -3,7 +3,7 @@ import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Eye, Pencil, Trash2, Loader2, Plus, RefreshCw } from "lucide-react";
+import { Eye, Pencil, Trash2, Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import MainLayout from "@/Layouts/MainLayout";
@@ -16,6 +16,13 @@ import {
   CardTitle,
 } from "@/Components/ui/card";
 import { Input } from "@/Components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/Components/ui/select";
 import {
   Table,
   TableBody,
@@ -43,10 +50,15 @@ const itemVariants = {
 };
 
 function ManageBrokers() {
-  const { flash, brokerList = [] } = usePage().props;
+  const { flash, brokerList = [], filters = {} } = usePage().props;
   const [editingId, setEditingId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
+  const [filterValues, setFilterValues] = useState({
+    tin: filters.tin || "",
+    name: filters.name || "",
+    information_status: filters.information_status || "all",
+  });
 
   const {
     register,
@@ -67,6 +79,38 @@ function ManageBrokers() {
     if (flash?.success) toast.success(flash.success);
     if (flash?.error) toast.error(flash.error);
   }, [flash]);
+
+  useEffect(() => {
+    setFilterValues({
+      tin: filters.tin || "",
+      name: filters.name || "",
+      information_status: filters.information_status || "all",
+    });
+  }, [filters.tin, filters.name, filters.information_status]);
+
+  const handleFilterChange = (field, value) => {
+    setFilterValues((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleFilterSubmit = (event) => {
+    event.preventDefault();
+
+    router.get("/brokers", filterValues, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  const handleClearFilters = () => {
+    setFilterValues({ tin: "", name: "", information_status: "all" });
+
+    router.get("/brokers", {}, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
 
   // Submit Handler gamit ang direktang URLs
   const onSubmit = (formData) => {
@@ -243,6 +287,60 @@ function ManageBrokers() {
               List of Brokers
             </CardTitle>
           </CardHeader>
+
+          <div className="border-b border-slate-100 bg-white p-4">
+            <form
+              onSubmit={handleFilterSubmit}
+              className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)_minmax(0,220px)_auto] lg:items-end"
+            >
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-600">Filter by TIN</label>
+                <Input
+                  type="text"
+                  value={filterValues.tin}
+                  onChange={(event) => handleFilterChange("tin", event.target.value)}
+                  placeholder="Enter TIN..."
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-600">Filter by broker name</label>
+                <Input
+                  type="text"
+                  value={filterValues.name}
+                  onChange={(event) => handleFilterChange("name", event.target.value)}
+                  placeholder="Enter broker name..."
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-600">Missing Information</label>
+                <Select
+                  value={filterValues.information_status}
+                  onValueChange={(value) => handleFilterChange("information_status", value)}
+                >
+                  <SelectTrigger className="h-9 w-full bg-white">
+                    <SelectValue placeholder="All records" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All records</SelectItem>
+                    <SelectItem value="missing_tin">Missing TIN</SelectItem>
+                    <SelectItem value="complete">Complete records</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-3 sm:col-span-2 lg:col-span-1">
+                <Button type="submit" className="h-9 min-w-[110px] flex-1 bg-[#0344a4] text-white hover:bg-[#023384]">
+                  <Search className="h-4 w-4" />
+                  Search
+                </Button>
+                <Button type="button" variant="outline" onClick={handleClearFilters} className="h-9 min-w-[100px] flex-1">
+                  <X className="h-4 w-4" />
+                  Clear
+                </Button>
+              </div>
+            </form>
+          </div>
 
           <CardContent className="p-0">
             <Table>

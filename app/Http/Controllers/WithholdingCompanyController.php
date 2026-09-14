@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\WithholdingCompany;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -28,9 +29,19 @@ use Inertia\Inertia;
  */
 class WithholdingCompanyController extends Controller
 {
+    private const ADDRESS_STATUSES = [
+        'all',
+        'missing_any',
+        'missing_address',
+        'missing_city',
+        'missing_both',
+        'complete',
+    ];
+
     public function index(Request $request)
     {
         $search = trim((string) $request->input('search'));
+        $addressStatus = $this->normalizeAddressStatus($request->input('address_status'));
         // The TIN is stored digits-only, so the term is matched on its digits --
         // but only when it has any. A term of "zebra" reduces to an empty string,
         // and LIKE '%%' would match every row.
@@ -46,6 +57,9 @@ class WithholdingCompanyController extends Controller
                         $scoped->orWhere('tin', 'LIKE', "%{$searchDigits}%");
                     }
                 });
+            })
+            ->when($addressStatus !== 'all', function (Builder $query) use ($addressStatus) {
+                $this->applyAddressStatusFilter($query, $addressStatus);
             })
             ->orderBy('registered_name')
             ->orderBy('branch_code')
@@ -69,7 +83,10 @@ class WithholdingCompanyController extends Controller
 
         return Inertia::render('WithholdingCompanies', [
             'companies' => $companies,
-            'filters' => ['search' => $search],
+            'filters' => [
+                'search' => $search,
+                'address_status' => $addressStatus,
+            ],
         ]);
     }
 
@@ -91,8 +108,8 @@ class WithholdingCompanyController extends Controller
 
         if ($identityChanged && $company->hasFiledRows()) {
             throw ValidationException::withMessages([
-                'tin' => 'Expanded WTAX records already exist for ' . $company->tin . '-' . $company->branch_code
-                    . '. Add a new company instead of changing its TIN or branch code.',
+                'tin' => 'Expanded WTAX records already exist for '.$company->tin.'-'.$company->branch_code
+                    .'. Add a new company instead of changing its TIN or branch code.',
             ]);
         }
 
@@ -109,14 +126,14 @@ class WithholdingCompanyController extends Controller
     {
         $company->update(['is_active' => false]);
 
-        return back()->with('success', $company->registered_name . ' deactivated.');
+        return back()->with('success', $company->registered_name.' deactivated.');
     }
 
     public function activate(WithholdingCompany $company)
     {
         $company->update(['is_active' => true]);
 
-        return back()->with('success', $company->registered_name . ' reactivated.');
+        return back()->with('success', $company->registered_name.' reactivated.');
     }
 
     /**
@@ -128,8 +145,8 @@ class WithholdingCompanyController extends Controller
         if ($company->hasFiledRows()) {
             return back()->with(
                 'error',
-                'Cannot delete ' . $company->registered_name . ': Expanded WTAX records were filed under '
-                . $company->tin . '-' . $company->branch_code . '. Deactivate it instead.'
+                'Cannot delete '.$company->registered_name.': Expanded WTAX records were filed under '
+                .$company->tin.'-'.$company->branch_code.'. Deactivate it instead.'
             );
         }
 
@@ -156,11 +173,11 @@ class WithholdingCompanyController extends Controller
         $validated = $request->validate([
             'tin' => ['required', 'digits:9', $identity],
             'branch_code' => ['required', 'digits:4'],
-            'registered_name' => ['required', 'string', 'max:' . config('bir.field_limits.company_name')],
+            'registered_name' => ['required', 'string', 'max:'.config('bir.field_limits.company_name')],
             'trade_name' => ['nullable', 'string', 'max:150'],
             'rdo_code' => ['nullable', 'digits:3'],
-            'address1' => ['nullable', 'string', 'max:' . config('bir.field_limits.address1')],
-            'address2' => ['nullable', 'string', 'max:' . config('bir.field_limits.city')],
+            'address1' => ['nullable', 'string', 'max:'.config('bir.field_limits.address1')],
+            'address2' => ['nullable', 'string', 'max:'.config('bir.field_limits.city')],
             'is_active' => ['nullable', 'boolean'],
         ], [
             'tin.unique' => 'TIN already exists for another company.',
@@ -178,5 +195,30 @@ class WithholdingCompanyController extends Controller
         $validated['is_active'] = $request->boolean('is_active', true);
 
         return $validated;
+    }
+
+    private function normalizeAddressStatus(mixed $value): string
+    {
+        return is_string($value) && in_array($value, self::ADDRESS_STATUSES, true)
+            ? $value
+            : 'all';
+    }
+
+    private function applyAddressStatusFilter(Builder $query, string $addressStatus): void
+    {
+        $missingAddress = "TRIM(COALESCE(address1, '')) = ''";
+        $missingCity = "TRIM(COALESCE(address2, '')) = ''";
+
+        match ($addressStatus) {
+            'missing_any' => $query->where(function (Builder $query) use ($missingAddress, $missingCity) {
+                $query->whereRaw($missingAddress)->orWhereRaw($missingCity);
+            }),
+            'missing_address' => $query->whereRaw($missingAddress),
+            'missing_city' => $query->whereRaw($missingCity),
+            'missing_both' => $query->whereRaw($missingAddress)->whereRaw($missingCity),
+            'complete' => $query->whereRaw("TRIM(COALESCE(address1, '')) <> ''")
+                ->whereRaw("TRIM(COALESCE(address2, '')) <> ''"),
+            default => null,
+        };
     }
 }

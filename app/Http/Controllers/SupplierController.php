@@ -5,18 +5,29 @@ namespace App\Http\Controllers;
 use App\Models\PendingPurchaseUpload;
 use App\Models\Supplier;
 use App\Services\PendingPurchaseUploadService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class SupplierController extends Controller
 {
+    private const ADDRESS_STATUSES = [
+        'all',
+        'missing_any',
+        'missing_address',
+        'missing_city',
+        'missing_both',
+        'complete',
+    ];
+
     /**
      * Display a listing of the resource.
      */
     public function index(Request $request, PendingPurchaseUploadService $pendingUploads)
     {
-        $filters = $request->only(['tin', 'name']);
+        $filters = $request->only(['tin', 'name', 'address_status']);
+        $addressStatus = $this->normalizeAddressStatus($filters['address_status'] ?? null);
         $supplierFixContext = null;
 
         if ($request->filled('pending_upload')) {
@@ -43,6 +54,9 @@ class SupplierController extends Controller
             ->when($filters['name'] ?? null, function ($query, string $name) {
                 $query->where('name', 'like', '%'.$name.'%');
             })
+            ->when($addressStatus !== 'all', function (Builder $query) use ($addressStatus) {
+                $this->applyAddressStatusFilter($query, $addressStatus);
+            })
             ->orderBy('name')
             ->paginate(10)
             ->withQueryString();
@@ -52,6 +66,7 @@ class SupplierController extends Controller
             'filters' => [
                 'tin' => $filters['tin'] ?? '',
                 'name' => $filters['name'] ?? '',
+                'address_status' => $addressStatus,
             ],
             'supplierFixContext' => $supplierFixContext,
         ]);
@@ -186,5 +201,30 @@ class SupplierController extends Controller
     private function baseTin(?string $value): string
     {
         return substr(preg_replace('/\D/', '', (string) $value), 0, 9);
+    }
+
+    private function normalizeAddressStatus(mixed $value): string
+    {
+        return is_string($value) && in_array($value, self::ADDRESS_STATUSES, true)
+            ? $value
+            : 'all';
+    }
+
+    private function applyAddressStatusFilter(Builder $query, string $addressStatus): void
+    {
+        $missingAddress = "TRIM(COALESCE(addr, '')) = ''";
+        $missingCity = "TRIM(COALESCE(city, '')) = ''";
+
+        match ($addressStatus) {
+            'missing_any' => $query->where(function (Builder $query) use ($missingAddress, $missingCity) {
+                $query->whereRaw($missingAddress)->orWhereRaw($missingCity);
+            }),
+            'missing_address' => $query->whereRaw($missingAddress),
+            'missing_city' => $query->whereRaw($missingCity),
+            'missing_both' => $query->whereRaw($missingAddress)->whereRaw($missingCity),
+            'complete' => $query->whereRaw("TRIM(COALESCE(addr, '')) <> ''")
+                ->whereRaw("TRIM(COALESCE(city, '')) <> ''"),
+            default => null,
+        };
     }
 }

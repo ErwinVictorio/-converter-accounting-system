@@ -4,23 +4,37 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\SalesVatInput;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class CustomerController extends Controller
 {
+    private const ADDRESS_STATUSES = [
+        'all',
+        'missing_any',
+        'missing_address',
+        'missing_city',
+        'missing_both',
+        'complete',
+    ];
+
     public function index(Request $request)
     {
-        $filters = $request->only(['tin', 'name']);
+        $filters = $request->only(['tin', 'name', 'address_status']);
+        $addressStatus = $this->normalizeAddressStatus($filters['address_status'] ?? null);
 
         $customerList = Customer::query()
             ->select('id', 'tin', 'name', 'addr', 'city')
             ->when($filters['tin'] ?? null, function ($query, string $tin) {
-                $query->where('tin', 'like', '%' . $tin . '%');
+                $query->where('tin', 'like', '%'.$tin.'%');
             })
             ->when($filters['name'] ?? null, function ($query, string $name) {
-                $query->where('name', 'like', '%' . $name . '%');
+                $query->where('name', 'like', '%'.$name.'%');
+            })
+            ->when($addressStatus !== 'all', function (Builder $query) use ($addressStatus) {
+                $this->applyAddressStatusFilter($query, $addressStatus);
             })
             ->orderBy('name')
             ->paginate(10)
@@ -31,6 +45,7 @@ class CustomerController extends Controller
             'filters' => [
                 'tin' => $filters['tin'] ?? '',
                 'name' => $filters['name'] ?? '',
+                'address_status' => $addressStatus,
             ],
         ]);
     }
@@ -83,9 +98,9 @@ class CustomerController extends Controller
     {
         return $request->validate([
             'tin' => ['required', 'string', 'max:20'],
-            'name' => ['required', 'string', 'max:' . config('bir.field_limits.company_name')],
-            'addr' => ['required', 'string', 'max:' . config('bir.field_limits.address1')],
-            'city' => ['required', 'string', 'max:' . config('bir.field_limits.city')],
+            'name' => ['required', 'string', 'max:'.config('bir.field_limits.company_name')],
+            'addr' => ['required', 'string', 'max:'.config('bir.field_limits.address1')],
+            'city' => ['required', 'string', 'max:'.config('bir.field_limits.city')],
         ]);
     }
 
@@ -105,7 +120,7 @@ class CustomerController extends Controller
     private function syncSalesRows(Customer $customer): void
     {
         SalesVatInput::query()
-            ->whereRaw($this->salesCustomerNameKeySql() . ' = ?', [$customer->name_key])
+            ->whereRaw($this->salesCustomerNameKeySql().' = ?', [$customer->name_key])
             ->update([
                 'customer_tin' => $customer->tin,
                 'customer_type' => 'company',
@@ -132,15 +147,15 @@ class CustomerController extends Controller
         }
 
         if (strlen($digits) === 12) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
-                substr($digits, 6, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
+                substr($digits, 6, 3).'-'.
                 substr($digits, 9, 3);
         }
 
         if (strlen($digits) === 9) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
                 substr($digits, 6, 3);
         }
 
@@ -182,5 +197,30 @@ class CustomerController extends Controller
         $value = preg_replace('/[^A-Z0-9 .#\/\-\(\)]/', ' ', $value);
 
         return preg_replace('/\s+/', ' ', trim($value));
+    }
+
+    private function normalizeAddressStatus(mixed $value): string
+    {
+        return is_string($value) && in_array($value, self::ADDRESS_STATUSES, true)
+            ? $value
+            : 'all';
+    }
+
+    private function applyAddressStatusFilter(Builder $query, string $addressStatus): void
+    {
+        $missingAddress = "TRIM(COALESCE(addr, '')) = ''";
+        $missingCity = "TRIM(COALESCE(city, '')) = ''";
+
+        match ($addressStatus) {
+            'missing_any' => $query->where(function (Builder $query) use ($missingAddress, $missingCity) {
+                $query->whereRaw($missingAddress)->orWhereRaw($missingCity);
+            }),
+            'missing_address' => $query->whereRaw($missingAddress),
+            'missing_city' => $query->whereRaw($missingCity),
+            'missing_both' => $query->whereRaw($missingAddress)->whereRaw($missingCity),
+            'complete' => $query->whereRaw("TRIM(COALESCE(addr, '')) <> ''")
+                ->whereRaw("TRIM(COALESCE(city, '')) <> ''"),
+            default => null,
+        };
     }
 }

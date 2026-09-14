@@ -17,6 +17,13 @@ import {
 } from "@/Components/ui/card";
 import { Input } from "@/Components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/Components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -61,6 +68,7 @@ function ManageSupplier() {
   const [filterValues, setFilterValues] = useState({
     tin: filters.tin || "",
     name: filters.name || "",
+    address_status: filters.address_status || "all",
   });
 
   const {
@@ -104,8 +112,9 @@ function ManageSupplier() {
     setFilterValues({
       tin: filters.tin || "",
       name: filters.name || "",
+      address_status: filters.address_status || "all",
     });
-  }, [filters.tin, filters.name]);
+  }, [filters.tin, filters.name, filters.address_status]);
 
   useEffect(() => {
     const item = supplierFixContext?.current_item;
@@ -178,6 +187,7 @@ function ManageSupplier() {
       {
         tin: filterValues.tin,
         name: filterValues.name,
+        address_status: filterValues.address_status,
         ...fixQueueQuery,
       },
       {
@@ -189,7 +199,7 @@ function ManageSupplier() {
   };
 
   const handleClearFilters = () => {
-    setFilterValues({ tin: "", name: "" });
+    setFilterValues({ tin: "", name: "", address_status: "all" });
 
     router.get(
       "/suppliers",
@@ -461,39 +471,65 @@ function ManageSupplier() {
           <div className="border-b border-slate-100 bg-white p-4">
             <form
               onSubmit={handleFilterSubmit}
-              className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto_auto]"
+              className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)_minmax(0,240px)_auto] lg:items-end"
             >
-              <Input
-                type="text"
-                value={filterValues.tin}
-                onChange={(event) => handleFilterChange("tin", event.target.value)}
-                placeholder="Filter by TIN"
-                className="h-9"
-              />
-              <Input
-                type="text"
-                value={filterValues.name}
-                onChange={(event) => handleFilterChange("name", event.target.value)}
-                placeholder="Filter by company name"
-                className="h-9"
-              />
-              <Button
-                type="submit"
-                variant="outline"
-                className="h-9"
-              >
-                <Search className="h-4 w-4" />
-                Filter
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleClearFilters}
-                className="h-9"
-              >
-                <X className="h-4 w-4" />
-                Clear
-              </Button>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-600">Filter by TIN</label>
+                <Input
+                  type="text"
+                  value={filterValues.tin}
+                  onChange={(event) => handleFilterChange("tin", event.target.value)}
+                  placeholder="Enter TIN..."
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-600">Filter by supplier name</label>
+                <Input
+                  type="text"
+                  value={filterValues.name}
+                  onChange={(event) => handleFilterChange("name", event.target.value)}
+                  placeholder="Enter supplier name..."
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-600">Missing Information</label>
+                <Select
+                  value={filterValues.address_status}
+                  onValueChange={(value) => handleFilterChange("address_status", value)}
+                >
+                  <SelectTrigger className="h-9 w-full bg-white">
+                    <SelectValue placeholder="All records" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All records</SelectItem>
+                    <SelectItem value="missing_any">Missing address or city</SelectItem>
+                    <SelectItem value="missing_address">Missing address</SelectItem>
+                    <SelectItem value="missing_city">Missing city</SelectItem>
+                    <SelectItem value="missing_both">Missing both</SelectItem>
+                    <SelectItem value="complete">Complete records</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-3 sm:col-span-2 lg:col-span-1">
+                <Button
+                  type="submit"
+                  className="h-9 min-w-[110px] flex-1 bg-[#0344a4] text-white hover:bg-[#023384]"
+                >
+                  <Search className="h-4 w-4" />
+                  Search
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleClearFilters}
+                  className="h-9 min-w-[100px] flex-1"
+                >
+                  <X className="h-4 w-4" />
+                  Clear
+                </Button>
+              </div>
             </form>
           </div>
 
