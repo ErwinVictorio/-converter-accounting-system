@@ -5,17 +5,17 @@ namespace App\Http\Controllers;
 use App\Imports\ExpandedWtaxBirInfoPreflight;
 use App\Imports\ExpandedWtaxImport;
 use App\Imports\ExpandedWtaxUploadPreflight;
+use App\Imports\SalesVatInputImport;
 use App\Imports\UploadBirInfoPreflight;
 use App\Imports\UploadWorkbookTypePreflight;
-use App\Imports\VatInputImport;
-use App\Imports\SalesVatInputImport;
 use App\Models\Brokers;
 use App\Models\ExpandedWtaxEntry;
-use App\Models\ImportationEntry;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\AnnualCoveredPeriodValidator;
 use App\Services\BIR\WithholdingCompanyDirectory;
+use App\Services\PendingPurchaseUploadService;
+use App\Services\PurchaseUploadService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -33,9 +33,10 @@ class VatInputController extends Controller
      */
     public function __construct(
         private WithholdingCompanyDirectory $companies,
-        private AnnualCoveredPeriodValidator $annualPeriod
-    ) {
-    }
+        private AnnualCoveredPeriodValidator $annualPeriod,
+        private PurchaseUploadService $purchaseUploads,
+        private PendingPurchaseUploadService $pendingPurchaseUploads
+    ) {}
 
     /**
      * Import Data: the upload workflow only.
@@ -99,7 +100,7 @@ class VatInputController extends Controller
                         ->with('uploadIssueDialog', [
                             'title' => 'Sales upload needs BIR info or amount fixes',
                             'message' => 'Fix the listed customer BIR info or workbook amounts before uploading this file.',
-                            'summary' => count($birIssues) . ' issue(s) found. No records were imported or replaced.',
+                            'summary' => count($birIssues).' issue(s) found. No records were imported or replaced.',
                             'record_type' => 'sales',
                             'issues' => $birIssues,
                         ]);
@@ -116,15 +117,15 @@ class VatInputController extends Controller
 
                     if ($import->importedRows() === 0 && $import->skippedDebitMemoRows() > 0) {
                         throw new \RuntimeException(
-                            'Sales upload skipped ' . $import->skippedDebitMemoRows() . ' DM row(s). No importable SI/CM Sales rows were found.'
+                            'Sales upload skipped '.$import->skippedDebitMemoRows().' DM row(s). No importable SI/CM Sales rows were found.'
                         );
                     }
                 });
 
-                $response = back()->with('success', 'Sales VAT report for ' . Carbon::parse($reportingPeriod)->format('F Y') . ' was replaced successfully.');
+                $response = back()->with('success', 'Sales VAT report for '.Carbon::parse($reportingPeriod)->format('F Y').' was replaced successfully.');
 
                 if ($import->skippedDebitMemoRows() > 0) {
-                    $response->with('warning', 'Sales upload completed, but ' . $import->skippedDebitMemoRows() . ' DM row(s) were skipped because Debit Memo rows are not included in Sales VAT upload.');
+                    $response->with('warning', 'Sales upload completed, but '.$import->skippedDebitMemoRows().' DM row(s) were skipped because Debit Memo rows are not included in Sales VAT upload.');
                 }
 
                 return $response;
@@ -161,7 +162,7 @@ class VatInputController extends Controller
                     if ($issues !== []) {
                         return back()->with(
                             'error',
-                            'Expanded withholding tax annual upload rejected. ' . implode(' ', $issues)
+                            'Expanded withholding tax annual upload rejected. '.implode(' ', $issues)
                         );
                     }
 
@@ -217,7 +218,7 @@ class VatInputController extends Controller
                 if ($issues !== []) {
                     return back()->with(
                         'error',
-                        'Expanded withholding tax upload rejected. ' . implode(' ', $issues)
+                        'Expanded withholding tax upload rejected. '.implode(' ', $issues)
                     );
                 }
 
@@ -254,54 +255,52 @@ class VatInputController extends Controller
             }
 
             $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
-            $issues = (new UploadWorkbookTypePreflight)->check($file, 'purchase', $reportingPeriod);
+            $retainedContents = file_get_contents($file->getRealPath());
 
-            if ($issues !== []) {
-                return back()->with('error', implode(' ', $issues));
+            if ($retainedContents === false) {
+                throw new \RuntimeException('Unable to read the uploaded Purchase workbook.');
             }
 
-            $birIssues = (new UploadBirInfoPreflight)->checkPurchase($file, $reportingPeriod);
+            $preflight = $this->purchaseUploads->preflight($file, $reportingPeriod);
+
+            if ($preflight['type_issues'] !== []) {
+                return back()->with('error', implode(' ', $preflight['type_issues']));
+            }
+
+            $birIssues = $preflight['bir_issues'];
 
             if ($birIssues !== []) {
+                $pending = $this->pendingPurchaseUploads->create(
+                    $request->user(),
+                    $file,
+                    $reportingPeriod,
+                    $birIssues,
+                    $retainedContents
+                );
+
                 return back()
                     ->with('error', 'Purchase upload rejected. Fix supplier BIR info before importing.')
                     ->with('uploadIssueDialog', [
                         'title' => 'Purchase upload needs BIR info fixes',
                         'message' => 'Fix supplier BIR info before uploading this file.',
-                        'summary' => count($birIssues) . ' issue(s) found. No records were imported or replaced.',
+                        'summary' => count($birIssues).' issue(s) found. No records were imported or replaced.',
                         'record_type' => 'purchase',
                         'issues' => $birIssues,
+                        'pending_upload' => $this->pendingPurchaseUploads->queue($pending, $birIssues),
                     ]);
             }
 
-            $import = new VatInputImport($reportingPeriod);
-            DB::transaction(function () use ($reportingPeriod, $file, $import) {
-                VatInput::query()
-                    ->whereDate('date_uploaded', $reportingPeriod)
-                    ->where('is_adjusted', false)
-                    ->whereNotIn('id', ImportationEntry::query()
-                        ->whereNotNull('vat_input_id')
-                        ->select('vat_input_id'))
-                    ->delete();
+            $result = $this->purchaseUploads->replace($file, $reportingPeriod);
 
-                Excel::import($import, $file);
+            $response = back()->with('success', 'Purchase VAT report for '.Carbon::parse($reportingPeriod)->format('F Y').' was replaced successfully.');
 
-                if ($import->importedRows() === 0 && $import->skippedExcludedSupplierRows() > 0) {
-                    throw new \RuntimeException(
-                        'Purchase upload skipped ' . $import->skippedExcludedSupplierRows() . ' BUREAU OF CUSTOMS row(s). No importable Purchase rows were found.'
-                    );
-                }
-            });
-
-            $response = back()->with('success', 'Purchase VAT report for ' . Carbon::parse($reportingPeriod)->format('F Y') . ' was replaced successfully.');
-
-            if ($import->skippedExcludedSupplierRows() > 0) {
-                $response->with('warning', 'Purchase upload completed, but ' . $import->skippedExcludedSupplierRows() . ' BUREAU OF CUSTOMS row(s) were skipped because they are not included in RELIEF Purchase DAT.');
+            if ($result['skipped_supplier_count'] > 0) {
+                $response->with('warning', 'Purchase upload completed, but '.$result['skipped_supplier_count'].' BUREAU OF CUSTOMS row(s) were skipped because they are not included in RELIEF Purchase DAT.');
             }
 
             return $response;
         } catch (\Exception $e) {
-            return back()->with('error', 'Import failed: ' . $e->getMessage());
+            return back()->with('error', 'Import failed: '.$e->getMessage());
         }
     }
 
@@ -318,12 +317,12 @@ class VatInputController extends Controller
         $label = $reportType === 'annual' ? 'annual upload' : 'upload';
 
         return back()
-            ->with('error', 'Expanded WTAX ' . $label . ' rejected. Correct the workbook before importing.')
+            ->with('error', 'Expanded WTAX '.$label.' rejected. Correct the workbook before importing.')
             ->with('uploadIssueDialog', [
                 'title' => 'Expanded WTAX upload needs BIR info fixes',
                 'message' => 'Correct the listed fields in the workbook and upload again.',
-                'summary' => count($issues) . ' issue(s) found across ' . $rows . ' worksheet row(s). '
-                    . 'No records were imported or replaced.',
+                'summary' => count($issues).' issue(s) found across '.$rows.' worksheet row(s). '
+                    .'No records were imported or replaced.',
                 'record_type' => 'expanded',
                 'issues' => $issues,
             ]);
@@ -351,7 +350,7 @@ class VatInputController extends Controller
 
     public function edit(VatInput $vatInput)
     {
-        if (!$this->isBrokerRecord($vatInput)) {
+        if (! $this->isBrokerRecord($vatInput)) {
             return redirect('/records')->with('error', 'Only broker records can be edited.');
         }
 
@@ -370,7 +369,7 @@ class VatInputController extends Controller
      */
     public function adjustedLookup(Request $request, VatInput $vatInput)
     {
-        if (!$this->isBrokerRecord($vatInput)) {
+        if (! $this->isBrokerRecord($vatInput)) {
             abort(403, 'Only broker records can look up adjusted records.');
         }
 
@@ -485,7 +484,7 @@ class VatInputController extends Controller
 
     public function update(Request $request, VatInput $vatInput)
     {
-        if (!$this->isBrokerRecord($vatInput)) {
+        if (! $this->isBrokerRecord($vatInput)) {
             return redirect('/records')->with('error', 'Only broker records can be edited.');
         }
 
@@ -494,15 +493,15 @@ class VatInputController extends Controller
         ]);
 
         $validated = $request->validate([
-            'supplier_name' => ['nullable', 'string', 'max:' . config('bir.field_limits.company_name')],
+            'supplier_name' => ['nullable', 'string', 'max:'.config('bir.field_limits.company_name')],
             'tin_number' => ['required', 'regex:/^(\d{9}|\d{12}|\d{3}-\d{3}-\d{3}|\d{3}-\d{3}-\d{3}-\d{3})$/'],
             'vendor_type' => ['required', 'in:company,individual'],
-            'company_name' => ['nullable', 'string', 'max:' . config('bir.field_limits.company_name'), 'required_if:vendor_type,company'],
+            'company_name' => ['nullable', 'string', 'max:'.config('bir.field_limits.company_name'), 'required_if:vendor_type,company'],
             'last_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
             'first_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
             'middle_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
-            'address1' => ['nullable', 'string', 'max:' . config('bir.field_limits.address1')],
-            'address2' => ['nullable', 'string', 'max:' . config('bir.field_limits.city')],
+            'address1' => ['nullable', 'string', 'max:'.config('bir.field_limits.address1')],
+            'address2' => ['nullable', 'string', 'max:'.config('bir.field_limits.city')],
             'is_imported' => ['required', 'boolean'],
             'purchase_imported' => ['nullable', 'numeric', 'min:0'],
             'purchase_local' => ['nullable', 'numeric', 'min:0'],
@@ -542,7 +541,7 @@ class VatInputController extends Controller
         DB::transaction(function () use ($vatInput, $validated, $amounts, $newTotal) {
             $supplierName = $validated['vendor_type'] === 'company'
                 ? ($validated['company_name'] ?? $validated['supplier_name'] ?? '')
-                : trim(($validated['last_name'] ?? '') . ' ' . ($validated['first_name'] ?? '') . ' ' . ($validated['middle_name'] ?? ''));
+                : trim(($validated['last_name'] ?? '').' '.($validated['first_name'] ?? '').' '.($validated['middle_name'] ?? ''));
             $tinNumber = $this->formatTin($validated['tin_number']);
             $tinDigits = substr(preg_replace('/\D/', '', $tinNumber), 0, 9);
             $dateUploaded = $vatInput->getRawOriginal('date_uploaded');
@@ -633,12 +632,12 @@ class VatInputController extends Controller
         $validated = $request->validate([
             'vendor_type' => ['required', 'in:company,individual'],
             'tin_number' => ['required', 'regex:/^(\d{9}|\d{12}|\d{3}-\d{3}-\d{3}|\d{3}-\d{3}-\d{3}-\d{3})$/'],
-            'company_name' => ['nullable', 'string', 'max:' . config('bir.field_limits.company_name'), 'required_if:vendor_type,company'],
+            'company_name' => ['nullable', 'string', 'max:'.config('bir.field_limits.company_name'), 'required_if:vendor_type,company'],
             'last_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
             'first_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
             'middle_name' => ['nullable', 'string', 'max:255', 'required_if:vendor_type,individual'],
-            'address1' => ['nullable', 'string', 'max:' . config('bir.field_limits.address1')],
-            'address2' => ['nullable', 'string', 'max:' . config('bir.field_limits.city')],
+            'address1' => ['nullable', 'string', 'max:'.config('bir.field_limits.address1')],
+            'address2' => ['nullable', 'string', 'max:'.config('bir.field_limits.city')],
         ]);
 
         if (substr(preg_replace('/\D/', '', $validated['tin_number']), 0, 9) === '000000000') {
@@ -649,7 +648,7 @@ class VatInputController extends Controller
 
         $supplierName = $validated['vendor_type'] === 'company'
             ? $validated['company_name']
-            : trim($validated['last_name'] . ' ' . $validated['first_name'] . ' ' . $validated['middle_name']);
+            : trim($validated['last_name'].' '.$validated['first_name'].' '.$validated['middle_name']);
         [$address1, $address2] = $this->splitAddress((string) ($validated['address1'] ?? ''));
         $address2 = $address2 ?: $this->birText((string) ($validated['address2'] ?? ''));
 
@@ -682,7 +681,7 @@ class VatInputController extends Controller
             return false;
         }
 
-        if (!$vatInput->tin_number) {
+        if (! $vatInput->tin_number) {
             return false;
         }
 
@@ -706,15 +705,15 @@ class VatInputController extends Controller
         }
 
         if (strlen($digits) === 12) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
-                substr($digits, 6, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
+                substr($digits, 6, 3).'-'.
                 substr($digits, 9, 3);
         }
 
         if (strlen($digits) === 9) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
                 substr($digits, 6, 3);
         }
 

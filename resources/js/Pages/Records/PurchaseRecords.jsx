@@ -39,6 +39,7 @@ function PurchaseRecords() {
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
+        if (flash?.warning) toast.warning(flash.warning);
         if (flash?.error) toast.error(flash.error);
     }, [flash]);
 

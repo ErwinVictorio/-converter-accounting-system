@@ -3,7 +3,7 @@ import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Eye, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { motion } from "framer-motion";
 
 import MainLayout from "@/Layouts/MainLayout";
@@ -51,12 +51,13 @@ const itemVariants = {
 };
 
 function ManageSupplier() {
-  const { flash, supplierList = [], filters = {} } = usePage().props;
+  const { flash, supplierList = [], filters = {}, supplierFixContext = null } = usePage().props;
   const suppliers = supplierList?.data || [];
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
   const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
+  const [isRetryingUpload, setIsRetryingUpload] = useState(false);
   const [filterValues, setFilterValues] = useState({
     tin: filters.tin || "",
     name: filters.name || "",
@@ -106,12 +107,43 @@ function ManageSupplier() {
     });
   }, [filters.tin, filters.name]);
 
+  useEffect(() => {
+    const item = supplierFixContext?.current_item;
+
+    if (!item) {
+      setEditingSupplier(null);
+      return;
+    }
+
+    const values = {
+      tin: item.prefill?.tin || "",
+      name: item.prefill?.name || "",
+      addr: item.prefill?.addr || "",
+      city: item.prefill?.city || "",
+    };
+
+    if (item.mode === "edit" && item.supplier_id) {
+      setEditingSupplier({ id: item.supplier_id, ...values });
+      resetEdit(values);
+    } else {
+      setEditingSupplier(null);
+      reset(values);
+    }
+  }, [supplierFixContext, reset, resetEdit]);
+
+  const fixQueueQuery = supplierFixContext
+    ? {
+        pending_upload: supplierFixContext.pending_upload.token,
+        queue_item: supplierFixContext.current_item?.queue_key,
+      }
+    : {};
+
   const onSubmit = (formData) => {
     setIsSubmitting(true);
 
     router.post("/suppliers", formData, {
       onSuccess: () => {
-        reset();
+        if (!supplierFixContext) reset();
         setIsSubmitting(false);
       },
       onError: (err) => {
@@ -146,6 +178,7 @@ function ManageSupplier() {
       {
         tin: filterValues.tin,
         name: filterValues.name,
+        ...fixQueueQuery,
       },
       {
         preserveState: true,
@@ -160,7 +193,7 @@ function ManageSupplier() {
 
     router.get(
       "/suppliers",
-      {},
+      fixQueueQuery,
       {
         preserveState: true,
         preserveScroll: true,
@@ -199,7 +232,7 @@ function ManageSupplier() {
       preserveScroll: true,
       onSuccess: () => {
         setIsUpdating(false);
-        handleCloseEdit();
+        if (!supplierFixContext) handleCloseEdit();
       },
       onError: (err) => {
         setIsUpdating(false);
@@ -210,6 +243,25 @@ function ManageSupplier() {
         }
       },
     });
+  };
+
+  const retryPendingUpload = () => {
+    const pending = supplierFixContext?.pending_upload;
+
+    if (!pending?.ready_to_retry) return;
+
+    setIsRetryingUpload(true);
+    router.post(pending.retry_url, {}, {
+      onFinish: () => setIsRetryingUpload(false),
+    });
+  };
+
+  const cancelPendingUpload = () => {
+    const pending = supplierFixContext?.pending_upload;
+
+    if (!pending || !confirm("Cancel this pending Purchase upload? The retained workbook will be removed.")) return;
+
+    router.delete(pending.cancel_url);
   };
 
   return (
@@ -225,6 +277,80 @@ function ManageSupplier() {
       >
         Supplier Management
       </motion.h2>
+
+      {supplierFixContext && (
+        <motion.div variants={itemVariants}>
+          <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
+            <CardContent className="space-y-4 p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start gap-3">
+                  {supplierFixContext.pending_upload.ready_to_retry ? (
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                  )}
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Purchase upload fix queue: {supplierFixContext.pending_upload.original_name}
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      Reporting month {supplierFixContext.pending_upload.reporting_period} ·{" "}
+                      {supplierFixContext.pending_upload.resolved_suppliers} fixed ·{" "}
+                      {supplierFixContext.pending_upload.remaining_suppliers} remaining
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => router.get("/records")}>Back to Import Data</Button>
+                  <Button type="button" variant="ghost" onClick={cancelPendingUpload} className="text-red-600 hover:text-red-700">Cancel Queue</Button>
+                  <Button
+                    type="button"
+                    onClick={retryPendingUpload}
+                    disabled={!supplierFixContext.pending_upload.ready_to_retry || isRetryingUpload}
+                    className="bg-[#0344a4] text-white hover:bg-[#023384]"
+                  >
+                    {isRetryingUpload && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Retry Upload
+                  </Button>
+                </div>
+              </div>
+
+              {supplierFixContext.current_item ? (
+                <div className="rounded-lg border border-amber-200 bg-white p-4 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">
+                    Fixing: {supplierFixContext.current_item.display_name}
+                  </p>
+                  <p>Worksheet rows: {supplierFixContext.current_item.affected_rows.join(", ")}</p>
+                  <p>Fields to fix: {supplierFixContext.current_item.missing_fields.join(", ")}</p>
+                  {supplierFixContext.current_item.problems.map((problem) => (
+                    <p key={problem} className="mt-1 text-red-700">{problem}</p>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
+                  All supplier issues are fixed. Retry the original workbook when ready.
+                </div>
+              )}
+
+              {supplierFixContext.pending_upload.items.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  {supplierFixContext.pending_upload.items.map((item) => (
+                    <Button
+                      key={item.queue_key}
+                      type="button"
+                      size="sm"
+                      variant={item.queue_key === supplierFixContext.current_item?.queue_key ? "default" : "outline"}
+                      onClick={() => router.get(item.fix_url)}
+                    >
+                      {item.display_name}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       <motion.div variants={itemVariants}>
         <Card className="w-full shadow-sm border border-slate-100 rounded-xl bg-white overflow-hidden">
@@ -316,7 +442,7 @@ function ManageSupplier() {
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <span className="flex items-center gap-1.5">
-                  <Plus className="w-4 h-4" /> Submit
+                  <Plus className="w-4 h-4" /> {supplierFixContext ? "Save and Check Again" : "Submit"}
                 </span>
               )}
             </Button>
@@ -565,7 +691,7 @@ function ManageSupplier() {
               {isUpdating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                "Save Changes"
+                supplierFixContext ? "Save and Check Again" : "Save Changes"
               )}
             </Button>
           </DialogFooter>

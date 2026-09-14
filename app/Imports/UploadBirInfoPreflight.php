@@ -7,6 +7,7 @@ use App\Models\SalesVatInput;
 use App\Models\Supplier;
 use App\Services\BIR\BirPurchaseRowValidator;
 use App\Services\BIR\BirSalesRowValidator;
+use Illuminate\Http\UploadedFile;
 use Maatwebsite\Excel\Concerns\ToArray;
 use Maatwebsite\Excel\Concerns\WithCalculatedFormulas;
 use Maatwebsite\Excel\Facades\Excel;
@@ -15,6 +16,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
 {
     /** @var array<int, array<int, mixed>> */
     private array $rows = [];
+
     private ?int $salesZeroRatedColumn = null;
 
     public function array(array $rows): void
@@ -29,7 +31,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
     }
 
     /**
-     * @param  \Illuminate\Http\UploadedFile|string  $file
+     * @param  UploadedFile|string  $file
      * @return array<int, array<string, mixed>>
      */
     public function checkPurchase($file, string $reportingPeriod): array
@@ -93,7 +95,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             }
 
             foreach ($this->uploadBlockingErrors($rowIssues) as $error) {
-                $issues[] = $this->issue(
+                $issue = $this->issue(
                     $index + 1,
                     $supplierName,
                     'purchase',
@@ -104,6 +106,22 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
                     ['TIN', 'Address', 'City'],
                     $supplier ? 'matched supplier master record' : 'supplier name / vendor TIN'
                 );
+
+                $issue['supplier_id'] = $supplier?->id;
+                $issue['identity_key'] = $this->purchaseIdentityKey(
+                    $supplier,
+                    $rawTin,
+                    $systemSupplierName,
+                    $index + 1
+                );
+                $issue['prefill'] = [
+                    'tin' => $supplier?->tin ?: $this->formatTin($rawTin),
+                    'name' => $supplier?->name ?: $companyName,
+                    'addr' => $supplier?->addr ?: $address1,
+                    'city' => $supplier?->city ?: $address2,
+                ];
+
+                $issues[] = $issue;
             }
         }
 
@@ -111,7 +129,7 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
     }
 
     /**
-     * @param  \Illuminate\Http\UploadedFile|string  $file
+     * @param  UploadedFile|string  $file
      * @return array<int, array<string, mixed>>
      */
     public function checkSales($file, string $reportingPeriod): array
@@ -526,6 +544,29 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
         };
     }
 
+    private function purchaseIdentityKey(?Supplier $supplier, ?string $tin, string $name, int $row): string
+    {
+        if ($supplier) {
+            return 'supplier:'.$supplier->id;
+        }
+
+        $fullTin = $this->supplierTin($tin);
+
+        if (strlen($fullTin) === 12) {
+            return 'tin12:'.$fullTin;
+        }
+
+        $baseTin = $this->birTin($tin);
+
+        if (strlen($baseTin) === 9 && $baseTin !== '000000000') {
+            return 'tin9:'.$baseTin;
+        }
+
+        $nameKey = Supplier::normalizeName($name);
+
+        return $nameKey !== '' ? 'name:'.$nameKey : 'row:'.$row;
+    }
+
     private function salesField(string $error): string
     {
         return match (true) {
@@ -616,15 +657,15 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
         }
 
         if (strlen($digits) === 12) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
-                substr($digits, 6, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
+                substr($digits, 6, 3).'-'.
                 substr($digits, 9, 3);
         }
 
         if (strlen($digits) === 9) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
                 substr($digits, 6, 3);
         }
 

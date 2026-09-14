@@ -14,6 +14,7 @@ use App\Services\BIR\BirPurchaseRowValidator;
 use App\Services\BIR\BirSalesRowValidator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -28,6 +29,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
     {
         parent::setUp();
 
+        Storage::fake('local');
         $this->actingAs(User::factory()->create());
     }
 
@@ -35,7 +37,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
     {
         return UploadedFile::fake()->createWithContent(
             $name,
-            implode("\r\n", $lines) . "\r\n"
+            implode("\r\n", $lines)."\r\n"
         );
     }
 
@@ -87,7 +89,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
     private function purchaseWorkbook(): UploadedFile
     {
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->fromArray([
             ['Purchase VAT Report'],
@@ -104,7 +106,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
     private function purchaseWorkbookWithCommaSupplier(): UploadedFile
     {
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->fromArray([
             ['Purchase VAT Report'],
@@ -121,7 +123,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
     private function purchaseWorkbookWithBureauOfCustoms(string $bureauName = 'BUREAU OF CUSTOMS'): UploadedFile
     {
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->fromArray([
             ['Purchase VAT Report'],
@@ -139,7 +141,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
     private function purchaseVatInputReportWorkbook(): UploadedFile
     {
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->fromArray([
             ['VAT INPUT REPORT'],
@@ -156,7 +158,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
 
     private function purchaseWorkbookWithOnlyBureauOfCustoms(): UploadedFile
     {
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->fromArray([
             ['Purchase VAT Report'],
@@ -654,7 +656,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
     {
         // Check preflight directly: the unmatched importer lookup uses MySQL LEFT,
         // which cannot execute in this SQLite test database.
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $spreadsheet->getActiveSheet()->fromArray([
             ['Purchase VAT Report'],
             ['For May 2026'],

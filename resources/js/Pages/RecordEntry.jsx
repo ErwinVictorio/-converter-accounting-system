@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useForm, usePage } from "@inertiajs/react";
+import { Link, router, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowRight, Copy } from "lucide-react";
+import { AlertTriangle, ArrowRight, Copy, Loader2 } from "lucide-react";
 
 import ExcelUploadPanel from "@/Components/ExcelUploadPanel";
 import MainLayout from "@/Layouts/MainLayout";
@@ -99,6 +99,7 @@ function RecordEntry() {
   const [uploadErrorDialogOpen, setUploadErrorDialogOpen] = useState(false);
   const [uploadErrorDetails, setUploadErrorDetails] = useState([]);
   const [uploadIssueDialog, setUploadIssueDialog] = useState(null);
+  const [isRetryingPendingUpload, setIsRetryingPendingUpload] = useState(false);
   const fileInputRef = useRef(null);
 
   // Inertia Form Setup para sa File Upload
@@ -178,6 +179,17 @@ function RecordEntry() {
     } catch {
       toast.error("Unable to copy error details.");
     }
+  };
+
+  const retryPendingUpload = () => {
+    const retryUrl = uploadIssueDialog?.pending_upload?.retry_url;
+
+    if (!retryUrl || !uploadIssueDialog.pending_upload.ready_to_retry) return;
+
+    setIsRetryingPendingUpload(true);
+    router.post(retryUrl, {}, {
+      onFinish: () => setIsRetryingPendingUpload(false),
+    });
   };
 
   // Handle File Selection
@@ -597,7 +609,40 @@ function RecordEntry() {
             </div>
           </DialogHeader>
 
-          {uploadIssueDialog ? (
+          {uploadIssueDialog?.pending_upload ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                <p className="font-semibold">
+                  {uploadIssueDialog.pending_upload.affected_suppliers} supplier(s) across{" "}
+                  {uploadIssueDialog.pending_upload.affected_rows} worksheet row(s) need attention.
+                </p>
+                <p className="mt-1 text-amber-800">
+                  The original workbook is retained privately until {new Date(uploadIssueDialog.pending_upload.expires_at).toLocaleString()}.
+                </p>
+              </div>
+
+              {(uploadIssueDialog.pending_upload.items || []).map((item) => (
+                <div
+                  key={item.queue_key}
+                  className="rounded-lg border border-red-100 bg-red-50/70 p-4 text-sm leading-relaxed text-red-950"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-semibold">{item.display_name}</p>
+                      <p className="mt-1">Rows: {item.affected_rows.join(", ")}</p>
+                      <p>Fields to fix: {item.missing_fields.join(", ")}</p>
+                      {item.problems.map((problem) => (
+                        <p key={problem} className="mt-1 text-red-800">{problem}</p>
+                      ))}
+                    </div>
+                    <Button asChild type="button" size="sm" variant="outline">
+                      <Link href={item.fix_url}>Fix Supplier</Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : uploadIssueDialog ? (
             <div className="space-y-3">
               <p className="text-sm font-medium text-slate-700">
                 {uploadIssueDialog.summary || `${uploadIssueDialog.issues?.length || 0} issue(s) found. No records were imported or replaced.`}
@@ -656,11 +701,22 @@ function RecordEntry() {
               <Copy className="h-4 w-4" />
               Copy Errors
             </Button>
-            {uploadIssueDialog?.issues?.[0]?.fix_route && (
+            {(uploadIssueDialog?.pending_upload?.items?.[0]?.fix_url || uploadIssueDialog?.issues?.[0]?.fix_route) && (
               <Button asChild type="button" variant="outline">
-                <Link href={uploadIssueDialog.issues[0].fix_route}>
-                  Open {uploadIssueDialog.record_type === "sales" ? "Customers" : "Suppliers"}
+                <Link href={uploadIssueDialog?.pending_upload?.items?.[0]?.fix_url || uploadIssueDialog.issues[0].fix_route}>
+                  {uploadIssueDialog?.pending_upload ? "Open Fix Queue" : `Open ${uploadIssueDialog.record_type === "sales" ? "Customers" : "Suppliers"}`}
                 </Link>
+              </Button>
+            )}
+            {uploadIssueDialog?.pending_upload?.ready_to_retry && (
+              <Button
+                type="button"
+                onClick={retryPendingUpload}
+                disabled={isRetryingPendingUpload}
+                className="bg-[#0344a4] text-white hover:bg-[#023384]"
+              >
+                {isRetryingPendingUpload && <Loader2 className="h-4 w-4 animate-spin" />}
+                Retry Upload
               </Button>
             )}
             <Button

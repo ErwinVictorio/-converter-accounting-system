@@ -1,18 +1,18 @@
 <?php
 
 use App\Http\Controllers\Auth\LoginController;
-use App\Http\Controllers\Dashboard;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\Dashboard;
 use App\Http\Controllers\DatFileController;
 use App\Http\Controllers\ImportationController;
 use App\Http\Controllers\ManageBrokerController;
+use App\Http\Controllers\PendingPurchaseUploadController;
 use App\Http\Controllers\RecordController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\VatInputController;
 use App\Http\Controllers\ViewInfoController;
 use App\Http\Controllers\WithholdingCompanyController;
 use Illuminate\Support\Facades\Route;
-
 
 // Authentication. The "login" name is what the auth middleware redirects to.
 Route::middleware('guest')->group(function () {
@@ -24,13 +24,20 @@ Route::post('/logout', [LoginController::class, 'destroy'])
     ->middleware('auth')
     ->name('logout');
 
-
 Route::middleware('auth')->group(function () {
-    Route::get('/',[Dashboard::class,'index']);
+    Route::get('/', [Dashboard::class, 'index']);
 
     //  for record entry
-    Route::get('/records',[VatInputController::class,'index']);
-    Route::post('/vat-import',[VatInputController::class,'import']);
+    Route::get('/records', [VatInputController::class, 'index']);
+    Route::post('/vat-import', [VatInputController::class, 'import']);
+    Route::get('/pending-purchase-uploads/{pendingPurchaseUpload}', [PendingPurchaseUploadController::class, 'show'])
+        ->name('pending-purchase-uploads.show');
+    Route::post('/pending-purchase-uploads/{pendingPurchaseUpload}/refresh', [PendingPurchaseUploadController::class, 'refresh'])
+        ->name('pending-purchase-uploads.refresh');
+    Route::post('/pending-purchase-uploads/{pendingPurchaseUpload}/retry', [PendingPurchaseUploadController::class, 'retry'])
+        ->name('pending-purchase-uploads.retry');
+    Route::delete('/pending-purchase-uploads/{pendingPurchaseUpload}', [PendingPurchaseUploadController::class, 'destroy'])
+        ->name('pending-purchase-uploads.destroy');
 
     /*
      * Record: one page per data type, so no screen mixes four tables. Declared
@@ -55,10 +62,9 @@ Route::middleware('auth')->group(function () {
     Route::put('/records/{vatInput}', [VatInputController::class, 'update']);
     Route::put('/records/{vatInput}/bir-info', [VatInputController::class, 'updateBirInfo']);
 
-    Route::get('/generate-datfile',[DatFileController::class,'index']);
-    Route::get('/bir/company/{tin}',[DatFileController::class,'companyLookup']);
-    Route::get('/download-datfile',[DatFileController::class,'download']);
-
+    Route::get('/generate-datfile', [DatFileController::class, 'index']);
+    Route::get('/bir/company/{tin}', [DatFileController::class, 'companyLookup']);
+    Route::get('/download-datfile', [DatFileController::class, 'download']);
 
     //  Route for Brokers
     Route::get('/brokers', [ManageBrokerController::class, 'index']);
@@ -67,7 +73,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/brokers/{id}', [ManageBrokerController::class, 'destroy']);
 
     // Route for Suppliers
-    Route::get('/suppliers', [SupplierController::class, 'index']);
+    Route::get('/suppliers', [SupplierController::class, 'index'])->name('suppliers.index');
     Route::post('/suppliers', [SupplierController::class, 'store']);
     Route::put('/suppliers/{id}', [SupplierController::class, 'update']);
     Route::delete('/suppliers/{id}', [SupplierController::class, 'destroy']);
@@ -93,7 +99,7 @@ Route::middleware('auth')->group(function () {
      * refused once a month has been filed under the company.
      */
     Route::get('/withholding-companies', [WithholdingCompanyController::class, 'index']);
-    Route::post('/withholding-companies', [WithholdingCompanyController::class, 'store']);  
+    Route::post('/withholding-companies', [WithholdingCompanyController::class, 'store']);
     Route::put('/withholding-companies/{company}', [WithholdingCompanyController::class, 'update']);
     Route::patch('/withholding-companies/{company}/deactivate', [WithholdingCompanyController::class, 'deactivate']);
     Route::patch('/withholding-companies/{company}/activate', [WithholdingCompanyController::class, 'activate']);

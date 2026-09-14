@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\PendingPurchaseUpload;
 use App\Models\Supplier;
+use App\Services\PendingPurchaseUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -12,17 +14,34 @@ class SupplierController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index(Request $request)
+    public function index(Request $request, PendingPurchaseUploadService $pendingUploads)
     {
         $filters = $request->only(['tin', 'name']);
+        $supplierFixContext = null;
+
+        if ($request->filled('pending_upload')) {
+            $pending = PendingPurchaseUpload::query()
+                ->where('token', $request->string('pending_upload')->toString())
+                ->firstOrFail();
+            $pendingUploads->authorize($pending, $request->user());
+            $queue = $pendingUploads->refresh($pending);
+            $requestedKey = $request->string('queue_item')->toString();
+            $currentItem = collect($queue['items'])->firstWhere('queue_key', $requestedKey)
+                ?? ($queue['items'][0] ?? null);
+
+            $supplierFixContext = [
+                'pending_upload' => $queue,
+                'current_item' => $currentItem,
+            ];
+        }
 
         $supplierList = Supplier::query()
             ->select('id', 'tin', 'name', 'addr', 'city')
             ->when($filters['tin'] ?? null, function ($query, string $tin) {
-                $query->where('tin', 'like', '%' . $tin . '%');
+                $query->where('tin', 'like', '%'.$tin.'%');
             })
             ->when($filters['name'] ?? null, function ($query, string $name) {
-                $query->where('name', 'like', '%' . $name . '%');
+                $query->where('name', 'like', '%'.$name.'%');
             })
             ->orderBy('name')
             ->paginate(10)
@@ -34,6 +53,7 @@ class SupplierController extends Controller
                 'tin' => $filters['tin'] ?? '',
                 'name' => $filters['name'] ?? '',
             ],
+            'supplierFixContext' => $supplierFixContext,
         ]);
     }
 
@@ -43,17 +63,17 @@ class SupplierController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'tin'  => ['required', 'string', 'max:20'],
-            'name' => ['required', 'string', 'max:' . config('bir.field_limits.company_name')],
-            'addr' => ['required', 'string', 'max:' . config('bir.field_limits.address1')],
-            'city' => ['required', 'string', 'max:' . config('bir.field_limits.city')],
+            'tin' => ['required', 'string', 'max:20'],
+            'name' => ['required', 'string', 'max:'.config('bir.field_limits.company_name')],
+            'addr' => ['required', 'string', 'max:'.config('bir.field_limits.address1')],
+            'city' => ['required', 'string', 'max:'.config('bir.field_limits.city')],
         ]);
 
         $this->rejectInvalidOrDuplicateTin($validated['tin']);
 
         try {
             Supplier::create([
-                'tin'  => $this->formatTin($validated['tin']),
+                'tin' => $this->formatTin($validated['tin']),
                 'name' => strtoupper(trim($validated['name'])),
                 'addr' => strtoupper(trim($validated['addr'])),
                 'city' => strtoupper(trim($validated['city'])),
@@ -79,10 +99,10 @@ class SupplierController extends Controller
     public function update(Request $request, string $id)
     {
         $validated = $request->validate([
-            'tin'  => ['required', 'string', 'max:20'],
-            'name' => ['required', 'string', 'max:' . config('bir.field_limits.company_name')],
-            'addr' => ['required', 'string', 'max:' . config('bir.field_limits.address1')],
-            'city' => ['required', 'string', 'max:' . config('bir.field_limits.city')],
+            'tin' => ['required', 'string', 'max:20'],
+            'name' => ['required', 'string', 'max:'.config('bir.field_limits.company_name')],
+            'addr' => ['required', 'string', 'max:'.config('bir.field_limits.address1')],
+            'city' => ['required', 'string', 'max:'.config('bir.field_limits.city')],
         ]);
 
         $supplier = Supplier::findOrFail($id);
@@ -90,7 +110,7 @@ class SupplierController extends Controller
 
         try {
             $supplier->update([
-                'tin'  => $this->formatTin($validated['tin']),
+                'tin' => $this->formatTin($validated['tin']),
                 'name' => strtoupper(trim($validated['name'])),
                 'addr' => strtoupper(trim($validated['addr'])),
                 'city' => strtoupper(trim($validated['city'])),
@@ -126,15 +146,15 @@ class SupplierController extends Controller
         }
 
         if (strlen($digits) === 12) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
-                substr($digits, 6, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
+                substr($digits, 6, 3).'-'.
                 substr($digits, 9, 3);
         }
 
         if (strlen($digits) === 9) {
-            return substr($digits, 0, 3) . '-' .
-                substr($digits, 3, 3) . '-' .
+            return substr($digits, 0, 3).'-'.
+                substr($digits, 3, 3).'-'.
                 substr($digits, 6, 3);
         }
 
