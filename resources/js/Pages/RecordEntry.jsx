@@ -89,6 +89,27 @@ const issueDialogText = (dialog) => {
   ].join("\n\n");
 };
 
+const salesIssueCategory = (issue) => {
+  if (issue?.issue_class === "customer") return "customer";
+  if (issue?.field === "sales_amounts") return "amounts";
+  return "workbook";
+};
+
+const SALES_ISSUE_CATEGORIES = {
+  customer: {
+    label: "Customer Information",
+    badgeClass: "border-blue-200 bg-blue-50 text-blue-700",
+  },
+  amounts: {
+    label: "Sales Amounts",
+    badgeClass: "border-orange-200 bg-orange-50 text-orange-700",
+  },
+  workbook: {
+    label: "Workbook Format",
+    badgeClass: "border-violet-200 bg-violet-50 text-violet-700",
+  },
+};
+
 function RecordEntry() {
   const { flash, birCompanies = [] } = usePage().props;
   const defaultBirCompany = birCompanies[0] || { tin: "008791976", branch_code: "0000", name: "FORTRESS STEEL INC." };
@@ -99,6 +120,7 @@ function RecordEntry() {
   const [uploadErrorDialogOpen, setUploadErrorDialogOpen] = useState(false);
   const [uploadErrorDetails, setUploadErrorDetails] = useState([]);
   const [uploadIssueDialog, setUploadIssueDialog] = useState(null);
+  const [activeIssueCategory, setActiveIssueCategory] = useState("all");
   const [isRetryingPendingUpload, setIsRetryingPendingUpload] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -137,6 +159,20 @@ function RecordEntry() {
   const isKnownBirCompany = birCompanies.some(
     (company) => `${company.tin}|${company.branch_code}` === selectedBirCompanyKey
   );
+  const categorizedSalesIssues = uploadIssueDialog?.record_type === "sales" && !uploadIssueDialog?.pending_upload
+    ? (uploadIssueDialog.issues || []).map((issue) => ({
+        ...issue,
+        category: salesIssueCategory(issue),
+      }))
+    : [];
+  const salesIssueCounts = categorizedSalesIssues.reduce(
+    (counts, issue) => ({ ...counts, [issue.category]: counts[issue.category] + 1 }),
+    { customer: 0, amounts: 0, workbook: 0 }
+  );
+  const workbookBlockingCount = salesIssueCounts.amounts + salesIssueCounts.workbook;
+  const visibleIssues = categorizedSalesIssues.length > 0
+    ? categorizedSalesIssues.filter((issue) => activeIssueCategory === "all" || issue.category === activeIssueCategory)
+    : (uploadIssueDialog?.issues || []);
 
   useEffect(() => {
     if (flash?.success) {
@@ -148,6 +184,7 @@ function RecordEntry() {
     if (flash?.error) {
       if (flash?.uploadIssueDialog) {
         setUploadIssueDialog(flash.uploadIssueDialog);
+        setActiveIssueCategory("all");
         setUploadErrorDetails([]);
         setUploadErrorDialogOpen(true);
         toast.error("Upload rejected. Fix BIR info before importing.");
@@ -651,11 +688,53 @@ function RecordEntry() {
                 {uploadIssueDialog.summary || `${uploadIssueDialog.issues?.length || 0} issue(s) found. No records were imported or replaced.`}
               </p>
 
-              {(uploadIssueDialog.issues || []).map((issue, index) => (
+              {categorizedSalesIssues.length > 0 && (
+                <div className="space-y-3">
+                  {workbookBlockingCount > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                      <p className="font-semibold">Why the Customer Fix Queue is unavailable</p>
+                      <p className="mt-1 text-amber-800">
+                        {workbookBlockingCount} workbook issue(s) must be corrected in Excel and uploaded again. Customer Information issues can be reviewed separately below.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {Object.entries(SALES_ISSUE_CATEGORIES).map(([key, category]) => (
+                      <div key={key} className={`rounded-lg border px-3 py-2 text-sm ${category.badgeClass}`}>
+                        <p className="font-medium">{category.label}</p>
+                        <p className="text-lg font-semibold">{salesIssueCounts[key]}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant={activeIssueCategory === "all" ? "default" : "outline"}
+                      onClick={() => setActiveIssueCategory("all")}>
+                      All ({categorizedSalesIssues.length})
+                    </Button>
+                    {Object.entries(SALES_ISSUE_CATEGORIES).map(([key, category]) => (
+                      <Button key={key} type="button" size="sm"
+                        variant={activeIssueCategory === key ? "default" : "outline"}
+                        onClick={() => setActiveIssueCategory(key)}
+                        disabled={salesIssueCounts[key] === 0}>
+                        {category.label} ({salesIssueCounts[key]})
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {visibleIssues.map((issue, index) => (
                 <div
                   key={`${issue.row}-${issue.field}-${index}`}
                   className="rounded-lg border border-red-100 bg-red-50/70 p-4 text-sm leading-relaxed text-red-950"
                 >
+                  {issue.category && (
+                    <span className={`mb-2 inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${SALES_ISSUE_CATEGORIES[issue.category].badgeClass}`}>
+                      {SALES_ISSUE_CATEGORIES[issue.category].label}
+                    </span>
+                  )}
                   <p className="font-semibold">
                     Row {issue.row} - {issue.name || "Unnamed record"}
                   </p>

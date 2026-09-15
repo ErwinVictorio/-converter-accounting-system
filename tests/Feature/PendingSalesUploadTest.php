@@ -100,7 +100,11 @@ class PendingSalesUploadTest extends TestCase
 
         $this->assertDatabaseCount('pending_sales_uploads', 0);
         $this->assertNull(session('uploadIssueDialog.pending_upload'));
-        $this->assertNotEmpty(session('uploadIssueDialog.issues'));
+        $issues = session('uploadIssueDialog.issues');
+        $this->assertNotEmpty($issues);
+        $this->assertContains('customer', array_column($issues, 'issue_class'));
+        $this->assertContains('workbook', array_column($issues, 'issue_class'));
+        $this->assertContains('sales_amounts', array_column($issues, 'field'));
     }
 
     public function test_repeated_same_file_reuses_the_active_pending_upload(): void
