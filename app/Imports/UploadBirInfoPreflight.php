@@ -434,7 +434,18 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
         }
 
         return [
-            ...$this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer),
+            ...$this->salesIssuesFromErrors(
+                $this->uploadBlockingErrors($rowIssues),
+                $rowNumber,
+                $customerName,
+                $customer,
+                [
+                    'tin' => $customer?->tin ?: '',
+                    'name' => $customer?->name ?: $customerName,
+                    'addr' => $customer?->addr ?: ($existingBirInfo?->address1 ?: ''),
+                    'city' => $customer?->city ?: ($existingBirInfo?->address2 ?: ''),
+                ]
+            ),
             ...$this->salesAmountIssues($result['errors'], $rowNumber, $customerName),
         ];
     }
@@ -480,28 +491,51 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
         }
 
         return [
-            ...$this->salesIssuesFromErrors($this->uploadBlockingErrors($rowIssues), $rowNumber, $customerName, $customer),
+            ...$this->salesIssuesFromErrors(
+                $this->uploadBlockingErrors($rowIssues),
+                $rowNumber,
+                $customerName,
+                $customer,
+                [
+                    'tin' => $customer?->tin ?: $this->formatTin((string) ($data[0] ?? '')),
+                    'name' => $customer?->name ?: ($customerType === 'company' ? $companyName : $customerName),
+                    'addr' => $customer?->addr ?: ($address1 ?: ''),
+                    'city' => $customer?->city ?: ($address2 ?: ''),
+                ],
+                $customer !== null || $customerType === 'company'
+            ),
             ...$this->salesAmountIssues($result['errors'], $rowNumber, $customerName),
         ];
     }
 
     private function salesAmountIssues(array $errors, int $rowNumber, string $customerName): array
     {
-        return array_map(fn (string $error) => $this->issue(
-            $rowNumber, $customerName, 'sales', 'sales_amounts', $error,
-            'Sales upload workbook', '', ['Sales amounts and zero-rated classification'], 'uploaded transaction amounts'
-        ), $errors);
+        return array_map(function (string $error) use ($rowNumber, $customerName) {
+            $issue = $this->issue(
+                $rowNumber, $customerName, 'sales', 'sales_amounts', $error,
+                'Sales upload workbook', '', ['Sales amounts and zero-rated classification'], 'uploaded transaction amounts'
+            );
+            $issue['issue_class'] = 'workbook';
+
+            return $issue;
+        }, $errors);
     }
 
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function salesIssuesFromErrors(array $errors, int $rowNumber, string $customerName, ?Customer $customer): array
-    {
+    private function salesIssuesFromErrors(
+        array $errors,
+        int $rowNumber,
+        string $customerName,
+        ?Customer $customer,
+        array $prefill,
+        bool $customerFixable = true
+    ): array {
         $issues = [];
 
         foreach ($errors as $error) {
-            $issues[] = $this->issue(
+            $issue = $this->issue(
                 $rowNumber,
                 $customerName,
                 'sales',
@@ -512,6 +546,13 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
                 ['TIN', 'Address', 'City'],
                 $customer ? 'matched customer master record' : 'customer name'
             );
+            $issue['customer_id'] = $customer?->id;
+            $issue['identity_key'] = $customer
+                ? 'customer:'.$customer->id
+                : $this->salesIdentityKey($customerName, $rowNumber);
+            $issue['prefill'] = $prefill;
+            $issue['issue_class'] = $customerFixable ? 'customer' : 'workbook';
+            $issues[] = $issue;
         }
 
         return $issues;
@@ -666,6 +707,13 @@ class UploadBirInfoPreflight implements ToArray, WithCalculatedFormulas
             str_contains($error, 'Company name') => 'company_name',
             default => 'bir_info',
         };
+    }
+
+    private function salesIdentityKey(string $name, int $row): string
+    {
+        $nameKey = Customer::normalizeName($name);
+
+        return $nameKey !== '' ? 'name:'.$nameKey : 'row:'.$row;
     }
 
     private function stripRowPrefix(string $error): string

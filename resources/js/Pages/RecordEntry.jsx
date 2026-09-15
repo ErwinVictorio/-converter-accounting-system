@@ -613,7 +613,10 @@ function RecordEntry() {
             <div className="space-y-3">
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
                 <p className="font-semibold">
-                  {uploadIssueDialog.pending_upload.affected_suppliers} supplier(s) across{" "}
+                  {uploadIssueDialog.record_type === "sales"
+                    ? uploadIssueDialog.pending_upload.affected_customers
+                    : uploadIssueDialog.pending_upload.affected_suppliers}{" "}
+                  {uploadIssueDialog.record_type === "sales" ? "customer(s)" : "supplier(s)"} across{" "}
                   {uploadIssueDialog.pending_upload.affected_rows} worksheet row(s) need attention.
                 </p>
                 <p className="mt-1 text-amber-800">
@@ -636,7 +639,7 @@ function RecordEntry() {
                       ))}
                     </div>
                     <Button asChild type="button" size="sm" variant="outline">
-                      <Link href={item.fix_url}>Fix Supplier</Link>
+                      <Link href={item.fix_url}>Fix {uploadIssueDialog.record_type === "sales" ? "Customer" : "Supplier"}</Link>
                     </Button>
                   </div>
                 </div>

@@ -2,6 +2,7 @@
 
 return [
     'pending_purchase_upload_hours' => (int) env('PENDING_PURCHASE_UPLOAD_HOURS', 24),
+    'pending_sales_upload_hours' => (int) env('PENDING_SALES_UPLOAD_HOURS', 24),
 
     'field_limits' => [
         'company_name' => 50,

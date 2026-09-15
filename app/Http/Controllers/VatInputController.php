@@ -5,19 +5,17 @@ namespace App\Http\Controllers;
 use App\Imports\ExpandedWtaxBirInfoPreflight;
 use App\Imports\ExpandedWtaxImport;
 use App\Imports\ExpandedWtaxUploadPreflight;
-use App\Imports\SalesVatInputImport;
-use App\Imports\UploadBirInfoPreflight;
-use App\Imports\UploadWorkbookTypePreflight;
 use App\Models\Brokers;
 use App\Models\ExpandedWtaxEntry;
 use App\Models\ImportationEntry;
 use App\Models\PurchaseAdjustment;
-use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\AnnualCoveredPeriodValidator;
 use App\Services\BIR\WithholdingCompanyDirectory;
 use App\Services\PendingPurchaseUploadService;
+use App\Services\PendingSalesUploadService;
 use App\Services\PurchaseUploadService;
+use App\Services\SalesUploadService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -55,7 +53,9 @@ class VatInputController extends Controller
         private WithholdingCompanyDirectory $companies,
         private AnnualCoveredPeriodValidator $annualPeriod,
         private PurchaseUploadService $purchaseUploads,
-        private PendingPurchaseUploadService $pendingPurchaseUploads
+        private PendingPurchaseUploadService $pendingPurchaseUploads,
+        private SalesUploadService $salesUploads,
+        private PendingSalesUploadService $pendingSalesUploads
     ) {}
 
     /**
@@ -106,46 +106,51 @@ class VatInputController extends Controller
 
             if ($request->input('record_type') === 'sales') {
                 $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
-                $issues = (new UploadWorkbookTypePreflight)->check($file, 'sales', $reportingPeriod);
+                $retainedContents = file_get_contents($file->getRealPath());
 
-                if ($issues !== []) {
-                    return back()->with('error', implode(' ', $issues));
+                if ($retainedContents === false) {
+                    throw new \RuntimeException('Unable to read the uploaded Sales workbook.');
                 }
 
-                $birIssues = (new UploadBirInfoPreflight)->checkSales($file, $reportingPeriod);
+                $preflight = $this->salesUploads->preflight($file, $reportingPeriod);
 
-                if ($birIssues !== []) {
+                if ($preflight['type_issues'] !== []) {
+                    return back()->with('error', implode(' ', $preflight['type_issues']));
+                }
+
+                if ($preflight['workbook_issues'] !== []) {
                     return back()
                         ->with('error', 'Sales upload rejected. Fix customer BIR info or Sales amounts before importing.')
                         ->with('uploadIssueDialog', [
                             'title' => 'Sales upload needs BIR info or amount fixes',
-                            'message' => 'Fix the listed customer BIR info or workbook amounts before uploading this file.',
-                            'summary' => count($birIssues).' issue(s) found. No records were imported or replaced.',
+                            'message' => 'Correct the listed workbook issues and upload the file again. No Customer fix queue was created.',
+                            'summary' => count($preflight['bir_issues']).' issue(s) found. No records were imported or replaced.',
                             'record_type' => 'sales',
-                            'issues' => $birIssues,
+                            'issues' => $preflight['bir_issues'],
                         ]);
                 }
 
-                $import = new SalesVatInputImport($reportingPeriod);
-                DB::transaction(function () use ($reportingPeriod, $import, $file) {
-                    SalesVatInput::query()
-                        ->whereDate('reporting_period', $reportingPeriod)
-                        ->where('is_adjusted', false)
-                        ->delete();
+                if ($preflight['customer_issues'] !== []) {
+                    $pending = $this->pendingSalesUploads->create($request->user(), $file, $reportingPeriod, $preflight['customer_issues'], $retainedContents);
 
-                    Excel::import($import, $file);
+                    return back()
+                        ->with('error', 'Sales upload rejected. Fix customer BIR info or Sales amounts before importing.')
+                        ->with('uploadIssueDialog', [
+                            'title' => 'Sales upload needs BIR info or amount fixes',
+                            'message' => 'Fix Customer BIR info before retrying this file.',
+                            'summary' => count($preflight['customer_issues']).' issue(s) found. No records were imported or replaced.',
+                            'record_type' => 'sales',
+                            'issues' => $preflight['customer_issues'],
+                            'pending_upload' => $this->pendingSalesUploads->queue($pending, $preflight['customer_issues']),
+                        ]);
+                }
 
-                    if ($import->importedRows() === 0 && $import->skippedDebitMemoRows() > 0) {
-                        throw new \RuntimeException(
-                            'Sales upload skipped '.$import->skippedDebitMemoRows().' DM row(s). No importable SI/CM Sales rows were found.'
-                        );
-                    }
-                });
+                $result = $this->salesUploads->replace($file, $reportingPeriod);
 
                 $response = back()->with('success', 'Sales VAT report for '.Carbon::parse($reportingPeriod)->format('F Y').' was replaced successfully.');
 
-                if ($import->skippedDebitMemoRows() > 0) {
-                    $response->with('warning', 'Sales upload completed, but '.$import->skippedDebitMemoRows().' DM row(s) were skipped because Debit Memo rows are not included in Sales VAT upload.');
+                if ($result['skipped_debit_memo_count'] > 0) {
+                    $response->with('warning', 'Sales upload completed, but '.$result['skipped_debit_memo_count'].' DM row(s) were skipped because Debit Memo rows are not included in Sales VAT upload.');
                 }
 
                 return $response;

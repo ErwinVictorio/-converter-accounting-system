@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\PendingPurchaseUploadService;
+use App\Services\PendingSalesUploadService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -15,3 +16,10 @@ Artisan::command('uploads:cleanup-pending-purchases', function () {
 })->purpose('Delete expired retained Purchase workbooks');
 
 Schedule::command('uploads:cleanup-pending-purchases')->hourly();
+
+Artisan::command('uploads:cleanup-pending-sales', function () {
+    $count = app(PendingSalesUploadService::class)->cleanupExpired();
+    $this->info("Cleaned {$count} expired pending Sales upload(s).");
+})->purpose('Delete expired retained Sales workbooks');
+
+Schedule::command('uploads:cleanup-pending-sales')->hourly();

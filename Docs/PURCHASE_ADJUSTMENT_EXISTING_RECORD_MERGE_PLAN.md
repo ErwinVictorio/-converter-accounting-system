@@ -1,14 +1,25 @@
 # Purchase Adjustment Existing Record Merge Plan
 
+## Status
+
+Implemented. The target-priority behavior in this document remains active.
+
+The amount-unit and reversal portions were later extended by:
+
+- `PURCHASE_SERVICES_VAT_DISPLAY_AND_TOTAL_COMPUTATION_PLAN.md`
+- `PURCHASE_LOCAL_AND_OTHERS_VAT_DISPLAY_AND_ADJUSTMENT_PLAN.md`
+
+Purchase Local, Services, and Others adjustments now accept raw VAT amounts in the current UI, convert them to stored taxable bases once, retain both representations in adjustment history, and restore both during Undo/Delete. Existing taxable-base request keys remain supported for compatibility.
+
 ## Goal
 
 When a broker Purchase record is adjusted and the entered vendor TIN already exists in uploaded Purchase records for the same reporting period, add the transferred amounts to that existing record instead of creating a new adjusted record.
 
 This keeps one real vendor row per matching TIN/month/imported bucket and avoids duplicate Purchase rows when the target vendor already came from an upload.
 
-## Current Behavior
+## Previous Behavior
 
-`VatInputController::update()` currently looks for an existing target row using:
+Before this plan was implemented, `VatInputController::update()` looked for an existing target row using:
 
 - `is_adjusted = true`
 - same `is_imported`

@@ -7,6 +7,7 @@ use App\Http\Controllers\DatFileController;
 use App\Http\Controllers\ImportationController;
 use App\Http\Controllers\ManageBrokerController;
 use App\Http\Controllers\PendingPurchaseUploadController;
+use App\Http\Controllers\PendingSalesUploadController;
 use App\Http\Controllers\RecordController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\VatInputController;
@@ -38,6 +39,10 @@ Route::middleware('auth')->group(function () {
         ->name('pending-purchase-uploads.retry');
     Route::delete('/pending-purchase-uploads/{pendingPurchaseUpload}', [PendingPurchaseUploadController::class, 'destroy'])
         ->name('pending-purchase-uploads.destroy');
+    Route::get('/pending-sales-uploads/{pendingSalesUpload}', [PendingSalesUploadController::class, 'show'])->name('pending-sales-uploads.show');
+    Route::post('/pending-sales-uploads/{pendingSalesUpload}/refresh', [PendingSalesUploadController::class, 'refresh'])->name('pending-sales-uploads.refresh');
+    Route::post('/pending-sales-uploads/{pendingSalesUpload}/retry', [PendingSalesUploadController::class, 'retry'])->name('pending-sales-uploads.retry');
+    Route::delete('/pending-sales-uploads/{pendingSalesUpload}', [PendingSalesUploadController::class, 'destroy'])->name('pending-sales-uploads.destroy');
 
     /*
      * Record: one page per data type, so no screen mixes four tables. Declared
@@ -83,7 +88,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/suppliers/{id}', [SupplierController::class, 'destroy']);
 
     // Route for Customers
-    Route::get('/customers', [CustomerController::class, 'index']);
+    Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
     Route::post('/customers', [CustomerController::class, 'store']);
     Route::put('/customers/{id}', [CustomerController::class, 'update']);
     Route::delete('/customers/{id}', [CustomerController::class, 'destroy']);

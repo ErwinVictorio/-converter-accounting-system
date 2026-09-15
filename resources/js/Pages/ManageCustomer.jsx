@@ -3,7 +3,7 @@ import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Eye, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { motion } from "framer-motion";
 
 import MainLayout from "@/Layouts/MainLayout";
@@ -58,12 +58,13 @@ const itemVariants = {
 };
 
 function ManageCustomer() {
-  const { flash, customerList = [], filters = {} } = usePage().props;
+  const { flash, customerList = [], filters = {}, customerFixContext = null } = usePage().props;
   const customers = customerList?.data || [];
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
+  const [isRetryingUpload, setIsRetryingUpload] = useState(false);
   const [filterValues, setFilterValues] = useState({
     tin: filters.tin || "",
     name: filters.name || "",
@@ -112,12 +113,33 @@ function ManageCustomer() {
     });
   }, [filters.tin, filters.name, filters.address_status]);
 
+  useEffect(() => {
+    const item = customerFixContext?.current_item;
+    if (!item) {
+      setEditingCustomer(null);
+      return;
+    }
+    const values = {
+      tin: item.prefill?.tin || "",
+      name: item.prefill?.name || "",
+      addr: item.prefill?.addr || "",
+      city: item.prefill?.city || "",
+    };
+    if (item.mode === "edit" && item.customer_id) {
+      setEditingCustomer({ id: item.customer_id, ...values });
+      resetEdit(values);
+    } else {
+      setEditingCustomer(null);
+      reset(values);
+    }
+  }, [customerFixContext, reset, resetEdit]);
+
   const onSubmit = (formData) => {
     setIsSubmitting(true);
 
     router.post("/customers", formData, {
       onSuccess: () => {
-        reset();
+        if (!customerFixContext) reset();
         setIsSubmitting(false);
       },
       onError: (err) => {
@@ -138,7 +160,7 @@ function ManageCustomer() {
       preserveScroll: true,
       onSuccess: () => {
         setIsUpdating(false);
-        handleCloseEdit();
+        if (!customerFixContext) handleCloseEdit();
       },
       onError: (err) => {
         setIsUpdating(false);
@@ -210,6 +232,19 @@ function ManageCustomer() {
     resetEdit(defaultValues);
   };
 
+  const retryPendingUpload = () => {
+    const pending = customerFixContext?.pending_upload;
+    if (!pending?.ready_to_retry) return;
+    setIsRetryingUpload(true);
+    router.post(pending.retry_url, {}, { onFinish: () => setIsRetryingUpload(false) });
+  };
+
+  const cancelPendingUpload = () => {
+    const pending = customerFixContext?.pending_upload;
+    if (!pending || !confirm("Cancel this pending Sales upload? The retained workbook will be removed.")) return;
+    router.delete(pending.cancel_url);
+  };
+
   const renderField = (field, label, placeholder, fieldErrors, fieldRegister, maxLength) => (
     <div className="space-y-2">
       <label className="text-sm font-medium text-slate-700">
@@ -244,6 +279,77 @@ function ManageCustomer() {
         Customer Management
       </motion.h2>
 
+      {customerFixContext && (
+        <motion.div variants={itemVariants}>
+          <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
+            <CardContent className="space-y-4 p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start gap-3">
+                  {customerFixContext.pending_upload.ready_to_retry ? (
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                  )}
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Sales upload fix queue: {customerFixContext.pending_upload.original_name}
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      Reporting month {customerFixContext.pending_upload.reporting_period} ·{" "}
+                      {customerFixContext.pending_upload.resolved_customers} fixed ·{" "}
+                      {customerFixContext.pending_upload.remaining_customers} remaining
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => router.get("/records")}>Back to Import Data</Button>
+                  <Button type="button" variant="ghost" onClick={cancelPendingUpload} className="text-red-600 hover:text-red-700">Cancel Queue</Button>
+                  <Button type="button" onClick={retryPendingUpload}
+                    disabled={!customerFixContext.pending_upload.ready_to_retry || isRetryingUpload}
+                    className="bg-[#0344a4] text-white hover:bg-[#023384]">
+                    {isRetryingUpload && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Retry Upload
+                  </Button>
+                </div>
+              </div>
+
+              {customerFixContext.pending_upload.has_workbook_issues && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">
+                  The retained workbook now has amount or workbook-only issues. Correct the workbook and upload it again.
+                </div>
+              )}
+
+              {customerFixContext.current_item ? (
+                <div className="rounded-lg border border-amber-200 bg-white p-4 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">Fixing: {customerFixContext.current_item.display_name}</p>
+                  <p>Worksheet rows: {customerFixContext.current_item.affected_rows.join(", ")}</p>
+                  <p>Fields to fix: {customerFixContext.current_item.missing_fields.join(", ")}</p>
+                  {customerFixContext.current_item.problems.map((problem) => (
+                    <p key={problem} className="mt-1 text-red-700">{problem}</p>
+                  ))}
+                </div>
+              ) : !customerFixContext.pending_upload.has_workbook_issues && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
+                  All Customer issues are fixed. Retry the original workbook when ready.
+                </div>
+              )}
+
+              {customerFixContext.pending_upload.items.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  {customerFixContext.pending_upload.items.map((item) => (
+                    <Button key={item.queue_key} type="button" size="sm"
+                      variant={item.queue_key === customerFixContext.current_item?.queue_key ? "default" : "outline"}
+                      onClick={() => router.get(item.fix_url)}>
+                      {item.display_name}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
       <motion.div variants={itemVariants}>
         <Card className="w-full shadow-sm border border-slate-100 rounded-xl bg-white overflow-hidden">
           <CardContent className="p-6">
@@ -268,7 +374,7 @@ function ManageCustomer() {
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <span className="flex items-center gap-1.5">
-                  <Plus className="w-4 h-4" /> Submit
+                  <Plus className="w-4 h-4" /> {customerFixContext ? "Save and Check Again" : "Submit"}
                 </span>
               )}
             </Button>
@@ -448,7 +554,7 @@ function ManageCustomer() {
               {isUpdating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                "Save Changes"
+                customerFixContext ? "Save and Check Again" : "Save Changes"
               )}
             </Button>
           </DialogFooter>

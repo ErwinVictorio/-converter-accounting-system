@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Models\PendingSalesUpload;
 use App\Models\SalesVatInput;
+use App\Services\PendingSalesUploadService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -20,10 +22,23 @@ class CustomerController extends Controller
         'complete',
     ];
 
-    public function index(Request $request)
+    public function index(Request $request, PendingSalesUploadService $pendingUploads)
     {
         $filters = $request->only(['tin', 'name', 'address_status']);
         $addressStatus = $this->normalizeAddressStatus($filters['address_status'] ?? null);
+        $customerFixContext = null;
+
+        if ($request->filled('pending_sales_upload')) {
+            $pending = PendingSalesUpload::query()
+                ->where('token', $request->string('pending_sales_upload')->toString())
+                ->firstOrFail();
+            $pendingUploads->authorize($pending, $request->user());
+            $queue = $pendingUploads->refresh($pending);
+            $requestedKey = $request->string('queue_item')->toString();
+            $currentItem = collect($queue['items'])->firstWhere('queue_key', $requestedKey)
+                ?? ($queue['items'][0] ?? null);
+            $customerFixContext = ['pending_upload' => $queue, 'current_item' => $currentItem];
+        }
 
         $customerList = Customer::query()
             ->select('id', 'tin', 'name', 'addr', 'city')
@@ -47,6 +62,7 @@ class CustomerController extends Controller
                 'name' => $filters['name'] ?? '',
                 'address_status' => $addressStatus,
             ],
+            'customerFixContext' => $customerFixContext,
         ]);
     }
 
