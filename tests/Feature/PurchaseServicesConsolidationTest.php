@@ -40,7 +40,7 @@ class PurchaseServicesConsolidationTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_matching_services_rows_sum_raw_vat_before_one_visible_total_calculation(): void
+    public function test_matching_rows_sum_all_raw_local_vat_buckets_before_one_visible_total_calculation(): void
     {
         Supplier::create([
             'name' => 'A-ZINC INDUSTRIAL GALVANIZING PHILIPPINES',
@@ -50,9 +50,9 @@ class PurchaseServicesConsolidationTest extends TestCase
         ]);
 
         $path = $this->vatBucketWorkbook([
-            ['PV#1', '07/01/2026', 'A-ZINC INDUSTRIAL GALVANIZING PHILIPPINES', '236-791-864-000', 'SI#1', '', '', 100.00, '', 100.00],
-            ['PV#2', '07/02/2026', 'A-ZINC INDUSTRIAL GALVANIZING PHILIPPINES', '236-791-864-000', 'SI#2', '', '', 200.00, '', 200.00],
-            ['PV#3', '07/03/2026', 'A-ZINC INDUSTRIAL GALVANIZING PHILIPPINES', '236-791-864-000', 'SI#3', '', '', 300.00, '', 300.00],
+            ['PV#1', '07/01/2026', 'A-ZINC INDUSTRIAL GALVANIZING PHILIPPINES', '236-791-864-000', 'SI#1', '', 100.00, 100.00, 10.00, 210.00],
+            ['PV#2', '07/02/2026', 'A-ZINC INDUSTRIAL GALVANIZING PHILIPPINES', '236-791-864-000', 'SI#2', '', 200.00, 200.00, 20.00, 420.00],
+            ['PV#3', '07/03/2026', 'A-ZINC INDUSTRIAL GALVANIZING PHILIPPINES', '236-791-864-000', 'SI#3', '', 300.00, 300.00, 30.00, 630.00],
             ['PV#4', '07/04/2026', 'A-ZINC INDUSTRIAL GALVANIZING PHILIPPINES', '236-791-864-000', 'SI#4', '', '', 377.39, '', 377.39],
         ]);
 
@@ -61,16 +61,29 @@ class PurchaseServicesConsolidationTest extends TestCase
         $record = VatInput::query()->sole();
 
         $this->assertTrue($record->uses_vat_bucket_amounts);
+        $this->assertSame('600.00', $record->purchase_local_vat_amount);
         $this->assertSame('977.39', $record->services_vat_amount);
+        $this->assertSame('60.00', $record->others_vat_amount);
+        $this->assertSame('5000.00', $record->purchase_local);
         $this->assertSame('8144.92', $record->services);
-        $this->assertSame('977.39', $record->input_vat);
+        $this->assertSame('500.00', $record->others);
+        $this->assertSame('1637.39', $record->input_vat);
 
         $this->get('/records/purchases?period=2026-07')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->has('vatInputs.data', 1)
+                ->where('vatInputs.data.0.display_purchase_local_amount', 600)
                 ->where('vatInputs.data.0.display_services_amount', 977.39)
-                ->where('vatInputs.data.0.display_calculated_total', 8144.92));
+                ->where('vatInputs.data.0.display_others_amount', 60)
+                ->where('vatInputs.data.0.display_calculated_total', 13644.92));
+
+        $this->getJson("/view-info/purchase/{$record->id}")
+            ->assertOk()
+            ->assertJsonPath('sections.1.fields.4.value', 600)
+            ->assertJsonPath('sections.1.fields.5.value', 977.39)
+            ->assertJsonPath('sections.1.fields.8.value', 60)
+            ->assertJsonPath('sections.1.fields.14.value', 13644.92);
     }
 
     public function test_conflicting_tins_in_one_supplier_group_are_rejected_before_consolidation(): void
@@ -120,13 +133,13 @@ class PurchaseServicesConsolidationTest extends TestCase
             'purchase_local' => 1000,
             'services' => 200,
             'capital_goods' => 0,
-            'other_than_capital_goods' => 1000,
-            'taxable_net_of_vat' => 1200,
+            'other_than_capital_goods' => 1050,
+            'taxable_net_of_vat' => 1250,
             'vat_rate' => 12,
-            'input_vat' => 144,
-            'total_purchases' => 1200,
-            'others' => 0,
-            'total' => 1200,
+            'input_vat' => 150,
+            'total_purchases' => 1250,
+            'others' => 50,
+            'total' => 1250,
             'date_uploaded' => self::PERIOD,
             'is_adjusted' => false,
         ]);
@@ -134,8 +147,10 @@ class PurchaseServicesConsolidationTest extends TestCase
         $this->get('/records/purchases?period=2026-07')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
+                ->where('vatInputs.data.0.display_purchase_local_amount', 1000)
                 ->where('vatInputs.data.0.display_services_amount', 200)
-                ->where('vatInputs.data.0.display_calculated_total', 1200)
+                ->where('vatInputs.data.0.display_others_amount', 50)
+                ->where('vatInputs.data.0.display_calculated_total', 1250)
                 ->where('vatInputs.data.0.display_amounts_inferred', false));
     }
 

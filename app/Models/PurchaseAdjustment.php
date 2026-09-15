@@ -12,17 +12,21 @@ class PurchaseAdjustment extends Model
         'target_vat_input_id',
         'purchase_imported',
         'purchase_local',
+        'purchase_local_vat_amount',
         'services',
         'services_vat_amount',
         'others',
+        'others_vat_amount',
     ];
 
     protected $casts = [
         'purchase_imported' => 'decimal:2',
         'purchase_local' => 'decimal:2',
+        'purchase_local_vat_amount' => 'decimal:2',
         'services' => 'decimal:2',
         'services_vat_amount' => 'decimal:2',
         'others' => 'decimal:2',
+        'others_vat_amount' => 'decimal:2',
     ];
 
     public function source(): BelongsTo

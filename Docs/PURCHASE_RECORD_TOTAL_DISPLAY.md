@@ -1,12 +1,12 @@
 # Purchase Records Total Display
 
-This note documents the current behavior of the Purchase Records Services and `Total` columns and the `vat_inputs.total` database field.
+This note documents the current behavior of the Purchase Records local VAT-bucket columns, visible `Total`, and the `vat_inputs.total` database field.
 
 ## Summary
 
 The Purchase Records table does not use the saved `vat_inputs.total` value for its visible `Total` column.
 
-The backend supplies presentation-only Services and Total values through `PurchaseAmountPresenter`. The React page formats those values but does not apply the VAT formula itself.
+The backend supplies presentation-only Purchase Local, Services, Others, and Total values through `PurchaseAmountPresenter`. The React page formats those values but does not apply the VAT formula itself.
 
 For a VAT-bucket upload, the raw source VAT amounts are consolidated first, then the visible Total is computed once:
 
@@ -14,9 +14,9 @@ For a VAT-bucket upload, the raw source VAT amounts are consolidated first, then
 (raw Purchase Local VAT + raw Services VAT + raw Others VAT) / 0.12
 ```
 
-Services displays the consolidated raw Services VAT amount. The existing `services` column remains the taxable base used by BIR/DAT processing.
+Purchase Local, Services, and Others display their consolidated raw VAT amounts. The existing `purchase_local`, `services`, and `others` columns remain taxable bases used by BIR/DAT processing.
 
-Explicit BIR/base workbooks do not divide their stored bases again. Historical rows without a source-mode marker use the legacy display fallback: Services is inferred as `services * 0.12`, while Total remains the sum of the stored local, services, and others bases.
+Explicit BIR/base workbooks display their stored bases and do not divide them again. Historical rows without a source-mode marker use the legacy display fallback: each local bucket is inferred as `stored base * 0.12`, while Total remains the sum of the stored local, services, and others bases.
 
 These are presentation rules. They do not replace `vat_inputs.total`, `vat_inputs.total_purchases`, DAT amounts, dashboard totals, or imported source rows.
 
@@ -33,15 +33,17 @@ The Purchase Records list renders these amount columns:
 | UI Column | Source |
 | --- | --- |
 | Purchase Imported | `item.purchase_imported` |
-| Purchase Local | `item.purchase_local` |
+| Purchase Local | `item.display_purchase_local_amount` |
 | Services | `item.display_services_amount` |
-| Others | `item.others` |
+| Others | `item.display_others_amount` |
 | Total | `item.display_calculated_total` |
 
 The page receives these computed fields from the backend:
 
 ```text
+display_purchase_local_amount
 display_services_amount
+display_others_amount
 display_calculated_total
 display_amounts_inferred
 ```
@@ -138,17 +140,21 @@ Because `total` is not part of this mapped row, changing the Purchase Records li
 
 ## Example
 
-If four qualifying source rows contain Services VAT values of `100.00`, `200.00`, `300.00`, and `377.39`, they first consolidate to:
+If qualifying source rows first consolidate to:
 
 ```text
-Raw Services VAT = 977.39
+Raw Purchase Local VAT = 600.00
+Raw Services VAT       = 977.39
+Raw Others VAT         =  60.00
 ```
 
 The Purchase Records `Total` column shows:
 
 ```text
-Services = 977.39
-Total    = 977.39 / 0.12 = 8,144.92
+Purchase Local =   600.00
+Services       =   977.39
+Others         =    60.00
+Total          = 1,637.39 / 0.12 = 13,644.92
 ```
 
-The saved BIR/DAT Services taxable base is also `8,144.92`; it is not divided a second time for display. The saved `vat_inputs.total` remains whatever was stored by import, importation sync, or adjustment logic.
+The saved BIR/DAT taxable bases remain separate and are not divided a second time for display. The saved `vat_inputs.total` remains whatever was stored by import, importation sync, or adjustment logic.

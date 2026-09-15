@@ -42,9 +42,9 @@ function EditVatInputRecord() {
     address2: "",
     is_imported: Number(vatInput?.is_imported) === 1 ? "1" : "0",
     purchase_imported: "",
-    purchase_local: "",
+    purchase_local_vat_amount: "",
     services_vat_amount: "",
-    others: "",
+    others_vat_amount: "",
   });
 
   useEffect(() => {
@@ -123,25 +123,40 @@ function EditVatInputRecord() {
     return parts.join("-");
   };
 
-  const servicesVatBalance = Number(
-    vatInput?.services_vat_amount ?? (Number(vatInput?.services || 0) * 0.12)
+  const vatAmountBalance = (rawAmount, taxableBase) => Number(
+    rawAmount ?? (Number(taxableBase || 0) * 0.12).toFixed(2)
   );
 
+  const vatAmountBalances = {
+    purchase_local_vat_amount: vatAmountBalance(
+      vatInput?.purchase_local_vat_amount,
+      vatInput?.purchase_local
+    ),
+    services_vat_amount: vatAmountBalance(
+      vatInput?.services_vat_amount,
+      vatInput?.services
+    ),
+    others_vat_amount: vatAmountBalance(
+      vatInput?.others_vat_amount,
+      vatInput?.others
+    ),
+  };
+
   const availableAmount = (field) => (
-    field === "services_vat_amount" ? servicesVatBalance : Number(vatInput?.[field] || 0)
+    field.endsWith("_vat_amount") ? vatAmountBalances[field] : Number(vatInput?.[field] || 0)
   );
 
   const amountContributionToTotal = (field, value) => {
     const numeric = Number(value || 0);
 
-    return field === "services_vat_amount" ? numeric / 0.12 : numeric;
+    return field.endsWith("_vat_amount") ? numeric / 0.12 : numeric;
   };
 
   const amountFields = [
     { name: "purchase_imported", label: "Purchase Imported" },
-    { name: "purchase_local", label: "Purchase Local" },
-    { name: "services_vat_amount", label: "Services" },
-    { name: "others", label: "Others" },
+    { name: "purchase_local_vat_amount", label: "Purchase Local VAT Amount" },
+    { name: "services_vat_amount", label: "Services VAT Amount" },
+    { name: "others_vat_amount", label: "Others VAT Amount" },
   ];
 
   const adjustmentTotal = useMemo(() => {
@@ -149,7 +164,7 @@ function EditVatInputRecord() {
       const value = Number(data[field.name]);
       return sum + (Number.isFinite(value) ? amountContributionToTotal(field.name, value) : 0);
     }, 0);
-  }, [data.purchase_imported, data.purchase_local, data.services_vat_amount, data.others]);
+  }, [data.purchase_imported, data.purchase_local_vat_amount, data.services_vat_amount, data.others_vat_amount]);
 
   const remainingTotal = useMemo(() => {
     return amountFields.reduce((sum, field) => {
@@ -157,7 +172,7 @@ function EditVatInputRecord() {
       const adjustment = Number(data[field.name] || 0);
       return sum + amountContributionToTotal(field.name, Math.max(original - adjustment, 0));
     }, 0);
-  }, [data.purchase_imported, data.purchase_local, data.services_vat_amount, data.others, vatInput]);
+  }, [data.purchase_imported, data.purchase_local_vat_amount, data.services_vat_amount, data.others_vat_amount, vatInput]);
 
   const handleSupplierNameChange = (value) => {
     setData((current) => ({
@@ -255,13 +270,13 @@ function EditVatInputRecord() {
                   {formatCurrency(vatInput.purchase_imported)}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
-                  {formatCurrency(vatInput.purchase_local)}
+                  {formatCurrency(vatAmountBalances.purchase_local_vat_amount)}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
-                  {formatCurrency(servicesVatBalance)}
+                  {formatCurrency(vatAmountBalances.services_vat_amount)}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
-                  {formatCurrency(vatInput.others)}
+                  {formatCurrency(vatAmountBalances.others_vat_amount)}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
                   {formatCurrency(vatInput.total)}
@@ -470,7 +485,7 @@ function EditVatInputRecord() {
               {amountFields.map((field) => (
                 <div key={field.name} className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">
-                    {field.name === "services_vat_amount" ? "Services VAT Amount" : field.label}
+                    {field.label}
                   </label>
                   <Input
                     type="number"

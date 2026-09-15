@@ -365,6 +365,99 @@ class PurchaseAdjustmentMergeTest extends TestCase
         $this->assertSame('72.00', $brokerRow->fresh()->services_vat_amount);
     }
 
+    public function test_all_local_vat_inputs_are_converted_once_and_tracked_in_both_units(): void
+    {
+        $brokerRow = $this->brokerRow([
+            'uses_vat_bucket_amounts' => true,
+            'purchase_local' => 1000.00,
+            'purchase_local_vat_amount' => 120.00,
+            'services' => 1000.00,
+            'services_vat_amount' => 120.00,
+            'others' => 500.00,
+            'others_vat_amount' => 60.00,
+            'other_than_capital_goods' => 1500.00,
+            'taxable_net_of_vat' => 2500.00,
+            'input_vat' => 300.00,
+            'total_purchases' => 2500.00,
+            'total' => 2500.00,
+        ]);
+
+        $this->transfer($brokerRow, [
+            'purchase_local_vat_amount' => 48.00,
+            'services_vat_amount' => 24.00,
+            'others_vat_amount' => 12.00,
+        ])->assertRedirect("/records/{$brokerRow->id}/edit");
+
+        $created = VatInput::query()->where('is_adjusted', true)->sole();
+        $history = PurchaseAdjustment::query()->sole();
+        $brokerRow->refresh();
+
+        $this->assertSame('400.00', $created->purchase_local);
+        $this->assertSame('48.00', $created->purchase_local_vat_amount);
+        $this->assertSame('200.00', $created->services);
+        $this->assertSame('24.00', $created->services_vat_amount);
+        $this->assertSame('100.00', $created->others);
+        $this->assertSame('12.00', $created->others_vat_amount);
+
+        $this->assertSame('48.00', $history->purchase_local_vat_amount);
+        $this->assertSame('24.00', $history->services_vat_amount);
+        $this->assertSame('12.00', $history->others_vat_amount);
+
+        $this->assertSame('600.00', $brokerRow->purchase_local);
+        $this->assertSame('72.00', $brokerRow->purchase_local_vat_amount);
+        $this->assertSame('800.00', $brokerRow->services);
+        $this->assertSame('96.00', $brokerRow->services_vat_amount);
+        $this->assertSame('400.00', $brokerRow->others);
+        $this->assertSame('48.00', $brokerRow->others_vat_amount);
+    }
+
+    public function test_raw_local_vat_input_cannot_exceed_the_available_raw_balance(): void
+    {
+        $brokerRow = $this->brokerRow([
+            'uses_vat_bucket_amounts' => true,
+            'purchase_local' => 1000.00,
+            'purchase_local_vat_amount' => 120.00,
+        ]);
+
+        $this->transfer($brokerRow, [
+            'purchase_local_vat_amount' => 120.01,
+            'services_vat_amount' => 0,
+            'others_vat_amount' => 0,
+        ])->assertSessionHasErrors('purchase_local_vat_amount');
+
+        $this->assertSame('1000.00', $brokerRow->fresh()->purchase_local);
+        $this->assertSame(0, PurchaseAdjustment::count());
+    }
+
+    public function test_transferring_the_full_raw_balance_uses_the_full_stored_rounded_base(): void
+    {
+        $brokerRow = $this->brokerRow([
+            'uses_vat_bucket_amounts' => true,
+            'purchase_local' => 0.16,
+            'purchase_local_vat_amount' => 0.02,
+            'services' => 0,
+            'services_vat_amount' => 0,
+            'other_than_capital_goods' => 0.16,
+            'taxable_net_of_vat' => 0.16,
+            'input_vat' => 0.02,
+            'total_purchases' => 0.16,
+            'total' => 0.16,
+        ]);
+
+        $this->transfer($brokerRow, [
+            'purchase_local_vat_amount' => 0.02,
+            'services_vat_amount' => 0,
+            'others_vat_amount' => 0,
+        ])->assertSessionHasNoErrors();
+
+        $created = VatInput::query()->where('is_adjusted', true)->sole();
+
+        $this->assertSame('0.16', $created->purchase_local);
+        $this->assertSame('0.02', $created->purchase_local_vat_amount);
+        $this->assertSame('0.00', $brokerRow->fresh()->purchase_local);
+        $this->assertSame('0.00', $brokerRow->fresh()->purchase_local_vat_amount);
+    }
+
     public function test_a_same_tin_row_from_another_month_is_not_used(): void
     {
         $brokerRow = $this->brokerRow();

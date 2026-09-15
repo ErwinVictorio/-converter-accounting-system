@@ -469,7 +469,7 @@ Focused backend verification passed with `131` tests and `1,650` assertions. An 
 - Do not change Purchase DAT layout, field order, delimiters, formatting, filenames, totals, calculations, or line endings.
 - Do not overwrite `services`, `input_vat`, `taxable_net_of_vat`, `total_purchases`, or `total` with presentation-only raw values.
 - Do not include Purchase Imported in the visible Total.
-- Do not change Purchase Local or Others form/display semantics beyond retaining their raw source aggregates for the requested consolidated Total.
+- The original Purchase Local/Others scope boundary was superseded on September 15, 2026 by `PURCHASE_LOCAL_AND_OTHERS_VAT_DISPLAY_AND_ADJUSTMENT_PLAN.md`.
 - Do not alter Sales, Importation, or Expanded WTAX behavior.
 - Do not backfill historical raw amounts or adjustment meanings without evidence.
 

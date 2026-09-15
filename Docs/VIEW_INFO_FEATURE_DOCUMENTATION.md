@@ -115,9 +115,9 @@ Only fields supplied by the selected resource appear. The summary does not calcu
 | --- | --- |
 | Total | For VAT-bucket uploads: `(raw Purchase Local VAT + raw Services VAT + raw Others VAT) / 0.12`, after consolidation |
 
-Purchase View Info shows the same Services and Total presentation values as Purchase Records. VAT-bucket uploads display the consolidated raw Services VAT amount, and the Total formula runs once after consolidation. Explicit BIR/base rows use their stored bases without another division. Historical rows without a source-mode marker use the documented legacy fallback.
+Purchase View Info shows the same Purchase Local, Services, Others, and Total presentation values as Purchase Records. VAT-bucket uploads display the consolidated raw VAT amount for all three local buckets, and the Total formula runs once after consolidation. Explicit BIR/base rows use their stored bases without another division. Historical rows without a source-mode marker use the documented legacy fallback.
 
-**Stored Total** (`total`) and **Total Purchases** (`total_purchases`) are hidden in Purchase View Info. They remain in the database. The visible Total uses `display_calculated_total`; Services uses `display_services_amount`. Both are supplied by `PurchaseAmountPresenter`, not recalculated by the dialog.
+**Stored Total** (`total`) and **Total Purchases** (`total_purchases`) are hidden in Purchase View Info. They remain in the database. The visible fields use `display_purchase_local_amount`, `display_services_amount`, `display_others_amount`, and `display_calculated_total`. All are supplied by `PurchaseAmountPresenter`, not recalculated by the dialog.
 
 Importation retains Total Landed Cost with the short description `Total Landed Cost = Dutiable Value + Charges`. This is a reconciliation of the existing values; landed cost is still entered/uploaded and charges are derived during saving. The previous lengthy explanations of upload and adjustment paths were removed from the dialog.
 

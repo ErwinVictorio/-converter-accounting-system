@@ -114,6 +114,86 @@ class PurchaseAdjustedDeleteTest extends TestCase
         $this->assertSame('1000.00', $source->fresh()->total);
     }
 
+    public function test_raw_local_vat_amounts_are_restored_exactly_before_adjusted_delete(): void
+    {
+        $source = $this->brokerRow('111-111-111-000', 1000.00, [
+            'uses_vat_bucket_amounts' => true,
+            'purchase_local' => 1000.00,
+            'purchase_local_vat_amount' => 120.00,
+            'services_vat_amount' => 120.00,
+            'others' => 500.00,
+            'others_vat_amount' => 60.00,
+            'other_than_capital_goods' => 1500.00,
+            'taxable_net_of_vat' => 2500.00,
+            'input_vat' => 300.00,
+            'total_purchases' => 2500.00,
+            'total' => 2500.00,
+        ]);
+
+        $this->put("/records/{$source->id}", [
+            'supplier_name' => 'TARGET SERVICES INC.',
+            'tin_number' => '999-999-999-000',
+            'vendor_type' => 'company',
+            'company_name' => 'TARGET SERVICES INC.',
+            'address1' => 'TARGET STREET',
+            'address2' => 'PASIG CITY',
+            'is_imported' => false,
+            'purchase_imported' => 0,
+            'purchase_local_vat_amount' => 48.00,
+            'services_vat_amount' => 24.00,
+            'others_vat_amount' => 12.00,
+        ])->assertSessionHasNoErrors();
+
+        $target = VatInput::query()->where('is_adjusted', true)->sole();
+        $history = PurchaseAdjustment::query()->sole();
+
+        $this->assertSame('48.00', $history->purchase_local_vat_amount);
+        $this->assertSame('12.00', $history->others_vat_amount);
+
+        $this->delete("/records/{$target->id}")->assertSessionHas('success');
+
+        $source->refresh();
+
+        $this->assertSame('1000.00', $source->purchase_local);
+        $this->assertSame('120.00', $source->purchase_local_vat_amount);
+        $this->assertSame('1000.00', $source->services);
+        $this->assertSame('120.00', $source->services_vat_amount);
+        $this->assertSame('500.00', $source->others);
+        $this->assertSame('60.00', $source->others_vat_amount);
+        $this->assertSame('2500.00', $source->total);
+        $this->assertModelMissing($target);
+    }
+
+    public function test_incomplete_raw_vat_history_blocks_adjusted_delete(): void
+    {
+        $source = $this->brokerRow('111-111-111-000', 1000.00, [
+            'uses_vat_bucket_amounts' => true,
+            'services_vat_amount' => 120.00,
+        ]);
+
+        $this->put("/records/{$source->id}", [
+            'supplier_name' => 'TARGET SERVICES INC.',
+            'tin_number' => '999-999-999-000',
+            'vendor_type' => 'company',
+            'company_name' => 'TARGET SERVICES INC.',
+            'address1' => 'TARGET STREET',
+            'address2' => 'PASIG CITY',
+            'is_imported' => false,
+            'purchase_imported' => 0,
+            'purchase_local_vat_amount' => 0,
+            'services_vat_amount' => 48.00,
+            'others_vat_amount' => 0,
+        ])->assertSessionHasNoErrors();
+
+        $target = VatInput::query()->where('is_adjusted', true)->sole();
+        PurchaseAdjustment::query()->sole()->update(['services_vat_amount' => 47.99]);
+
+        $this->delete("/records/{$target->id}")->assertSessionHas('error');
+
+        $this->assertModelExists($target);
+        $this->assertSame('600.00', $source->fresh()->services);
+    }
+
     public function test_purchase_listing_marks_tracked_and_legacy_adjusted_rows(): void
     {
         $source = $this->brokerRow('111-111-111-000', 1000.00);

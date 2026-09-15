@@ -222,13 +222,13 @@ function PurchaseRecords() {
                                             {formatCurrency(item.purchase_imported)}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
-                                            {formatCurrency(item.purchase_local)}
+                                            {formatCurrency(item.display_purchase_local_amount)}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
                                             {formatCurrency(item.display_services_amount)}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
-                                            {formatCurrency(item.others)}
+                                            {formatCurrency(item.display_others_amount)}
                                         </TableCell>
                                         <TableCell className="whitespace-nowrap text-right font-mono text-xs font-bold text-slate-900">
                                             {formatCurrency(item.display_calculated_total)}

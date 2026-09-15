@@ -37,6 +37,12 @@ class RecordController extends Controller
         'others',
     ];
 
+    private const PURCHASE_RAW_VAT_FIELDS = [
+        'purchase_local' => 'purchase_local_vat_amount',
+        'services' => 'services_vat_amount',
+        'others' => 'others_vat_amount',
+    ];
+
     /**
      * Purchase (VAT input) rows, with the broker flag the Adjust action gates on.
      */
@@ -105,15 +111,19 @@ class RecordController extends Controller
                 }
             }
 
-            if ($record->services_vat_amount !== null) {
-                $trackedServicesVat = $validHistories->sum(
+            foreach (self::PURCHASE_RAW_VAT_FIELDS as $baseField => $rawField) {
+                if ($record->{$rawField} === null) {
+                    continue;
+                }
+
+                $trackedVat = $validHistories->sum(
                     fn (PurchaseAdjustment $history) => $this->moneyToCents(
-                        $history->services_vat_amount
-                            ?? round((float) $history->services * 0.12, 2)
+                        $history->{$rawField}
+                            ?? round((float) $history->{$baseField} * 0.12, 2)
                     )
                 );
 
-                if ($trackedServicesVat !== $this->moneyToCents($record->services_vat_amount)) {
+                if ($trackedVat !== $this->moneyToCents($record->{$rawField})) {
                     $complete = false;
                 }
             }
