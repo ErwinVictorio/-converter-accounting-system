@@ -10,6 +10,7 @@ use App\Http\Controllers\PendingPurchaseUploadController;
 use App\Http\Controllers\PendingSalesUploadController;
 use App\Http\Controllers\RecordController;
 use App\Http\Controllers\SupplierController;
+use App\Http\Controllers\TemporaryPurchaseSupplierTotalController;
 use App\Http\Controllers\VatInputController;
 use App\Http\Controllers\ViewInfoController;
 use App\Http\Controllers\WithholdingCompanyController;
@@ -74,6 +75,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/generate-datfile', [DatFileController::class, 'index']);
     Route::get('/bir/company/{tin}', [DatFileController::class, 'companyLookup']);
     Route::get('/download-datfile', [DatFileController::class, 'download']);
+
+    Route::get('/temporary/purchase-supplier-totals', [TemporaryPurchaseSupplierTotalController::class, 'index'])
+        ->name('temporary.purchase-supplier-totals.index');
+    Route::post('/temporary/purchase-supplier-totals', [TemporaryPurchaseSupplierTotalController::class, 'store'])
+        ->name('temporary.purchase-supplier-totals.store');
 
     //  Route for Brokers
     Route::get('/brokers', [ManageBrokerController::class, 'index']);

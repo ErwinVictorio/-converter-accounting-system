@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\PendingPurchaseUpload;
 use App\Models\Supplier;
+use App\Rules\NonWhitespaceLength;
 use App\Services\PendingPurchaseUploadService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -79,9 +80,9 @@ class SupplierController extends Controller
     {
         $validated = $request->validate([
             'tin' => ['required', 'string', 'max:20'],
-            'name' => ['required', 'string', 'max:'.config('bir.field_limits.company_name')],
-            'addr' => ['required', 'string', 'max:'.config('bir.field_limits.address1')],
-            'city' => ['required', 'string', 'max:'.config('bir.field_limits.city')],
+            'name' => ['required', 'string', new NonWhitespaceLength(config('bir.field_limits.company_name'), 300)],
+            'addr' => ['required', 'string', new NonWhitespaceLength(config('bir.field_limits.address1'), 100)],
+            'city' => ['required', 'string', new NonWhitespaceLength(config('bir.field_limits.city'), 100)],
         ]);
 
         $this->rejectInvalidOrDuplicateTin($validated['tin']);
@@ -115,9 +116,9 @@ class SupplierController extends Controller
     {
         $validated = $request->validate([
             'tin' => ['required', 'string', 'max:20'],
-            'name' => ['required', 'string', 'max:'.config('bir.field_limits.company_name')],
-            'addr' => ['required', 'string', 'max:'.config('bir.field_limits.address1')],
-            'city' => ['required', 'string', 'max:'.config('bir.field_limits.city')],
+            'name' => ['required', 'string', new NonWhitespaceLength(config('bir.field_limits.company_name'), 300)],
+            'addr' => ['required', 'string', new NonWhitespaceLength(config('bir.field_limits.address1'), 100)],
+            'city' => ['required', 'string', new NonWhitespaceLength(config('bir.field_limits.city'), 100)],
         ]);
 
         $supplier = Supplier::findOrFail($id);

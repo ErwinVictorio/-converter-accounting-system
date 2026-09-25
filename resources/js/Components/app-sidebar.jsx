@@ -19,6 +19,7 @@ import {
     Briefcase,
     Container,
     FileDown,
+    FileSpreadsheet,
     FileUp,
     Percent,
     Receipt,
@@ -67,6 +68,11 @@ const transactionItems = [
         url: "/generate-datfile",
         icon: FileDown,
     },
+    // {
+    //     title: "Supplier Total Report",
+    //     url: "/temporary/purchase-supplier-totals",
+    //     icon: FileSpreadsheet,
+    // },
 ];
 
 const recordItems = [

@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/Components/ui/table";
 import DataTablePagination from "@/Layouts/Pagination";
+import MasterDataCharacterCount from "@/Components/MasterDataCharacterCount";
 import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { birFieldLimits, supplierSchema } from "@/lib/FormSchema";
 
@@ -73,6 +74,7 @@ function ManageSupplier() {
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     setError,
@@ -89,6 +91,7 @@ function ManageSupplier() {
 
   const {
     register: registerEdit,
+    control: editControl,
     handleSubmit: handleEditSubmit,
     reset: resetEdit,
     setError: setEditError,
@@ -391,10 +394,10 @@ function ManageSupplier() {
                   <Input
                     type="text"
                     placeholder="Enter supplier name"
-                    maxLength={birFieldLimits.companyName}
                     {...register("name")}
                     className={errors.name ? "border-red-500 focus-visible:ring-red-500" : ""}
                   />
+                  <MasterDataCharacterCount control={control} name="name" limit={birFieldLimits.companyName} />
                   {errors.name && (
                     <p className="text-xs text-red-500 font-medium">
                       {errors.name.message}
@@ -409,10 +412,10 @@ function ManageSupplier() {
                   <Input
                     type="text"
                     placeholder="Enter address"
-                    maxLength={birFieldLimits.address1}
                     {...register("addr")}
                     className={errors.addr ? "border-red-500 focus-visible:ring-red-500" : ""}
                   />
+                  <MasterDataCharacterCount control={control} name="addr" limit={birFieldLimits.address1} />
                   {errors.addr && (
                     <p className="text-xs text-red-500 font-medium">
                       {errors.addr.message}
@@ -427,10 +430,10 @@ function ManageSupplier() {
                   <Input
                     type="text"
                     placeholder="Enter city"
-                    maxLength={birFieldLimits.city}
                     {...register("city")}
                     className={errors.city ? "border-red-500 focus-visible:ring-red-500" : ""}
                   />
+                  <MasterDataCharacterCount control={control} name="city" limit={birFieldLimits.city} />
                   {errors.city && (
                     <p className="text-xs text-red-500 font-medium">
                       {errors.city.message}
@@ -648,7 +651,7 @@ function ManageSupplier() {
                 />
                 {editErrors.tin && (
                   <p className="text-xs text-red-500 font-medium">
-                    {editErrors.tin.message}
+                  {editErrors.tin.message}
                   </p>
                 )}
               </div>
@@ -660,13 +663,13 @@ function ManageSupplier() {
                 <Input
                   type="text"
                   placeholder="Enter supplier name"
-                  maxLength={birFieldLimits.companyName}
                   {...registerEdit("name")}
                   className={editErrors.name ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />
+                <MasterDataCharacterCount control={editControl} name="name" limit={birFieldLimits.companyName} />
                 {editErrors.name && (
                   <p className="text-xs text-red-500 font-medium">
-                    {editErrors.name.message}
+                  {editErrors.name.message}
                   </p>
                 )}
               </div>
@@ -678,13 +681,13 @@ function ManageSupplier() {
                 <Input
                   type="text"
                   placeholder="Enter address"
-                  maxLength={birFieldLimits.address1}
                   {...registerEdit("addr")}
                   className={editErrors.addr ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />
+                <MasterDataCharacterCount control={editControl} name="addr" limit={birFieldLimits.address1} />
                 {editErrors.addr && (
                   <p className="text-xs text-red-500 font-medium">
-                    {editErrors.addr.message}
+                  {editErrors.addr.message}
                   </p>
                 )}
               </div>
@@ -696,13 +699,13 @@ function ManageSupplier() {
                 <Input
                   type="text"
                   placeholder="Enter city"
-                  maxLength={birFieldLimits.city}
                   {...registerEdit("city")}
                   className={editErrors.city ? "border-red-500 focus-visible:ring-red-500" : ""}
                 />
+                <MasterDataCharacterCount control={editControl} name="city" limit={birFieldLimits.city} />
                 {editErrors.city && (
                   <p className="text-xs text-red-500 font-medium">
-                    {editErrors.city.message}
+                  {editErrors.city.message}
                   </p>
                 )}
               </div>

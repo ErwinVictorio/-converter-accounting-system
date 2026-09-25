@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\PendingSalesUpload;
 use App\Models\SalesVatInput;
+use App\Rules\NonWhitespaceLength;
 use App\Services\PendingSalesUploadService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -114,9 +115,9 @@ class CustomerController extends Controller
     {
         return $request->validate([
             'tin' => ['required', 'string', 'max:20'],
-            'name' => ['required', 'string', 'max:'.config('bir.field_limits.company_name')],
-            'addr' => ['required', 'string', 'max:'.config('bir.field_limits.address1')],
-            'city' => ['required', 'string', 'max:'.config('bir.field_limits.city')],
+            'name' => ['required', 'string', new NonWhitespaceLength(config('bir.field_limits.company_name'), 300)],
+            'addr' => ['required', 'string', new NonWhitespaceLength(config('bir.field_limits.address1'), 500)],
+            'city' => ['required', 'string', new NonWhitespaceLength(config('bir.field_limits.city'), 100)],
         ]);
     }
 

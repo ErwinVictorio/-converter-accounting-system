@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { masterDataText } from "./masterDataText.js";
 
 export const birFieldLimits = {
     companyName: 50,
@@ -40,41 +41,19 @@ export const brokerSchema = z.object({
 });
 
 export const supplierSchema = z.object({
-    tin: z
-        .string()
-        .nonempty({ message: "TIN is required" })
+    tin: z.string().nonempty({ message: "TIN is required" })
         .max(20, { message: "TIN must not exceed 20 characters." }),
-    name: z
-        .string()
-        .nonempty({ message: "Supplier name is required" })
-        .max(birFieldLimits.companyName, { message: `Supplier name must not exceed ${birFieldLimits.companyName} characters.` }),
-    addr: z
-        .string()
-        .nonempty({ message: "Address is required" })
-        .max(birFieldLimits.address1, { message: `Address must not exceed ${birFieldLimits.address1} characters.` }),
-    city: z
-        .string()
-        .nonempty({ message: "City is required" })
-        .max(birFieldLimits.city, { message: `City must not exceed ${birFieldLimits.city} characters.` }),
+    name: masterDataText("Supplier name", birFieldLimits.companyName, 300),
+    addr: masterDataText("Address", birFieldLimits.address1, 100),
+    city: masterDataText("City", birFieldLimits.city, 100),
 });
 
 export const customerSchema = z.object({
-    tin: z
-        .string()
-        .nonempty({ message: "TIN is required" })
+    tin: z.string().nonempty({ message: "TIN is required" })
         .max(20, { message: "TIN must not exceed 20 characters." }),
-    name: z
-        .string()
-        .nonempty({ message: "Customer name is required" })
-        .max(birFieldLimits.companyName, { message: `Customer name must not exceed ${birFieldLimits.companyName} characters.` }),
-    addr: z
-        .string()
-        .nonempty({ message: "Address is required" })
-        .max(birFieldLimits.address1, { message: `Address must not exceed ${birFieldLimits.address1} characters.` }),
-    city: z
-        .string()
-        .nonempty({ message: "City is required" })
-        .max(birFieldLimits.city, { message: `City must not exceed ${birFieldLimits.city} characters.` }),
+    name: masterDataText("Customer name", birFieldLimits.companyName, 300),
+    addr: masterDataText("Address", birFieldLimits.address1, 500),
+    city: masterDataText("City", birFieldLimits.city, 100),
 });
 
 // Amount fields follow the BIR Excel rule: plain number, no commas, >= 0.

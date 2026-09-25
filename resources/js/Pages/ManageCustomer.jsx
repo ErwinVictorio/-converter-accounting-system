@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/Components/ui/table";
 import DataTablePagination from "@/Layouts/Pagination";
+import MasterDataCharacterCount from "@/Components/MasterDataCharacterCount";
 import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { birFieldLimits, customerSchema } from "@/lib/FormSchema";
 
@@ -80,6 +81,7 @@ function ManageCustomer() {
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     setError,
@@ -91,6 +93,7 @@ function ManageCustomer() {
 
   const {
     register: registerEdit,
+    control: editControl,
     handleSubmit: handleEditSubmit,
     reset: resetEdit,
     setError: setEditError,
@@ -245,7 +248,7 @@ function ManageCustomer() {
     router.delete(pending.cancel_url);
   };
 
-  const renderField = (field, label, placeholder, fieldErrors, fieldRegister, maxLength) => (
+  const renderField = (field, label, placeholder, fieldErrors, fieldRegister, limit) => (
     <div className="space-y-2">
       <label className="text-sm font-medium text-slate-700">
         {label} <span className="text-red-500">*</span>
@@ -253,10 +256,10 @@ function ManageCustomer() {
       <Input
         type="text"
         placeholder={placeholder}
-        maxLength={maxLength}
         {...fieldRegister(field)}
         className={fieldErrors[field] ? "border-red-500 focus-visible:ring-red-500" : ""}
       />
+      {limit && <MasterDataCharacterCount control={fieldRegister === registerEdit ? editControl : control} name={field} limit={limit} />}
       {fieldErrors[field] && (
         <p className="text-xs text-red-500 font-medium">
           {fieldErrors[field].message}
