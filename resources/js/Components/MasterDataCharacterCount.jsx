@@ -6,8 +6,17 @@ export default function MasterDataCharacterCount({ control, name, limit }) {
     const count = countNonWhitespace(value);
 
     return (
-        <p className={`text-xs ${count > limit ? "text-red-500" : "text-slate-500"}`}>
-            {count} / {limit} (excluding spaces)
-        </p>
+        <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="text-slate-600">Characters (spaces excluded)</span>
+            <span
+                className={`rounded-md px-2 py-1 font-semibold tabular-nums ${
+                    count > limit
+                        ? "bg-red-50 text-red-700"
+                        : "bg-slate-100 text-slate-700"
+                }`}
+            >
+                {count} / {limit}
+            </span>
+        </div>
     );
 }
