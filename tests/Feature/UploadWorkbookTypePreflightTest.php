@@ -29,7 +29,7 @@ class UploadWorkbookTypePreflightTest extends TestCase
     {
         parent::setUp();
 
-        Storage::fake('local');
+        Storage::set('local', Storage::fake('upload-preflight-'.\Illuminate\Support\Str::uuid()));
         $this->actingAs(User::factory()->create());
     }
 
@@ -213,6 +213,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
     private function purchaseRow(array $overrides = []): VatInput
     {
         return VatInput::create(array_merge([
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
             'supplier_name' => 'OLD SUPPLIER',
             'tin_number' => '000-330-774-000',
             'vendor_type' => 'company',
@@ -242,6 +244,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->salesSummaryCsv(),
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertRedirect();
@@ -434,6 +438,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->purchaseWorkbook(),
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertRedirect();
@@ -459,6 +465,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->purchaseWorkbookWithCommaSupplier(),
             'reporting_month' => '2026-02',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertRedirect();
@@ -487,6 +495,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->purchaseVatInputReportWorkbook(),
             'reporting_month' => '2026-07',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertRedirect();
@@ -511,6 +521,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->purchaseWorkbookWithBureauOfCustoms(),
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertRedirect();
@@ -532,6 +544,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->purchaseWorkbookWithBureauOfCustoms('BUREAU, OF CUSTOMS'),
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertRedirect();
@@ -551,6 +565,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->purchaseWorkbookWithOnlyBureauOfCustoms(),
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertRedirect();
@@ -570,6 +586,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->salesSummaryCsv(),
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertSessionMissing('success');
@@ -587,6 +605,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->purchaseWorkbook(),
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertRedirect();
@@ -623,6 +643,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->purchaseWorkbookWithBureauOfCustoms(),
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ])->assertRedirect('/records')->assertSessionHas('error')->assertSessionMissing('success');
 
         $issues = session('uploadIssueDialog.issues');
@@ -803,6 +825,8 @@ class UploadWorkbookTypePreflightTest extends TestCase
             'excel_file' => $this->purchaseWorkbook(),
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ]);
 
         $response->assertRedirect();

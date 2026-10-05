@@ -29,7 +29,7 @@ class DatFileAlphabeticalOrderingTest extends TestCase
         $this->purchase(['supplier_name' => 'BETA SUPPLY CORP', 'tin_number' => '222333444']);
 
         $lines = $this->lines($this->datFromPackage(
-            $this->get('/download-datfile?period=2026-07-31&record_type=purchase'),
+            $this->get('/download-datfile?filing_company_tin=008791976&filing_company_branch_code=0000&period=2026-07-31&record_type=purchase'),
             '008791976P072026.DAT'
         ));
 
@@ -91,6 +91,8 @@ class DatFileAlphabeticalOrderingTest extends TestCase
     private function purchase(array $overrides = []): VatInput
     {
         return VatInput::create(array_merge([
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
             'supplier_name' => 'ALPHA SUPPLY CORP',
             'tin_number' => '111222333',
             'vendor_type' => 'company',

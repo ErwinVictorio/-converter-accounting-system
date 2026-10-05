@@ -529,7 +529,7 @@ export default function Dashboard({
               Dashboard
             </h1>
             <p className="mt-0.5 text-sm text-slate-500">
-              BIR Data &amp; DAT File Automation Overview
+              BIR Data &amp; DAT File Automation Overview (all companies, including unassigned historical records)
             </p>
           </div>
 

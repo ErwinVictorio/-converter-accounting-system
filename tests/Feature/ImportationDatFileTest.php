@@ -138,7 +138,7 @@ class ImportationDatFileTest extends TestCase
         $this->assertNotNull(ImportationEntry::firstOrFail()->vat_input_id);
 
         // ...but it must not be reported again in the Purchase schedule.
-        $response = $this->get('/download-datfile?period=2026-07-31&record_type=purchase');
+        $response = $this->get('/download-datfile?filing_company_tin=008791976&filing_company_branch_code=0000&period=2026-07-31&record_type=purchase');
 
         $response->assertRedirect();
         $response->assertSessionHas('error');

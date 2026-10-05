@@ -3,6 +3,7 @@ import { Link, router, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowRight, Copy, Loader2 } from "lucide-react";
 
+import PurchaseCompanySelect from "@/Components/PurchaseCompanySelect";
 import ExcelUploadPanel from "@/Components/ExcelUploadPanel";
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
@@ -111,7 +112,7 @@ const SALES_ISSUE_CATEGORIES = {
 };
 
 function RecordEntry() {
-  const { flash, birCompanies = [] } = usePage().props;
+  const { flash, birCompanies = [], purchaseCompanies = [] } = usePage().props;
   const defaultBirCompany = birCompanies[0] || { tin: "008791976", branch_code: "0000", name: "FORTRESS STEEL INC." };
   const [isDragging, setIsDragging] = useState(false);
   // Which Record page the last successful upload landed in, so the confirmation
@@ -127,6 +128,8 @@ function RecordEntry() {
   // Inertia Form Setup para sa File Upload
   const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
     excel_file: null,
+    filing_company_tin: "",
+    filing_company_branch_code: "",
     reporting_month: new Date().toISOString().slice(0, 7),
     report_type: "quarterly",
     start_date: `${new Date().getFullYear()}-01-01`,
@@ -257,16 +260,19 @@ function RecordEntry() {
   // Drag and Drop Handlers
   const handleDragOver = (e) => {
     e.preventDefault();
+
     setIsDragging(true);
   };
 
   const handleDragLeave = (e) => {
     e.preventDefault();
+
     setIsDragging(false);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
+
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileChange(e.dataTransfer.files[0]);
@@ -293,6 +299,11 @@ function RecordEntry() {
   // Submit Form to Backend
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (data.record_type === "purchase" && !data.filing_company_tin) {
+      toast.error("Select a Purchase filing company before uploading.");
+      return;
+    }
+
 
     if (!data.excel_file) {
       toast.error("Please select an Excel file to upload.");
@@ -605,6 +616,18 @@ function RecordEntry() {
               </div>
             )}
 
+            {data.record_type === "purchase" && (
+              <div className="mb-5 space-y-2">
+                <PurchaseCompanySelect companies={purchaseCompanies} tin={data.filing_company_tin} branch={data.filing_company_branch_code}
+                  disabled={processing} error={errors.filing_company_tin || errors.filing_company_branch_code}
+                  onChange={(value) => {
+                    const [tin = "", branch = ""] = value.split("|");
+                    setData((current) => ({ ...current, filing_company_tin: tin, filing_company_branch_code: branch }));
+                    clearErrors("filing_company_tin", "filing_company_branch_code");
+                  }} />
+                <p className="text-xs text-slate-500">Uploading replaces normal Purchase records only for the selected company, branch and reporting month.</p>
+              </div>
+            )}
             <ExcelUploadPanel
               accept=".xls,.xlsx,.xlsm"
               acceptLabel=".xls, .xlsx, .xlsm"
@@ -657,7 +680,7 @@ function RecordEntry() {
                   {uploadIssueDialog.pending_upload.affected_rows} worksheet row(s) need attention.
                 </p>
                 <p className="mt-1 text-amber-800">
-                  The original workbook is retained privately until {new Date(uploadIssueDialog.pending_upload.expires_at).toLocaleString()}.
+                  {uploadIssueDialog.record_type === "purchase" && <>Company: {uploadIssueDialog.pending_upload.filing_company_label}. </>}The original workbook is retained privately until {new Date(uploadIssueDialog.pending_upload.expires_at).toLocaleString()}.
                 </p>
               </div>
 

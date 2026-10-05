@@ -34,6 +34,7 @@ class RecordPagesTest extends TestCase
     private function purchase(array $overrides = []): VatInput
     {
         return VatInput::create(array_merge([
+            'filing_company_tin' => '008791976', 'filing_company_branch_code' => '0000',
             'supplier_name' => 'LOCAL HARDWARE INC.',
             'tin_number' => '123-456-789-0000',
             'vendor_type' => 'company',

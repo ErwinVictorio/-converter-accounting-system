@@ -43,14 +43,14 @@ class DatTextValidationRelaxationTest extends TestCase
     public function test_text_only_issues_allow_page_and_unchanged_dat_package(string $type, array $overrides): void
     {
         $record = $this->record($type, $overrides);
-        $this->get('/generate-datfile?record_type=' . $type)->assertInertia(fn (Assert $page) => $page
+        $this->get('/generate-datfile?filing_company_tin=008791976&filing_company_branch_code=0000&record_type=' . $type)->assertInertia(fn (Assert $page) => $page
             ->component('GenerateDatFile')
             ->where('periodIssues.2026-07.invalid_count', 0)
             ->where('periodIssues.2026-07.errors', []));
 
         $letter = $type === 'purchase' ? 'P' : 'S';
         $content = $this->datFromPackage(
-            $this->get('/download-datfile?period=2026-07-31&record_type=' . $type),
+            $this->get('/download-datfile?filing_company_tin=008791976&filing_company_branch_code=0000&period=2026-07-31&record_type=' . $type),
             "008791976{$letter}072026.DAT"
         );
         $company = array_merge(config('bir.companies.008791976'), ['final_header_field' => '12']);
@@ -85,10 +85,10 @@ class DatTextValidationRelaxationTest extends TestCase
     public function test_real_errors_still_block_even_with_relaxed_text(string $type, array $overrides, string $message): void
     {
         $this->record($type, array_merge(['address2' => str_repeat('A', 60) . ', &'], $overrides));
-        $this->get('/generate-datfile?record_type=' . $type)->assertInertia(fn (Assert $page) => $page
+        $this->get('/generate-datfile?filing_company_tin=008791976&filing_company_branch_code=0000&record_type=' . $type)->assertInertia(fn (Assert $page) => $page
             ->where('periodIssues.2026-07.invalid_count', 1)
             ->where('periodIssues.2026-07.errors.0', fn ($error) => str_contains($error, $message)));
-        $this->get('/download-datfile?period=2026-07-31&record_type=' . $type)
+        $this->get('/download-datfile?filing_company_tin=008791976&filing_company_branch_code=0000&period=2026-07-31&record_type=' . $type)
             ->assertRedirect()
             ->assertSessionHas('error', fn ($error) => str_contains($error, $message)
                 && ! str_contains($error, 'must not exceed') && ! str_contains($error, 'ampersand'));
@@ -99,6 +99,7 @@ class DatTextValidationRelaxationTest extends TestCase
         $common = ['company_name' => 'TEST COMPANY', 'address1' => 'ADDRESS 1', 'address2' => 'CITY'];
         if ($type === 'purchase') {
             return VatInput::create(array_merge($common, [
+                'filing_company_tin' => '008791976', 'filing_company_branch_code' => '0000',
                 'supplier_name' => 'TEST COMPANY', 'tin_number' => '111222333', 'vendor_type' => 'company',
                 'exempt' => 0, 'zero_rated' => 0, 'services' => 1000, 'capital_goods' => 0,
                 'other_than_capital_goods' => 0, 'taxable_net_of_vat' => 1000, 'vat_rate' => 12,

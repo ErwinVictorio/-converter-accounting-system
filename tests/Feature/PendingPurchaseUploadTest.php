@@ -25,7 +25,7 @@ class PendingPurchaseUploadTest extends TestCase
     {
         parent::setUp();
 
-        Storage::fake('local');
+        Storage::set('local', Storage::fake('purchase-'.\Illuminate\Support\Str::uuid()));
         $this->user = User::factory()->create();
         $this->actingAs($this->user);
     }
@@ -183,6 +183,8 @@ class PendingPurchaseUploadTest extends TestCase
             'excel_file' => $file,
             'reporting_month' => '2026-05',
             'record_type' => 'purchase',
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
         ];
     }
 
@@ -207,6 +209,8 @@ class PendingPurchaseUploadTest extends TestCase
     private function oldPurchase(): VatInput
     {
         return VatInput::create([
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
             'tin_number' => '999-999-999-000',
             'supplier_name' => 'OLD SUPPLIER',
             'vendor_type' => 'company',

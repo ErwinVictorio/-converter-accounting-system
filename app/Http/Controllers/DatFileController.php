@@ -57,9 +57,15 @@ class DatFileController extends Controller
             'report_type' => ['nullable', 'in:quarterly,annual'],
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'filing_company_tin' => ['nullable', 'string', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
+            'filing_company_branch_code' => ['nullable', 'string', 'regex:/^\d{1,4}$/'],
             'withholding_agent_tin' => ['nullable', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
             'withholding_agent_branch_code' => ['nullable', 'regex:/^\d{1,4}$/'],
         ])['record_type'] ?? 'purchase';
+        $purchaseDirectory = app(\App\Services\BIR\PurchaseCompanyDirectory::class);
+        $purchaseCompany = $recordType === 'purchase' && ($request->filled('filing_company_tin') || $request->filled('filing_company_branch_code'))
+            ? $purchaseDirectory->resolve($request->input('filing_company_tin'), $request->input('filing_company_branch_code'), true)
+            : null;
         $reportType = $recordType === 'expanded'
             ? $request->input('report_type', 'quarterly')
             : 'quarterly';
@@ -74,11 +80,15 @@ class DatFileController extends Controller
         } elseif ($recordType === 'expanded') {
             [$availablePeriods, $periodIssues] = $this->expandedPeriods($expandedValidator, $selectedWithholdingAgent);
         } else {
-            [$availablePeriods, $periodIssues] = $this->purchasePeriods($purchaseValidator);
+            [$availablePeriods, $periodIssues] = $purchaseCompany ? $this->purchasePeriods($purchaseValidator, $purchaseCompany) : [[], []];
         }
 
         return Inertia::render('GenerateDatFile', [
             'defaultCompany' => config('bir.companies.008791976'),
+            'purchaseCompanies' => $purchaseDirectory->companies(true),
+            'selectedPurchaseCompany' => $purchaseCompany,
+            'unassignedPurchaseCount' => $recordType === 'purchase'
+                ? VatInput::query()->excludingImportationMirrors()->whereNull('filing_company_tin')->count() : 0,
             'recordType' => $recordType,
             'reportType' => $reportType,
             'availablePeriods' => $availablePeriods,
@@ -179,6 +189,8 @@ class DatFileController extends Controller
                 'date',
                 'after_or_equal:start_date',
             ],
+            'filing_company_tin' => ['nullable', 'string', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
+            'filing_company_branch_code' => ['nullable', 'string', 'regex:/^\d{1,4}$/'],
             'withholding_agent_tin' => ['nullable', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
             'withholding_agent_branch_code' => ['nullable', 'regex:/^\d{1,4}$/'],
         ]);
@@ -232,7 +244,11 @@ class DatFileController extends Controller
             );
         }
 
-        return $this->downloadPurchase($period, $purchaseGenerator, $purchaseValidator, $attachmentBuilder, $pdfRenderer);
+        $directory = app(\App\Services\BIR\PurchaseCompanyDirectory::class);
+        $company = $directory->forDat($directory->resolve(
+            $request->input('filing_company_tin'), $request->input('filing_company_branch_code'), true
+        ));
+        return $this->downloadPurchase($period, $purchaseGenerator, $purchaseValidator, $attachmentBuilder, $pdfRenderer, $company);
     }
 
     /**
@@ -245,20 +261,16 @@ class DatFileController extends Controller
      * The rule itself lives on VatInput::scopeExcludingImportationMirrors() so the
      * dashboard totals apply exactly the same exclusion.
      */
-    private function purchasePeriods(BirPurchaseRowValidator $validator): array
+    private function purchasePeriods(BirPurchaseRowValidator $validator, array $company): array
     {
-        $availablePeriods = VatInput::query()
-            ->excludingImportationMirrors()
-            ->selectRaw("DATE_FORMAT(date_uploaded, '%Y-%m') as value")
-            ->selectRaw("DATE_FORMAT(date_uploaded, '%M %Y') as label")
-            ->selectRaw('COUNT(*) as records_count')
-            ->groupBy('value', 'label')
-            ->orderByDesc('value')
-            ->get();
+        $availablePeriods = VatInput::query()->excludingImportationMirrors()->forFilingCompany($company)
+            ->orderByDesc('date_uploaded')->get()->groupBy(fn ($row) => $row->date_uploaded->format('Y-m'))
+            ->map(fn ($rows, $month) => ['value' => $month, 'label' => $rows->first()->date_uploaded->format('F Y'), 'records_count' => $rows->count()])
+            ->values();
         $periodIssues = [];
 
         VatInput::query()
-            ->excludingImportationMirrors()
+            ->excludingImportationMirrors()->forFilingCompany($company)
             ->orderBy('date_uploaded')
             ->orderBy('id')
             ->get()
@@ -413,10 +425,11 @@ class DatFileController extends Controller
         ReliefPurchaseDatGenerator $generator,
         BirPurchaseRowValidator $validator,
         DatAttachmentReportBuilder $attachmentBuilder,
-        DatAttachmentPdfRenderer $pdfRenderer
+        DatAttachmentPdfRenderer $pdfRenderer,
+        array $company
     ) {
         $records = VatInput::query()
-            ->excludingImportationMirrors()
+            ->excludingImportationMirrors()->forFilingCompany($company)
             ->whereBetween('date_uploaded', [
                 $period->copy()->startOfMonth()->toDateString(),
                 $period->copy()->endOfMonth()->toDateString(),
@@ -434,7 +447,7 @@ class DatFileController extends Controller
             ->values();
 
         if ($records->isEmpty()) {
-            return back()->with('error', 'No VAT input records found for the selected reporting month.');
+            return back()->with('error', 'No VAT input records found for the selected company and reporting month.');
         }
 
         $rowErrors = [];
@@ -447,8 +460,6 @@ class DatFileController extends Controller
         if ($rowErrors !== []) {
             return back()->with('error', 'Cannot generate DAT. Fix these VAT input rows first: ' . implode(' ', array_slice($rowErrors, 0, 5)));
         }
-
-        $company = $this->defaultReliefCompany();
 
         $content = $generator->generate(
             $company,

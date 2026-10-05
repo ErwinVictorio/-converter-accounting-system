@@ -13,6 +13,8 @@ class VatInput extends Model
 
 
   protected $fillable = [
+    'filing_company_tin',
+    'filing_company_branch_code',
     'supplier_name',
     'tin_number',
     'vendor_type',
@@ -85,6 +87,17 @@ class VatInput extends Model
     return $query->whereNotIn('id', ImportationEntry::query()
       ->whereNotNull('vat_input_id')
       ->select('vat_input_id'));
+  }
+
+  public function scopeForFilingCompany(Builder $query, array $company): Builder
+  {
+    return $query->where('filing_company_tin', $company['tin'] ?? null)
+      ->where('filing_company_branch_code', $company['branch_code'] ?? null);
+  }
+
+  public function filingCompanyIdentity(): array
+  {
+    return ['tin' => $this->filing_company_tin, 'branch_code' => $this->filing_company_branch_code];
   }
 
   public function outgoingPurchaseAdjustments(): HasMany

@@ -33,6 +33,15 @@ class PendingPurchaseUploadController extends Controller
     {
         $this->pendingUploads->authorize($pendingPurchaseUpload, $request->user());
 
+        $company = app(\App\Services\BIR\PurchaseCompanyDirectory::class)->resolve(
+            $pendingPurchaseUpload->filing_company_tin,
+            $pendingPurchaseUpload->filing_company_branch_code
+        );
+        foreach (['filing_company_tin' => 'tin', 'filing_company_branch_code' => 'branch_code'] as $field => $key) {
+            if ($request->has($field) && $request->input($field) !== $company[$key]) {
+                throw ValidationException::withMessages([$field => 'Retry cannot change the retained company. Upload again to select another company.']);
+            }
+        }
         $claimed = PendingPurchaseUpload::query()
             ->whereKey($pendingPurchaseUpload->id)
             ->where('status', PendingPurchaseUpload::STATUS_PENDING)
@@ -75,7 +84,8 @@ class PendingPurchaseUploadController extends Controller
 
             $result = $this->purchaseUploads->replace(
                 $path,
-                $pendingPurchaseUpload->reporting_period->toDateString()
+                $pendingPurchaseUpload->reporting_period->toDateString(),
+                $company
             );
             $this->pendingUploads->complete($pendingPurchaseUpload);
 

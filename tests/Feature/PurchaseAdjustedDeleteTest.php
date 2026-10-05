@@ -28,6 +28,8 @@ class PurchaseAdjustedDeleteTest extends TestCase
     private function purchase(array $overrides = []): VatInput
     {
         return VatInput::create(array_merge([
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
             'supplier_name' => 'LOCAL HARDWARE INC.',
             'tin_number' => '222-222-222-000',
             'vendor_type' => 'company',
@@ -472,5 +474,17 @@ class PurchaseAdjustedDeleteTest extends TestCase
         $this->delete("/records/{$target->id}")->assertRedirect('/login');
 
         $this->assertModelExists($target);
+    }
+    public function test_cross_company_adjustment_history_cannot_restore_to_another_company(): void
+    {
+        $source = $this->brokerRow('111-111-111-000', 1000.00);
+        $this->transfer($source, 400.00)->assertSessionHas('success');
+        $target = VatInput::where('is_adjusted', true)->sole();
+        $other = $this->brokerRow('222-222-222-000', 600.00, ['filing_company_tin' => '008564445']);
+        PurchaseAdjustment::query()->update(['source_vat_input_id' => $other->id]);
+        $this->delete("/records/{$target->id}")->assertSessionHas('error');
+        $this->assertNotNull($target->fresh());
+        $this->assertSame('600.00', $other->fresh()->services);
+        $this->assertSame('600.00', $source->fresh()->services);
     }
 }

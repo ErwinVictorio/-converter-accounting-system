@@ -43,6 +43,8 @@ class PurchaseAdjustmentMergeTest extends TestCase
     private function purchase(array $overrides = []): VatInput
     {
         return VatInput::create(array_merge([
+            'filing_company_tin' => '008791976',
+            'filing_company_branch_code' => '0000',
             'supplier_name' => 'LOCAL HARDWARE INC.',
             'tin_number' => self::VENDOR_TIN,
             'vendor_type' => 'company',
@@ -582,5 +584,18 @@ class PurchaseAdjustmentMergeTest extends TestCase
             'tin_number' => '999-999-999-000',
             'is_imported' => 0,
         ]))->assertOk()->assertJsonPath('adjustedRecord', null);
+    }
+    public function test_adjustment_does_not_merge_into_another_company_or_branch(): void
+    {
+        $source = $this->brokerRow();
+        $other = $this->purchase(['filing_company_tin' => '008564445']);
+        $branch = $this->purchase(['filing_company_branch_code' => '0001']);
+        $this->get("/records/{$source->id}/adjusted-lookup?tin_number=222222222&is_imported=0")
+            ->assertJsonPath('adjustedRecord', null);
+        $this->transfer($source)->assertSessionHasNoErrors();
+        $this->assertSame('5000.00', $other->fresh()->purchase_local);
+        $this->assertSame('5000.00', $branch->fresh()->purchase_local);
+        $target = VatInput::where('is_adjusted', true)->sole();
+        $this->assertSame($source->filingCompanyIdentity(), $target->filingCompanyIdentity());
     }
 }

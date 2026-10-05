@@ -17,8 +17,10 @@ class PendingPurchaseUploadService
         UploadedFile $file,
         string $reportingPeriod,
         array $issues,
-        ?string $retainedContents = null
+        ?string $retainedContents = null,
+        array $company = []
     ): PendingPurchaseUpload {
+        $company = app(\App\Services\BIR\PurchaseCompanyDirectory::class)->resolve($company['tin'] ?? null, $company['branch_code'] ?? null);
         $token = (string) Str::uuid();
         $extension = strtolower($file->getClientOriginalExtension());
         $extension = in_array($extension, ['xls', 'xlsx', 'csv'], true) ? $extension : 'xlsx';
@@ -33,6 +35,8 @@ class PendingPurchaseUploadService
 
         try {
             return PendingPurchaseUpload::create([
+                'filing_company_tin' => $company['tin'] ?? null,
+                'filing_company_branch_code' => $company['branch_code'] ?? null,
                 'token' => $token,
                 'user_id' => $user->id,
                 'original_name' => basename($file->getClientOriginalName()),
@@ -85,6 +89,11 @@ class PendingPurchaseUploadService
             'token' => $pending->token,
             'original_name' => $pending->original_name,
             'reporting_period' => $pending->reporting_period->format('Y-m'),
+            'filing_company_tin' => $pending->filing_company_tin,
+            'filing_company_branch_code' => $pending->filing_company_branch_code,
+            'filing_company_label' => $pending->filing_company_tin
+                ? $pending->filing_company_tin.'-'.$pending->filing_company_branch_code
+                : 'Unassigned - upload again with a selected company',
             'expires_at' => $pending->expires_at?->toIso8601String(),
             'initial_supplier_count' => $pending->initial_supplier_count,
             'initial_row_count' => $pending->initial_row_count,
@@ -92,7 +101,7 @@ class PendingPurchaseUploadService
             'affected_rows' => $grouped['affected_rows'],
             'remaining_suppliers' => count($grouped['items']),
             'resolved_suppliers' => max(0, $pending->initial_supplier_count - count($grouped['items'])),
-            'ready_to_retry' => $grouped['items'] === [],
+            'ready_to_retry' => $grouped['items'] === [] && $pending->filing_company_tin !== null,
             'items' => $grouped['items'],
             'retry_url' => route('pending-purchase-uploads.retry', $pending),
             'cancel_url' => route('pending-purchase-uploads.destroy', $pending),

@@ -26,11 +26,12 @@ import { birFieldLimits } from "@/lib/FormSchema";
 import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 
 function EditVatInputRecord() {
-  const { flash, vatInput } = usePage().props;
+  const { flash, vatInput, returnTo = "/records/purchases" } = usePage().props;
   const [targetLookupStatus, setTargetLookupStatus] = useState("idle");
   const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
   const { data, setData, put, processing, errors, reset } = useForm({
+    return_to: returnTo,
     supplier_name: "",
     tin_number: "",
     vendor_type: "company",
@@ -217,7 +218,7 @@ function EditVatInputRecord() {
         </div>
 
         <Button asChild variant="outline" className="w-full sm:w-auto gap-2">
-          <Link href="/records/purchases">
+          <Link href={returnTo}>
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>

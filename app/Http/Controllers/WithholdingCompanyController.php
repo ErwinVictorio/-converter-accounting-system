@@ -108,7 +108,7 @@ class WithholdingCompanyController extends Controller
 
         if ($identityChanged && $company->hasFiledRows()) {
             throw ValidationException::withMessages([
-                'tin' => 'Expanded WTAX records already exist for '.$company->tin.'-'.$company->branch_code
+                'tin' => 'Purchase, pending upload, or Expanded WTAX records already exist for '.$company->tin.'-'.$company->branch_code
                     .'. Add a new company instead of changing its TIN or branch code.',
             ]);
         }
@@ -145,7 +145,7 @@ class WithholdingCompanyController extends Controller
         if ($company->hasFiledRows()) {
             return back()->with(
                 'error',
-                'Cannot delete '.$company->registered_name.': Expanded WTAX records were filed under '
+                'Cannot delete '.$company->registered_name.': Purchase, pending upload, or Expanded WTAX records exist under '
                 .$company->tin.'-'.$company->branch_code.'. Deactivate it instead.'
             );
         }

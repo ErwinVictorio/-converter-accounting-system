@@ -120,7 +120,9 @@ class WithholdingCompany extends Model
      */
     public function hasFiledRows(): bool
     {
-        return ExpandedWtaxEntry::query()
+        return VatInput::query()->forFilingCompany(['tin' => $this->tin, 'branch_code' => $this->branch_code])->exists()
+            || PendingPurchaseUpload::query()->where('filing_company_tin', $this->tin)->where('filing_company_branch_code', $this->branch_code)->exists()
+            || ExpandedWtaxEntry::query()
             ->where('withholding_agent_tin', $this->tin)
             ->where('withholding_agent_branch_code', $this->branch_code)
             ->exists();

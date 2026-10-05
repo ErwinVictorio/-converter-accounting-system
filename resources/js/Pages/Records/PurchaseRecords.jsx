@@ -50,7 +50,7 @@ const allocationRow = (amounts = {}) => ({
 });
 
 function PurchaseRecords() {
-    const { flash, vatInputs, months = [], filters = {} } = usePage().props;
+    const { flash, vatInputs, months = [], filters = {}, purchaseCompanies = [], companyFilter = "" } = usePage().props;
     const [selectedBirRecord, setSelectedBirRecord] = useState(null);
     const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
     const [deleteRecord, setDeleteRecord] = useState(null);
@@ -146,19 +146,26 @@ function PurchaseRecords() {
         <section className="w-full max-w-full space-y-6 overflow-hidden">
             <RecordTableShell
                 title="Purchase Records"
-                description="Uploaded VAT input rows. Upload new files under Import Data."
+                description="Purchase records. Unassigned historical rows are excluded from company DAT downloads until ownership is reviewed."
                 links={vatInputs?.links}
                 actions={
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                        <select aria-label="Filter Purchase company" value={companyFilter}
+                            className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
+                            onChange={(event) => router.get("/records/purchases", { ...filters, company: event.target.value }, { preserveScroll: true })}>
+                            <option value="">All companies / unassigned</option>
+                            <option value="unassigned">Unassigned Purchase records</option>
+                            {purchaseCompanies.map((company) => <option key={`${company.tin}|${company.branch_code}`} value={`${company.tin}|${company.branch_code}`}>{company.name} ({company.tin}-{company.branch_code})</option>)}
+                        </select>
                         <RecordSearchInput
                             url="/records/purchases"
                             placeholder="Search supplier or TIN..."
                             initialValue={filters.search || ""}
-                            params={filters.period ? { period: filters.period } : {}}
+                            params={{ ...(filters.period ? { period: filters.period } : {}), company: companyFilter }}
                         />
                         <RecordPeriodFilter
                             url="/records/purchases"
-                            months={months}
+                            months={months} params={{ company: companyFilter }}
                             initialValue={filters.period || ""}
                             search={filters.search || ""}
                         />
@@ -195,7 +202,7 @@ function PurchaseRecords() {
                                     <TableRow key={item.id} className="transition-colors hover:bg-slate-50/60">
                                         <TableCell className="whitespace-nowrap font-medium text-slate-900">
                                             <div className="flex items-center gap-2">
-                                                <span>{item.supplier_name}</span>
+                                                <span>{item.supplier_name}<small className="block font-normal text-slate-500">{item.filing_company_tin ? `${item.filing_company_tin}-${item.filing_company_branch_code}` : "Unassigned / legacy - review company before adjustment"}</small></span>
                                                 {isAdjusted && (
                                                     <Badge className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50">
                                                         Adjusted
@@ -259,8 +266,8 @@ function PurchaseRecords() {
                                                     type="button"
                                                     variant="outline"
                                                     size="sm"
-                                                    disabled={!isBroker}
-                                                    onClick={() => router.get(`/records/${item.id}/edit`)}
+                                                    disabled={!isBroker || !item.filing_company_tin}
+                                                    onClick={() => router.get(`/records/${item.id}/edit`, { return_to: window.location.pathname + window.location.search })}
                                                     title={
                                                         isBroker
                                                             ? "Edit VAT record"
@@ -276,6 +283,7 @@ function PurchaseRecords() {
                                                         type="button"
                                                         variant="destructive"
                                                         size="sm"
+                                                        disabled={!item.filing_company_tin}
                                                         onClick={() => openDeleteDialog(item)}
                                                         title={
                                                             item.adjustment_history_complete

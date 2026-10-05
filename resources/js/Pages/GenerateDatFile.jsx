@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { router, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
+import PurchaseCompanySelect from "@/Components/PurchaseCompanySelect";
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
 import { Input } from "@/Components/ui/input";
@@ -22,6 +23,9 @@ const DAT_TYPES = {
 function GenerateDatFile() {
     const {
         flash,
+        purchaseCompanies = [],
+        selectedPurchaseCompany = null,
+        unassignedPurchaseCount = 0,
         recordType = "purchase",
         reportType = "quarterly",
         availablePeriods = [],
@@ -32,6 +36,7 @@ function GenerateDatFile() {
         birCompanies = [],
         selectedWithholdingAgent = null,
     } = usePage().props;
+    const [refreshingCompany, setRefreshingCompany] = useState(false);
     const currentMonth = new Date().toISOString().slice(0, 7);
     const defaultPeriod = availablePeriods[0]?.value || currentMonth;
     const defaultAgent = selectedWithholdingAgent || birCompanies[0] || {
@@ -42,6 +47,8 @@ function GenerateDatFile() {
 
     const { data, setData, processing, errors } = useForm({
         period: defaultPeriod,
+        filing_company_tin: selectedPurchaseCompany?.tin || "",
+        filing_company_branch_code: selectedPurchaseCompany?.branch_code || "",
         record_type: recordType,
         report_type: reportType,
         start_date: annualStartDate,
@@ -77,7 +84,7 @@ function GenerateDatFile() {
     const annualTaxableYearEnd = data.end_date
         ? `${data.end_date.slice(0, 4)}-12-31`
         : "";
-    const downloadDisabled = processing || (isAnnualExpanded
+    const downloadDisabled = processing || refreshingCompany || (data.record_type === "purchase" && (!selectedPeriod || !data.filing_company_tin || data.filing_company_tin !== selectedPurchaseCompany?.tin || data.filing_company_branch_code !== selectedPurchaseCompany?.branch_code)) || (isAnnualExpanded
         ? annualPeriodError !== ""
             || annualSummary.records_count === 0
             || annualSummary.invalid_count > 0
@@ -100,6 +107,8 @@ function GenerateDatFile() {
     }, [flash]);
 
     useEffect(() => {
+        setData("filing_company_tin", selectedPurchaseCompany?.tin || "");
+        setData("filing_company_branch_code", selectedPurchaseCompany?.branch_code || "");
         setData("record_type", recordType);
         setData("report_type", reportType);
         setData("period", availablePeriods[0]?.value || currentMonth);
@@ -107,15 +116,17 @@ function GenerateDatFile() {
         setData("end_date", annualEndDate);
         setData("withholding_agent_tin", defaultAgent.tin);
         setData("withholding_agent_branch_code", defaultAgent.branch_code || "0000");
-    }, [recordType, reportType, annualStartDate, annualEndDate, availablePeriods, selectedWithholdingAgent]);
+    }, [recordType, reportType, annualStartDate, annualEndDate, availablePeriods, selectedWithholdingAgent, selectedPurchaseCompany]);
 
     const handleRecordTypeChange = (value) => {
+        setRefreshingCompany(true);
         setData("record_type", value);
 
         router.get(
             "/generate-datfile",
             { record_type: value },
             {
+                onFinish: () => setRefreshingCompany(false),
                 preserveScroll: true,
                 replace: true,
             }
@@ -134,6 +145,7 @@ function GenerateDatFile() {
                 withholding_agent_branch_code: data.withholding_agent_branch_code,
             },
             {
+                onFinish: () => setRefreshingCompany(false),
                 preserveScroll: true,
                 replace: true,
             }
@@ -161,6 +173,7 @@ function GenerateDatFile() {
                 withholding_agent_branch_code: data.withholding_agent_branch_code,
             },
             {
+                onFinish: () => setRefreshingCompany(false),
                 preserveScroll: true,
                 replace: true,
             }
@@ -187,14 +200,25 @@ function GenerateDatFile() {
                 withholding_agent_branch_code: branchCode || "0000",
             },
             {
+                onFinish: () => setRefreshingCompany(false),
                 preserveScroll: true,
                 replace: true,
             }
         );
     };
 
+    const handlePurchaseCompanyChange = (value) => {
+        const [tin = "", branch = ""] = value.split("|");
+        setRefreshingCompany(true);
+        setData((current) => ({ ...current, filing_company_tin: tin, filing_company_branch_code: branch, period: "" }));
+        router.get("/generate-datfile", { record_type: "purchase", filing_company_tin: tin, filing_company_branch_code: branch }, {
+            preserveScroll: true, replace: true, onFinish: () => setRefreshingCompany(false),
+        });
+    };
+
     const handleDownload = (e) => {
         e.preventDefault();
+        if (downloadDisabled) return;
 
         if (!data.record_type) {
             toast.error("Please select the DAT file type.");
@@ -250,6 +274,10 @@ function GenerateDatFile() {
             params.set("period", data.period);
         }
 
+        if (data.record_type === "purchase") {
+            params.set("filing_company_tin", data.filing_company_tin);
+            params.set("filing_company_branch_code", data.filing_company_branch_code);
+        }
         window.location.href = `/download-datfile?${params.toString()}`;
     };
 
@@ -425,6 +453,14 @@ function GenerateDatFile() {
                         </div>
                     )}
 
+                    {data.record_type === "purchase" && (
+                        <div className="space-y-3">
+                            <PurchaseCompanySelect companies={purchaseCompanies} tin={data.filing_company_tin} branch={data.filing_company_branch_code}
+                                disabled={refreshingCompany} onChange={handlePurchaseCompanyChange} error={errors.filing_company_tin || errors.filing_company_branch_code} />
+                            {unassignedPurchaseCount > 0 && <p role="status" className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">{unassignedPurchaseCount} historical Purchase records have no assigned company and are excluded from company DAT downloads. Review them in Purchase Records; no ownership has been assumed.</p>}
+                            {!refreshingCompany && selectedPurchaseCompany && availablePeriods.length === 0 && <p className="text-sm text-slate-500">No Purchase records for this company and branch.</p>}
+                        </div>
+                    )}
                     {data.record_type === "expanded" && (
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                             <div className="space-y-1.5">

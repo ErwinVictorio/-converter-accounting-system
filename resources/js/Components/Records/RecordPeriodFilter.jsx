@@ -9,7 +9,7 @@ export default function RecordPeriodFilter({
     months = [],
     initialValue = "",
     search = "",
-    queryKey = "period",
+    queryKey = "period", params = {},
 }) {
     const [period, setPeriod] = useState(initialValue || "");
 
@@ -22,6 +22,7 @@ export default function RecordPeriodFilter({
         router.get(
             url,
             {
+                ...params,
                 ...(value ? { [queryKey]: value } : {}),
                 ...(search ? { search } : {}),
             },

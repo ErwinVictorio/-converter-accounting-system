@@ -69,6 +69,7 @@ class VatInputController extends Controller
     {
         return Inertia::render('RecordEntry', [
             'birCompanies' => $this->companies->activeCompanies(),
+            'purchaseCompanies' => app(\App\Services\BIR\PurchaseCompanyDirectory::class)->companies(),
         ]);
     }
 
@@ -97,10 +98,16 @@ class VatInputController extends Controller
                 'date',
                 'after_or_equal:start_date',
             ],
+            'filing_company_tin' => ['nullable', 'string', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
+            'filing_company_branch_code' => ['nullable', 'string', 'regex:/^\d{1,4}$/'],
             'withholding_agent_tin' => ['nullable', 'required_if:record_type,expanded', 'regex:/^(\d{9}|\d{3}-\d{3}-\d{3})$/'],
             'withholding_agent_branch_code' => ['nullable', 'required_if:record_type,expanded', 'regex:/^\d{1,4}$/'],
         ]);
 
+        $purchaseCompany = $request->input('record_type') === 'purchase'
+            ? app(\App\Services\BIR\PurchaseCompanyDirectory::class)->resolve(
+                $request->input('filing_company_tin'), $request->input('filing_company_branch_code')
+            ) : null;
         try {
             $file = $request->file('excel_file');
 
@@ -300,7 +307,8 @@ class VatInputController extends Controller
                     $file,
                     $reportingPeriod,
                     $birIssues,
-                    $retainedContents
+                    $retainedContents,
+                    $purchaseCompany
                 );
 
                 return back()
@@ -315,9 +323,9 @@ class VatInputController extends Controller
                     ]);
             }
 
-            $result = $this->purchaseUploads->replace($file, $reportingPeriod);
+            $result = $this->purchaseUploads->replace($file, $reportingPeriod, $purchaseCompany);
 
-            $response = back()->with('success', 'Purchase VAT report for '.Carbon::parse($reportingPeriod)->format('F Y').' was replaced successfully.');
+            $response = back()->with('success', 'Purchase VAT report for '.$purchaseCompany['name'].' ('.$purchaseCompany['tin'].'-'.$purchaseCompany['branch_code'].') / '.Carbon::parse($reportingPeriod)->format('F Y').' was replaced successfully.');
 
             if ($result['skipped_supplier_count'] > 0) {
                 $response->with('warning', 'Purchase upload completed, but '.$result['skipped_supplier_count'].' BUREAU OF CUSTOMS row(s) were skipped because they are not included in RELIEF Purchase DAT.');
@@ -373,7 +381,13 @@ class VatInputController extends Controller
         ];
     }
 
-    public function edit(VatInput $vatInput)
+    private function purchaseReturnUrl(Request $request): string
+    {
+        $url = (string) $request->input('return_to', '/records/purchases');
+        return preg_match('~^/records/purchases(?:\?[^\r\n]*)?$~D', $url) ? $url : '/records/purchases';
+    }
+
+    public function edit(Request $request, VatInput $vatInput)
     {
         if (! $this->isBrokerRecord($vatInput)) {
             return redirect('/records')->with('error', 'Only broker records can be edited.');
@@ -381,6 +395,7 @@ class VatInputController extends Controller
 
         return Inertia::render('EditVatInputRecord', [
             'vatInput' => $vatInput,
+            'returnTo' => $this->purchaseReturnUrl($request),
         ]);
     }
 
@@ -394,6 +409,9 @@ class VatInputController extends Controller
      */
     public function adjustedLookup(Request $request, VatInput $vatInput)
     {
+        if (! $vatInput->filing_company_tin || ! $vatInput->filing_company_branch_code) {
+            throw ValidationException::withMessages(['filing_company_tin' => 'Assign the historical Purchase company before adjusting or restoring amounts.']);
+        }
         if (! $this->isBrokerRecord($vatInput)) {
             abort(403, 'Only broker records can look up adjusted records.');
         }
@@ -450,6 +468,7 @@ class VatInputController extends Controller
     {
         return VatInput::query()
             ->excludingImportationMirrors()
+            ->forFilingCompany($vatInput->filingCompanyIdentity())
             ->whereKeyNot($vatInput->getKey())
             ->where('is_imported', $isImported)
             ->whereDate('date_uploaded', $vatInput->getRawOriginal('date_uploaded'))
@@ -532,6 +551,9 @@ class VatInputController extends Controller
 
     public function update(Request $request, VatInput $vatInput)
     {
+        if (! $vatInput->filing_company_tin || ! $vatInput->filing_company_branch_code) {
+            throw ValidationException::withMessages(['filing_company_tin' => 'Assign the historical Purchase company before adjusting or restoring amounts.']);
+        }
         if (! $this->isBrokerRecord($vatInput)) {
             return redirect('/records')->with('error', 'Only broker records can be edited.');
         }
@@ -694,6 +716,8 @@ class VatInputController extends Controller
             } else {
                 $targetRecord = VatInput::create([
                     ...$adjustedPayload,
+                    'filing_company_tin' => $sourceRecord->filing_company_tin,
+                    'filing_company_branch_code' => $sourceRecord->filing_company_branch_code,
                     'uses_vat_bucket_amounts' => true,
                     'exempt' => 0,
                     'zero_rated' => 0,
@@ -758,7 +782,7 @@ class VatInputController extends Controller
             ]);
         });
 
-        return redirect("/records/{$vatInput->id}/edit")->with('success', 'VAT input record adjusted successfully.');
+        return redirect("/records/{$vatInput->id}/edit".($request->filled('return_to') ? '?'.http_build_query(['return_to' => $this->purchaseReturnUrl($request)]) : ''))->with('success', 'VAT input record adjusted successfully.');
     }
 
     /**
@@ -808,6 +832,9 @@ class VatInputController extends Controller
      */
     public function destroyAdjusted(Request $request, VatInput $vatInput)
     {
+        if (! $vatInput->filing_company_tin || ! $vatInput->filing_company_branch_code) {
+            throw ValidationException::withMessages(['filing_company_tin' => 'Assign the historical Purchase company before adjusting or restoring amounts.']);
+        }
         $validator = Validator::make($request->all(), [
             'allocations' => ['nullable', 'array'],
             'allocations.*.source_vat_input_id' => ['required', 'integer', 'distinct'],
@@ -869,7 +896,7 @@ class VatInputController extends Controller
                 }
 
                 $sourceIds = $histories->pluck('source_vat_input_id')->unique()->sort()->values();
-                $sources = VatInput::query()
+                $sources = VatInput::query()->forFilingCompany($target->filingCompanyIdentity())
                     ->whereKey($sourceIds)
                     ->orderBy('id')
                     ->lockForUpdate()
@@ -1007,6 +1034,7 @@ class VatInputController extends Controller
     {
         return VatInput::query()
             ->excludingImportationMirrors()
+            ->forFilingCompany($target->filingCompanyIdentity())
             ->whereKeyNot($target->id)
             ->where('is_adjusted', false)
             ->where('is_imported', (bool) $target->is_imported)

@@ -18,6 +18,8 @@ class PendingPurchaseUpload extends Model
     public const STATUS_CANCELLED = 'cancelled';
 
     protected $fillable = [
+        'filing_company_tin',
+        'filing_company_branch_code',
         'token',
         'user_id',
         'original_name',

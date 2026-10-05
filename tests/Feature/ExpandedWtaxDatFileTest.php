@@ -834,7 +834,7 @@ class ExpandedWtaxDatFileTest extends TestCase
         // RELIEF purchase, sales or importation files, and no VAT rows exist to
         // put there anyway.
         foreach (['purchase', 'sales', 'importation'] as $recordType) {
-            $response = $this->get("/download-datfile?period=2026-07-31&record_type={$recordType}");
+            $response = $this->get("/download-datfile?filing_company_tin=008791976&filing_company_branch_code=0000&period=2026-07-31&record_type={$recordType}");
 
             $response->assertRedirect();
             $response->assertSessionHas('error');
@@ -848,7 +848,7 @@ class ExpandedWtaxDatFileTest extends TestCase
 
     public function test_an_unknown_record_type_is_rejected(): void
     {
-        $this->get('/download-datfile?period=2026-07-31&record_type=wtax')
+        $this->get('/download-datfile?filing_company_tin=008791976&filing_company_branch_code=0000&period=2026-07-31&record_type=wtax')
             ->assertSessionHasErrors('record_type');
 
         $this->get('/generate-datfile?record_type=wtax')

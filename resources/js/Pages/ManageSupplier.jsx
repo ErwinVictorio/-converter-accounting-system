@@ -307,7 +307,7 @@ function ManageSupplier() {
                       Purchase upload fix queue: {supplierFixContext.pending_upload.original_name}
                     </p>
                     <p className="text-sm text-slate-600">
-                      Reporting month {supplierFixContext.pending_upload.reporting_period} ·{" "}
+                      Company {supplierFixContext.pending_upload.filing_company_label} / Reporting month {supplierFixContext.pending_upload.reporting_period} ·{" "}
                       {supplierFixContext.pending_upload.resolved_suppliers} fixed ·{" "}
                       {supplierFixContext.pending_upload.remaining_suppliers} remaining
                     </p>

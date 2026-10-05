@@ -59,7 +59,16 @@ class RecordController extends Controller
          * SUBSTR rather than MySQL's LEFT so the listing runs on any driver; the
          * two are the same expression, and this page is covered by tests.
          */
-        $vatInputs = VatInput::query()
+        $companyKey = (string) $request->input('company', '');
+        $companyQuery = VatInput::query();
+        if ($companyKey === 'unassigned') {
+            $companyQuery->whereNull('filing_company_tin')->excludingImportationMirrors();
+        } elseif ($companyKey !== '') {
+            [$tin, $branch] = array_pad(explode('|', $companyKey, 2), 2, null);
+            $company = app(\App\Services\BIR\PurchaseCompanyDirectory::class)->resolve($tin, $branch, true);
+            $companyQuery->forFilingCompany($company)->excludingImportationMirrors();
+        }
+        $vatInputs = (clone $companyQuery)
             ->select('vat_inputs.*')
             ->selectRaw("case when vat_inputs.is_adjusted = 1 then 0 else exists(select 1 from brokers where SUBSTR(REPLACE(REPLACE(REPLACE(brokers.tin_number, '-', ''), ' ', ''), '.', ''), 1, 9) = SUBSTR(REPLACE(REPLACE(REPLACE(vat_inputs.tin_number, '-', ''), ' ', ''), '.', ''), 1, 9)) end as is_broker")
             ->when($search, function ($query, $search) {
@@ -133,7 +142,9 @@ class RecordController extends Controller
 
         return Inertia::render('Records/PurchaseRecords', [
             'vatInputs' => $vatInputs,
-            'months' => $this->availableMonths(VatInput::query(), 'date_uploaded'),
+            'companyFilter' => $companyKey,
+            'months' => $this->availableMonths(clone $companyQuery, 'date_uploaded'),
+            'purchaseCompanies' => app(\App\Services\BIR\PurchaseCompanyDirectory::class)->companies(true),
             'filters' => [
                 'search' => $search,
                 'period' => $period?->format('Y-m') ?? '',

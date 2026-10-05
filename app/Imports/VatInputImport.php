@@ -23,8 +23,9 @@ class VatInputImport implements OnEachRow, SkipsEmptyRows, WithHeadingRow
     protected int $skippedExcludedSupplierRows = 0;
 
     // Tatanggapin nito ang date mula sa Controller (o magde-default sa kasalukuyang petsa)
-    public function __construct(?string $uploadDate = null)
+    public function __construct(?string $uploadDate, protected array $filingCompany)
     {
+        $this->filingCompany = app(\App\Services\BIR\PurchaseCompanyDirectory::class)->resolve($filingCompany['tin'] ?? null, $filingCompany['branch_code'] ?? null);
         $this->uploadDate = $uploadDate ?? now()->toDateString();
     }
 
@@ -121,6 +122,7 @@ class VatInputImport implements OnEachRow, SkipsEmptyRows, WithHeadingRow
         $isImported = $purchaseImported > 0;
 
         $existingRecord = VatInput::where('supplier_name', $supplierName)
+            ->forFilingCompany($this->filingCompany)
             ->where('is_imported', $isImported)
             ->where('is_adjusted', false)
             ->whereDate('date_uploaded', $this->uploadDate)
@@ -180,6 +182,8 @@ class VatInputImport implements OnEachRow, SkipsEmptyRows, WithHeadingRow
         }
 
         VatInput::create([
+            'filing_company_tin' => $this->filingCompany['tin'] ?? null,
+            'filing_company_branch_code' => $this->filingCompany['branch_code'] ?? null,
             'supplier_name' => $supplierName,
             'tin_number' => $tinNumber,
             'vendor_type' => $vendorType,

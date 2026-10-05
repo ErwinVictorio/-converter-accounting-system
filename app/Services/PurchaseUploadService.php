@@ -35,12 +35,17 @@ class PurchaseUploadService
      * @param  UploadedFile|string  $file
      * @return array{skipped_supplier_count: int}
      */
-    public function replace($file, string $reportingPeriod): array
+    public function replace($file, string $reportingPeriod, array $company): array
     {
-        $import = new VatInputImport($reportingPeriod);
+        $company = app(\App\Services\BIR\PurchaseCompanyDirectory::class)->resolve($company['tin'] ?? null, $company['branch_code'] ?? null);
+        $import = new VatInputImport($reportingPeriod, $company);
 
-        DB::transaction(function () use ($reportingPeriod, $file, $import) {
+        DB::transaction(function () use ($reportingPeriod, $file, $import, $company) {
+            $identity = $company['tin'].'|'.$company['branch_code'].'|'.$reportingPeriod;
+            DB::table('purchase_upload_locks')->insertOrIgnore(['identity' => $identity]);
+            DB::table('purchase_upload_locks')->where('identity', $identity)->lockForUpdate()->first();
             VatInput::query()
+                ->forFilingCompany($company)
                 ->whereDate('date_uploaded', $reportingPeriod)
                 ->where('is_adjusted', false)
                 ->whereNotIn('id', ImportationEntry::query()

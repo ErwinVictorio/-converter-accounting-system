@@ -1,0 +1,3 @@
+<?php
+$f='tests/Feature/PurchaseCompanySelectionTest.php';$s=file_get_contents($f);$s=str_replace('$before=$legacy->getAttributes()', '$before=$legacy->fresh()->getAttributes()',$s);$s=str_replace("\$this->upload(self::STC)->assertSessionHas('uploadIssueDialog');", "\$this->upload(self::STC)->assertSessionHas('uploadIssueDialog', null, json_encode(session()->all()));",$s);file_put_contents($f,$s);
+$f='tests/Feature/DatTextValidationRelaxationTest.php';$s=file_get_contents($f);$s=str_replace('return VatInput::create(array_merge($common, [', "return VatInput::create(array_merge(\$common, [\n                'filing_company_tin' => '008791976', 'filing_company_branch_code' => '0000',",$s);file_put_contents($f,$s);

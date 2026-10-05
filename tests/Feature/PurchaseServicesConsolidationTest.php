@@ -56,7 +56,7 @@ class PurchaseServicesConsolidationTest extends TestCase
             ['PV#4', '07/04/2026', 'A-ZINC INDUSTRIAL GALVANIZING PHILIPPINES', '236-791-864-000', 'SI#4', '', '', 377.39, '', 377.39],
         ]);
 
-        Excel::import(new VatInputImport(self::PERIOD), $path);
+        Excel::import(new VatInputImport(self::PERIOD, ['tin' => '008791976', 'branch_code' => '0000']), $path);
 
         $record = VatInput::query()->sole();
 
@@ -121,6 +121,7 @@ class PurchaseServicesConsolidationTest extends TestCase
     public function test_explicit_taxable_base_rows_are_not_divided_again_for_display(): void
     {
         VatInput::create([
+            'filing_company_tin' => '008791976', 'filing_company_branch_code' => '0000',
             'supplier_name' => 'EXPLICIT BASE SUPPLIER',
             'tin_number' => '333-333-333-000',
             'vendor_type' => 'company',

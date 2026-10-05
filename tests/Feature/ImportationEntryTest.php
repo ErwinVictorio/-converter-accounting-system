@@ -158,7 +158,7 @@ class ImportationEntryTest extends TestCase
 
         // But importations belong in the "I" schedule only. Reporting them in the
         // "P" schedule as well would double-count the same input VAT at BIR.
-        $purchase = $this->get('/download-datfile?period=2026-04-30&record_type=purchase');
+        $purchase = $this->get('/download-datfile?filing_company_tin=008791976&filing_company_branch_code=0000&period=2026-04-30&record_type=purchase');
         $purchase->assertRedirect();
         $purchase->assertSessionHas('error');
 
