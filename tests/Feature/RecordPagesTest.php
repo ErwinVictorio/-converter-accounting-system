@@ -594,6 +594,7 @@ class RecordPagesTest extends TestCase
                 // Seven consolidated lines out of eight uploaded rows.
                 ->has('expandedWtaxEntries.data', 7)
                 ->has('withholdingTaxRateSummary.rates', 5)
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '50941.07')
                 /*
                  * Ascending by rate as a number. Sorted as strings, "10.00"
                  * would file between "1.00" and "2.00" and the cards would read
@@ -666,6 +667,7 @@ class RecordPagesTest extends TestCase
                 // multiplying by merged_rows would give.
                 ->has('withholdingTaxRateSummary.rates', 1)
                 ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '600.66')
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '600.66')
         );
     }
 
@@ -691,6 +693,7 @@ class RecordPagesTest extends TestCase
         }
 
         $summary = fn ($page) => $page
+            ->where('withholdingTaxRateSummary.total_tax_withheld', '280.28')
             ->has('withholdingTaxRateSummary.rates', 2)
             ->where('withholdingTaxRateSummary.rates.0.tax_rate', '1.00')
             ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '120.12')
@@ -749,6 +752,7 @@ class RecordPagesTest extends TestCase
         ]);
 
         $unfiltered = fn ($page) => $page
+            ->where('withholdingTaxRateSummary.total_tax_withheld', '600.00')
             ->has('expandedWtaxEntries.data', 3)
             ->has('withholdingTaxRateSummary.rates', 2)
             ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '400.00')
@@ -759,6 +763,7 @@ class RecordPagesTest extends TestCase
         // Month only: April keeps both rates, May keeps the 1% payee alone.
         $this->get('/records/expanded-wtax?period=2026-04')->assertOk()->assertInertia(
             fn ($page) => $page
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '300.00')
                 ->has('expandedWtaxEntries.data', 2)
                 ->has('withholdingTaxRateSummary.rates', 2)
                 ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '100.00')
@@ -767,6 +772,7 @@ class RecordPagesTest extends TestCase
 
         $this->get('/records/expanded-wtax?period=2026-05')->assertOk()->assertInertia(
             fn ($page) => $page
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '300.00')
                 ->has('expandedWtaxEntries.data', 1)
                 ->has('withholdingTaxRateSummary.rates', 1)
                 ->where('withholdingTaxRateSummary.rates.0.tax_rate', '1.00')
@@ -776,6 +782,7 @@ class RecordPagesTest extends TestCase
         // The three columns the search box covers: payee, TIN and ATC.
         $this->get('/records/expanded-wtax?search=CHARLIE')->assertOk()->assertInertia(
             fn ($page) => $page
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '300.00')
                 ->has('withholdingTaxRateSummary.rates', 1)
                 ->where('withholdingTaxRateSummary.rates.0.tax_rate', '1.00')
                 ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '300.00')
@@ -783,6 +790,7 @@ class RecordPagesTest extends TestCase
 
         $this->get('/records/expanded-wtax?search=222222222')->assertOk()->assertInertia(
             fn ($page) => $page
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '200.00')
                 ->has('withholdingTaxRateSummary.rates', 1)
                 ->where('withholdingTaxRateSummary.rates.0.tax_rate', '2.00')
                 ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '200.00')
@@ -790,6 +798,7 @@ class RecordPagesTest extends TestCase
 
         $this->get('/records/expanded-wtax?search=WC160')->assertOk()->assertInertia(
             fn ($page) => $page
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '200.00')
                 ->has('withholdingTaxRateSummary.rates', 1)
                 ->where('withholdingTaxRateSummary.rates.0.tax_rate', '2.00')
                 ->where('withholdingTaxRateSummary.rates.0.tax_withheld_total', '200.00')
@@ -798,6 +807,7 @@ class RecordPagesTest extends TestCase
         // Both together: WC158 is on two payees, April keeps one of them.
         $this->get('/records/expanded-wtax?period=2026-04&search=WC158')->assertOk()->assertInertia(
             fn ($page) => $page
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '100.00')
                 ->has('expandedWtaxEntries.data', 1)
                 ->has('withholdingTaxRateSummary.rates', 1)
                 ->where('withholdingTaxRateSummary.rates.0.tax_rate', '1.00')
@@ -813,8 +823,27 @@ class RecordPagesTest extends TestCase
 
         $this->get('/records/expanded-wtax?search=ZULU')->assertOk()->assertInertia(
             fn ($page) => $page
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '0.00')
                 ->has('expandedWtaxEntries.data', 0)
                 ->has('withholdingTaxRateSummary.rates', 0)
+        );
+    }
+
+    public function test_expanded_grand_total_preserves_negative_and_zero_amounts(): void
+    {
+        $this->withholding(['tax_withheld' => -10.01]);
+
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '-10.01')
+        );
+
+        $this->withholding(['tax_withheld' => 10.01]);
+
+        $this->get('/records/expanded-wtax')->assertOk()->assertInertia(
+            fn ($page) => $page
+                ->has('withholdingTaxRateSummary.rates', 1)
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '0.00')
         );
     }
 

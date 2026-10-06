@@ -293,7 +293,7 @@ class RecordController extends Controller
      * its amount is wrong.
      *
      * @param  Collection<int, array<string, mixed>>  $rows
-     * @return array{rates: array<int, array{tax_rate: string, tax_withheld_total: string}>}
+     * @return array{total_tax_withheld: string, rates: array<int, array{tax_rate: string, tax_withheld_total: string}>}
      */
     private function withholdingTaxRateSummary(Collection $rows): array
     {
@@ -312,6 +312,7 @@ class RecordController extends Controller
         ksort($centavos, SORT_NUMERIC);
 
         return [
+            'total_tax_withheld' => number_format(array_sum($centavos) / 100, 2, '.', ''),
             'rates' => collect($centavos)
                 ->map(fn (int $total, string $rate) => [
                     'tax_rate' => $rate,

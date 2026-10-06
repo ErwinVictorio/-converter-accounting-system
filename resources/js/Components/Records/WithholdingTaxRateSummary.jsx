@@ -47,68 +47,81 @@ const peso = (amount) => {
     return `${value < 0 ? "-" : ""}₱${formatCurrency(Math.abs(value))}`;
 };
 
-export default function WithholdingTaxRateSummary({ rates = [] }) {
+export default function WithholdingTaxRateSummary({ rates = [], total = "0.00" }) {
     return (
-        <Card className="w-full rounded-xl border bg-white p-4 shadow-sm sm:p-6">
-            <div className="min-w-0">
-                <div className="flex items-center gap-2.5">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[#0344a4]">
-                        <Coins className="h-4 w-4" />
-                    </span>
-                    <h2 className="text-lg font-semibold text-gray-900 sm:text-xl">
-                        Tax Withheld Summary by Rate
-                    </h2>
-                </div>
-                <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-                    Total tax withheld amount per rate based on current filters.
-                </p>
-            </div>
-
-            {rates.length > 0 ? (
-                <>
-                    {/* One column on a phone, two from sm, four from lg; further
-                        rates wrap onto the next row of the same grid. */}
-                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
-                        {rates.map((rate) => (
-                            <div
-                                key={rate.tax_rate}
-                                className="flex min-w-0 items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-4"
-                            >
-                                <span
-                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                                        TONES[rate.tax_rate] ?? NEUTRAL_TONE
-                                    }`}
-                                >
-                                    <Percent className="h-4 w-4" />
-                                </span>
-
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                                        {rateLabel(rate.tax_rate)} Tax Withheld Total
-                                    </p>
-                                    {/* truncate + title: four across from lg is the
-                                        narrowest these get, and a seven-digit total
-                                        would otherwise push past the card. */}
-                                    <p
-                                        className="mt-1 truncate text-lg font-extrabold tracking-tight tabular-nums text-slate-900 sm:text-xl"
-                                        title={peso(rate.tax_withheld_total)}
-                                    >
-                                        {peso(rate.tax_withheld_total)}
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
+        <div className="grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_18rem]">
+            <Card className="min-w-0 w-full rounded-xl border bg-white p-4 shadow-sm sm:p-6">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[#0344a4]">
+                            <Coins className="h-4 w-4" />
+                        </span>
+                        <h2 className="text-lg font-semibold text-gray-900 sm:text-xl">
+                            Tax Withheld Summary by Rate
+                        </h2>
                     </div>
-
-                    <p className="mt-3 text-[11px] font-medium text-slate-500">
-                        Amounts cover all filtered records across all pages.
+                    <p className="mt-1 text-xs text-slate-500 sm:text-sm">
+                        Total tax withheld amount per rate based on current filters.
                     </p>
-                </>
-            ) : (
-                <p className="mt-4 text-sm text-slate-500">
-                    No records match the current filters.
+                </div>
+
+                {rates.length > 0 ? (
+                    <>
+                        {/* One column on a phone, two from sm, four from lg; further
+                            rates wrap onto the next row of the same grid. */}
+                        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+                            {rates.map((rate) => (
+                                <div
+                                    key={rate.tax_rate}
+                                    className="flex min-w-0 items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-4"
+                                >
+                                    <span
+                                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                                            TONES[rate.tax_rate] ?? NEUTRAL_TONE
+                                        }`}
+                                    >
+                                        <Percent className="h-4 w-4" />
+                                    </span>
+
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                                            {rateLabel(rate.tax_rate)} Tax Withheld Total
+                                        </p>
+                                        {/* truncate + title: four across from lg is the
+                                            narrowest these get, and a seven-digit total
+                                            would otherwise push past the card. */}
+                                        <p
+                                            className="mt-1 truncate text-lg font-extrabold tracking-tight tabular-nums text-slate-900 sm:text-xl"
+                                            title={peso(rate.tax_withheld_total)}
+                                        >
+                                            {peso(rate.tax_withheld_total)}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <p className="mt-3 text-[11px] font-medium text-slate-500">
+                            Amounts cover all filtered records across all pages.
+                        </p>
+                    </>
+                ) : (
+                    <p className="mt-4 text-sm text-slate-500">
+                        No records match the current filters.
+                    </p>
+                )}
+            </Card>
+            <Card className="flex min-w-0 flex-col justify-center rounded-xl border border-blue-100 bg-blue-50/40 p-4 shadow-sm sm:p-6">
+                <h2 className="text-sm font-semibold text-slate-600">
+                    Total Tax Withheld
+                </h2>
+                <p className="mt-2 break-all text-2xl font-extrabold tracking-tight tabular-nums text-[#0344a4]">
+                    {peso(total)}
                 </p>
-            )}
-        </Card>
+                <p className="mt-2 text-xs text-slate-500">
+                    All rates across the current filters.
+                </p>
+            </Card>
+        </div>
     );
 }

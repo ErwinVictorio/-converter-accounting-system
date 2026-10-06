@@ -45,7 +45,10 @@ function ExpandedWtaxRecords() {
         <section className="w-full max-w-full space-y-6 overflow-hidden">
             {/* Above the shell rather than inside it: the table area scrolls
                 horizontally at 1100px, and the cards should not scroll with it. */}
-            <WithholdingTaxRateSummary rates={withholdingTaxRateSummary?.rates || []} />
+            <WithholdingTaxRateSummary
+                rates={withholdingTaxRateSummary?.rates || []}
+                total={withholdingTaxRateSummary?.total_tax_withheld ?? "0.00"}
+            />
 
             <RecordTableShell
                 title="Expanded Withholding Tax Records"
