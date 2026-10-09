@@ -30,14 +30,16 @@ class ExpandedWtaxDmUploadTest extends TestCase
         ], $values));
     }
 
-    private function workbook(array $extra = []): UploadedFile
+    private function workbook(array $extra = [], bool $dmOnly = false): UploadedFile
     {
         $book = new Spreadsheet;
         $book->getActiveSheet()->fromArray([
             ['ACCOUNT DETAILS'], ['Period Covered: September 1, 2026 - September 30, 2026'],
             ['Date', 'Reference', 'Particulars', 'Other Info', 'Debit', 'Credit', 'Balance'],
-            ['221101A WITHHOLDING TAX PAYABLE - EXPANDED 1%', null, null, null, null, 'BEGINNING BALANCE...', 0],
-            ['09/08/2026', 'PV (REG)#006689', 'BUREAU OF INTERNAL REVENUE', null, 119648.62],
+            ...($dmOnly ? [] : [
+                ['221101A WITHHOLDING TAX PAYABLE - EXPANDED 1%', null, null, null, null, 'BEGINNING BALANCE...', 0],
+                ['09/08/2026', 'PV (REG)#006689', 'BUREAU OF INTERNAL REVENUE', null, 119648.62],
+            ]),
             ['09/09/2026', 'DM (REG)#000252', "WORLD BEST IND'L. SALES, INC.", null, 903.28],
             ['09/30/2026', 'DM (REG)#000290', "WORLD BEST IND'L. SALES, INC.", null, 258.08],
             ...$extra,
@@ -57,6 +59,33 @@ class ExpandedWtaxDmUploadTest extends TestCase
     {
         return array_replace(['excel_file' => $this->workbook(), 'reporting_month' => '2026-09', 'report_type' => 'quarterly',
             'withholding_agent_tin' => '008791976', 'withholding_agent_branch_code' => '0000', 'percentage' => '1'], $overrides);
+    }
+
+    public function test_dm_only_file_uses_modal_rate_and_applies_both_amounts(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $entry = $this->entry(['tax_rate' => '2.00', 'atc_code' => 'WC160', 'income_payment' => '534243.00']);
+        $review = $this->postJson('/expanded-dm/review', $this->payload([
+            'excel_file' => $this->workbook([], true), 'percentage' => '2',
+        ]))->assertOk()->assertJsonPath('issues', [])->assertJsonPath('warnings', [])
+            ->assertJsonPath('excluded_count', 0)->assertJsonPath('targets.0.items.0.row', 4)
+            ->assertJsonPath('targets.0.income_deduction', '58068.00');
+        $this->postJson('/expanded-dm/apply', ['token' => $review->json('token')])->assertOk();
+        $this->assertSame('9523.50', $entry->fresh()->tax_withheld);
+        $this->assertSame('476175.00', $entry->fresh()->income_payment);
+    }
+
+    public function test_dm_only_file_still_rejects_bad_dates_and_conflicting_later_heading(): void
+    {
+        $this->actingAs(User::factory()->create());
+        foreach ([
+            ['08/09/2026', 'DM (REG)#999', 'TEST', null, 10],
+            ['221101A WITHHOLDING TAX PAYABLE - EXPANDED 2%'],
+        ] as $extra) {
+            $this->postJson('/expanded-dm/review', $this->payload([
+                'excel_file' => $this->workbook([$extra], true),
+            ]))->assertUnprocessable()->assertJsonValidationErrors('excel_file');
+        }
     }
 
     public function test_review_matches_world_best_without_writes_and_excludes_pv_debit(): void

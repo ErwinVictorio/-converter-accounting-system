@@ -86,7 +86,7 @@ export default function ExpandedDmUploader({ scope }) {
                 {!review ? <div className="space-y-3">
                     <label htmlFor="dm-percentage" className="text-sm font-medium">Percentage (%)</label>
                     <Input id="dm-percentage" inputMode="decimal" value={percentage} disabled={busy} onChange={(event) => setPercentage(event.target.value)} placeholder="Example: 1" />
-                    <p className="text-sm text-slate-600">The percentage must match the account rate in your workbook.</p>
+                    <p className="text-sm text-slate-600">For DM-only files, enter the rate for these transactions. If the workbook includes an account rate, it must match.</p>
                 </div> : <div className="min-w-0 space-y-4">
                     {!review.apply_available && <p role="status" className="text-sm text-slate-600">Preview only. No adjustments have been saved.</p>}
                     <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{["Supplier", "Current Tax", "DM Deduction", "New Tax"].map((label, index) => <th key={label} className={`p-2 ${index ? "text-right whitespace-nowrap" : ""}`}>{label}</th>)}</tr></thead>

@@ -1,6 +1,8 @@
 # (DM) Expanded Uploader Plan
 
 Date: 2026-10-09
+DM-only format update: ACCOUNT DETAILS may omit the account/rate heading and start DM transactions on row 4. In that case the validated modal percentage supplies the rate. Any account heading present anywhere in the file must still match that percentage; duplicate/mixed account sections remain rejected. Existing title, period, column, date, amount, supplier, and duplicate-reference checks remain intact. No stored business records are changed by this parser update.
+
 Current computation update: The user superseded the tax-only rule. New DM confirmations reduce both Tax Withheld and Income Payment. Income deduction is DM Debit / (rate / 100), rounded to centavos cumulatively across source allocations. Existing income values are reduced, not replaced by a recomputed balance. Both before/after amounts are stored in the audit, and old preview tokens must be refreshed. Regular imports, DAT formats, and validators are unchanged. Previously applied tax-only batches are not automatically rewritten or deducted again; one such local batch was found during read-only inspection and needs separate historical reconciliation.
 
 Status: Simplified review and transactional confirmation implemented. Audit/reference tables migrated locally; application tests used isolated records.

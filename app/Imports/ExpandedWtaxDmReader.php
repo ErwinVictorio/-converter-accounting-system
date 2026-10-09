@@ -62,9 +62,8 @@ class ExpandedWtaxDmReader
                     }
                     $this->fail("Row {$number}: unrecognized line or missing document reference.");
                 }
-                if (! $sectionFound) {
-                    $this->fail("Row {$number}: missing account/rate section.");
-                }
+                // DM-only exports omit the account heading. The validated modal
+                // rate supplies the scope; any heading present is still checked above.
                 if (! preg_match('/^DM/i', $reference)) {
                     if (! preg_match('/^PV\s*(?:\([A-Z ]+\))?\s*#\s*\d+$/', $reference)) {
                         $this->fail("Row {$number}: unrecognized document reference.");
