@@ -118,14 +118,83 @@ class ExpandedWtaxDmUploadTest extends TestCase
         $this->postJson('/expanded-dm/review', [])->assertUnauthorized();
     }
 
-    public function test_apply_remains_read_only_while_persistence_policy_is_pending(): void
+    public function test_apply_changes_tax_only_and_retry_cannot_deduct_twice(): void
     {
         $this->actingAs(User::factory()->create());
         $entry = $this->entry();
-        $review = $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('apply_available', false);
-        $this->postJson('/expanded-dm/apply', ['token' => $review->json('token'), 'acknowledge_warnings' => true])->assertUnprocessable();
-        $this->assertSame('10684.86', $entry->fresh()->tax_withheld);
+        $review = $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('apply_available', true);
+        $confirmation = ['token' => $review->json('token'), 'acknowledge_warnings' => true];
+        $this->postJson('/expanded-dm/apply', $confirmation)->assertOk();
+        $this->postJson('/expanded-dm/apply', $confirmation)->assertOk();
+        $this->assertSame('9523.50', $entry->fresh()->tax_withheld);
         $this->assertSame('1068486.00', $entry->fresh()->income_payment);
+        $this->assertDatabaseCount('expanded_wtax_entries', 1);
+        $this->assertDatabaseCount('expanded_dm_applications', 1);
+        $this->assertDatabaseCount('expanded_dm_references', 2);
+        $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('token', null);
+    }
+
+    public function test_stale_and_expired_reviews_cannot_write(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $entry = $this->entry();
+        $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $entry->update(['tax_withheld' => '10000.00']);
+        $this->postJson('/expanded-dm/apply', ['token' => $token, 'acknowledge_warnings' => true])->assertUnprocessable();
+        $this->assertSame('10000.00', $entry->fresh()->tax_withheld);
+        $this->assertDatabaseCount('expanded_dm_applications', 0);
+        $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $this->travel(21)->minutes();
+        $this->postJson('/expanded-dm/apply', ['token' => $token, 'acknowledge_warnings' => true])->assertUnprocessable();
+        $this->assertSame('10000.00', $entry->fresh()->tax_withheld);
+    }
+
+    public function test_warning_confirmation_and_token_ownership_are_required(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $entry = $this->entry();
+        $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $this->postJson('/expanded-dm/apply', ['token' => $token])->assertUnprocessable();
+        $this->actingAs(User::factory()->create());
+        $this->postJson('/expanded-dm/apply', ['token' => $token, 'acknowledge_warnings' => true])->assertForbidden();
+        $this->assertSame('10684.86', $entry->fresh()->tax_withheld);
+        $this->assertDatabaseCount('expanded_dm_references', 0);
+    }
+
+    public function test_second_review_and_replaced_records_do_not_bypass_reference_history(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $entry = $this->entry();
+        $first = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $second = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $this->postJson('/expanded-dm/apply', ['token' => $first, 'acknowledge_warnings' => true])->assertOk();
+        $this->postJson('/expanded-dm/apply', ['token' => $second, 'acknowledge_warnings' => true])->assertUnprocessable();
+        $entry->delete();
+        $this->entry();
+        $review = $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('token', null);
+        $this->assertStringContainsString('already applied', implode(' ', $review->json('issues')));
+    }
+
+    public function test_failed_source_save_rolls_back_amounts_and_reference_history(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $first = $this->entry(['tax_withheld' => '1000.00']);
+        $second = $this->entry(['tax_withheld' => '9684.86']);
+        $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        ExpandedWtaxEntry::updating(function ($record) use ($second) {
+            if ($record->id === $second->id) {
+                throw new \RuntimeException('Simulated save failure');
+            }
+        });
+        try {
+            $this->postJson('/expanded-dm/apply', ['token' => $token, 'acknowledge_warnings' => true])->assertStatus(500);
+        } finally {
+            ExpandedWtaxEntry::flushEventListeners();
+        }
+        $this->assertSame('1000.00', $first->fresh()->tax_withheld);
+        $this->assertSame('9684.86', $second->fresh()->tax_withheld);
+        $this->assertDatabaseCount('expanded_dm_applications', 0);
+        $this->assertDatabaseCount('expanded_dm_references', 0);
     }
 
     public function test_three_dm_fixture_produces_the_agreed_supplier_totals(): void
