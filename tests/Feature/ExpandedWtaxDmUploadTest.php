@@ -5,9 +5,11 @@ namespace Tests\Feature;
 use App\Imports\ExpandedWtaxDmReader;
 use App\Models\ExpandedWtaxEntry;
 use App\Models\User;
+use App\Services\BIR\BirExpandedWtaxRowValidator;
 use App\Services\ExpandedWtaxDmAdjustmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
@@ -69,7 +71,7 @@ class ExpandedWtaxDmUploadTest extends TestCase
             ->assertJsonPath('targets.0.before', '10684.86')->assertJsonPath('targets.0.after', '9523.50')
             ->assertJsonPath('targets.0.source_count', 2)->assertJsonPath('issues', []);
         $this->assertNotEmpty($response->json('token'));
-        $this->assertNotEmpty($response->json('warnings'));
+        $this->assertSame([], $response->json('warnings'));
         $this->assertSame('1000.00', $first->fresh()->tax_withheld);
         $this->assertSame('968486.00', $second->fresh()->income_payment);
         $this->assertDatabaseCount('expanded_wtax_entries', 4);
@@ -108,8 +110,8 @@ class ExpandedWtaxDmUploadTest extends TestCase
         $parsed = app(ExpandedWtaxDmReader::class)->read($file->getRealPath(), '2026-09', '1.00');
         $review = app(ExpandedWtaxDmAdjustmentService::class)->review($parsed, ExpandedWtaxEntry::orderBy('id')->get());
         $this->assertSame([
-            ['id' => $first->id, 'before' => '1000.00', 'after' => '0.00'],
-            ['id' => $second->id, 'before' => '9684.86', 'after' => '9523.50'],
+            ['id' => $first->id, 'before' => '1000.00', 'after' => '0.00', 'income_before' => '1068486.00', 'income_after' => '968486.00'],
+            ['id' => $second->id, 'before' => '9684.86', 'after' => '9523.50', 'income_before' => '1068486.00', 'income_after' => '1052350.00'],
         ], $review['changes']);
     }
 
@@ -118,7 +120,7 @@ class ExpandedWtaxDmUploadTest extends TestCase
         $this->postJson('/expanded-dm/review', [])->assertUnauthorized();
     }
 
-    public function test_apply_changes_tax_only_and_retry_cannot_deduct_twice(): void
+    public function test_apply_changes_both_amounts_and_retry_cannot_deduct_twice(): void
     {
         $this->actingAs(User::factory()->create());
         $entry = $this->entry();
@@ -127,10 +129,12 @@ class ExpandedWtaxDmUploadTest extends TestCase
         $this->postJson('/expanded-dm/apply', $confirmation)->assertOk();
         $this->postJson('/expanded-dm/apply', $confirmation)->assertOk();
         $this->assertSame('9523.50', $entry->fresh()->tax_withheld);
-        $this->assertSame('1068486.00', $entry->fresh()->income_payment);
+        $this->assertSame('952350.00', $entry->fresh()->income_payment);
         $this->assertDatabaseCount('expanded_wtax_entries', 1);
         $this->assertDatabaseCount('expanded_dm_applications', 1);
         $this->assertDatabaseCount('expanded_dm_references', 2);
+        $row = ExpandedWtaxEntry::consolidate([$entry->fresh()])->first();
+        $this->assertSame([], app(BirExpandedWtaxRowValidator::class)->validate($row, 0));
         $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('token', null);
     }
 
@@ -149,10 +153,34 @@ class ExpandedWtaxDmUploadTest extends TestCase
         $this->assertSame('10000.00', $entry->fresh()->tax_withheld);
     }
 
-    public function test_warning_confirmation_and_token_ownership_are_required(): void
+    public function test_old_tax_only_preview_is_rejected_before_writing(): void
     {
         $this->actingAs(User::factory()->create());
         $entry = $this->entry();
+        $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $pending = Cache::get('expanded-dm:'.$token);
+        unset($pending['calculation_version']);
+        Cache::put('expanded-dm:'.$token, $pending, 1200);
+        $this->postJson('/expanded-dm/apply', ['token' => $token])->assertUnprocessable();
+        $this->assertSame('1068486.00', $entry->fresh()->income_payment);
+        $this->assertSame('10684.86', $entry->fresh()->tax_withheld);
+    }
+
+    public function test_fractional_rate_rounding_preserves_total_base_deduction(): void
+    {
+        $first = $this->entry(['tax_rate' => '1.50', 'income_payment' => '0.67', 'tax_withheld' => '0.01']);
+        $second = $this->entry(['tax_rate' => '1.50', 'income_payment' => '10.00', 'tax_withheld' => '0.15']);
+        $parsed = ['items' => [['row' => 5, 'supplier' => $first->payee_name, 'reference' => 'DM#1', 'debit_cents' => 2]], 'excluded_count' => 0, 'excluded_debit' => '0.00'];
+        $review = app(ExpandedWtaxDmAdjustmentService::class)->review($parsed, collect([$first, $second]));
+        $this->assertSame('1.33', $review['targets'][0]['income_deduction']);
+        $this->assertSame('9.34', $review['targets'][0]['income_after']);
+        $this->assertStringNotContainsString('does not match income_payment', implode(' ', $review['warnings']));
+    }
+
+    public function test_warning_confirmation_and_token_ownership_are_required(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $entry = $this->entry(['income_payment' => '2000000.00']);
         $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
         $this->postJson('/expanded-dm/apply', ['token' => $token])->assertUnprocessable();
         $this->actingAs(User::factory()->create());

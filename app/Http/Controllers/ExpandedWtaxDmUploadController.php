@@ -46,7 +46,7 @@ class ExpandedWtaxDmUploadController extends Controller
         if ($available && ! $review['issues']) {
             $token = (string) Str::uuid();
             Cache::put('expanded-dm:'.$token, ['user_id' => $request->user()->getAuthIdentifier(), 'scope' => $scope, 'parsed' => $parsed,
-                'snapshot' => $service->snapshot($records), 'digest' => hash_file('sha256', $request->file('excel_file')->getRealPath())], now()->addMinutes(20));
+                'calculation_version' => 2, 'snapshot' => $service->snapshot($records), 'digest' => hash_file('sha256', $request->file('excel_file')->getRealPath())], now()->addMinutes(20));
         }
         unset($review['changes']);
 
@@ -67,7 +67,7 @@ class ExpandedWtaxDmUploadController extends Controller
             return $this->success($completed->total_deduction);
         }
         $pending = Cache::get('expanded-dm:'.$token);
-        if (! $pending) {
+        if (! $pending || ($pending['calculation_version'] ?? 1) !== 2) {
             throw ValidationException::withMessages(['token' => 'This review has expired. Upload the file again to review current totals.']);
         }
         abort_unless((string) $pending['user_id'] === (string) $request->user()->getAuthIdentifier(), 403);
@@ -98,6 +98,7 @@ class ExpandedWtaxDmUploadController extends Controller
                 foreach ($review['changes'] as $change) {
                     $record = $records->firstWhere('id', $change['id']);
                     $record->tax_withheld = $change['after'];
+                    $record->income_payment = $change['income_after'];
                     $record->save();
                 }
 
@@ -132,6 +133,6 @@ class ExpandedWtaxDmUploadController extends Controller
 
     private function success(string $total)
     {
-        return response()->json(['message' => 'DM deduction of PHP '.number_format((float) $total, 2).' saved. Income Payment is unchanged.']);
+        return response()->json(['message' => 'DM deduction of PHP '.number_format((float) $total, 2).' saved. Review the updated Expanded totals.']);
     }
 }

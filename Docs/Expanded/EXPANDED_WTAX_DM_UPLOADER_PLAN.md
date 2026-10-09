@@ -1,7 +1,24 @@
 # (DM) Expanded Uploader Plan
 
 Date: 2026-10-09
-Status: Parser, matching, and browser review implemented; application remains preview-only pending the user's adjustment audit/reference persistence decision. No live business records changed.
+Current computation update: The user superseded the tax-only rule. New DM confirmations reduce both Tax Withheld and Income Payment. Income deduction is DM Debit / (rate / 100), rounded to centavos cumulatively across source allocations. Existing income values are reduced, not replaced by a recomputed balance. Both before/after amounts are stored in the audit, and old preview tokens must be refreshed. Regular imports, DAT formats, and validators are unchanged. Previously applied tax-only batches are not automatically rewritten or deducted again; one such local batch was found during read-only inspection and needs separate historical reconciliation.
+
+Status: Simplified review and transactional confirmation implemented. Audit/reference tables migrated locally; application tests used isolated records.
+
+## Simplified flow completed (2026-10-09)
+
+The user's instruction to apply the simplified plan authorizes automatic applied-reference tracking. This update supersedes the preview-only/pending-persistence notes below.
+
+- Review shows Supplier, Current Tax, DM Deduction, New Tax, and Total deduction. TIN, ATC, source counts, references, excluded PV amounts, and detailed validation messages are collapsed under View details.
+- Cancel and Confirm Deduction replace the separate warning checkbox. A short DAT warning remains visible; confirmation acknowledges it without changing validation.
+- Confirmation locks scoped records, rechecks the review snapshot and matching, and saves Tax Withheld updates and audit/reference history in one transaction. Income Payment remains unchanged.
+- A unique company/branch/report/month/rate/reference identity prevents repeated deduction even if the workbook filename or contents change. Repeating a completed confirmation token returns success without another deduction. Expired, stale, foreign-user, and ambiguous reviews cannot write.
+- `expanded_dm_applications` stores user, file digest, scope, calculation/source before-after details and total; `expanded_dm_references` stores unique applied references. No DM rows are added to `expanded_wtax_entries`.
+- Normal imports retain their existing replacement behavior. Applied-reference history survives replacement: a normal re-import may restore workbook totals, but it does not silently permit old DMs to be deducted again. Reversal/reset is not exposed; any correction requires separate reconciliation using the audit history.
+- Local MySQL migration created only the two new tables. No business deductions were initiated by the agent against the local business database; browser application testing used `dm-browser.sqlite`.
+- Verification: 118 tests passed (1,346 assertions), including transaction rollback, repeated confirmation, reference protection after replacement, stale/expired reviews, token ownership, and existing Expanded regressions. Pint and production build passed.
+- Browser checks verified collapsed details, no extra checkbox, confirmation, updated WORLD BEST 9,523.50 and ACERSTEEL 1,275.97, isolated grand total 10,799.47, duplicate re-upload rejection, and mobile viewport fit. Local screenshot: `storage/app/private/dm-simple-review.png`.
+- Tax-only adjustment intentionally still triggers the existing tax/base consistency warning and may block DAT generation. Hiding or changing that validation was not part of the authorized simplification.
 
 ## Execution update (2026-10-09)
 

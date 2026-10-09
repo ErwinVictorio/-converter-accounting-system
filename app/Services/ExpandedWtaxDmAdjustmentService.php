@@ -77,17 +77,35 @@ class ExpandedWtaxDmAdjustmentService
                 continue;
             }
             $adjusted = collect();
+            $incomeBefore = $group->sum(fn ($record) => Money::cents($record->income_payment));
+            $rateUnits = Money::cents($group->first()->tax_rate);
+            $allocatedTax = 0;
+            $allocatedIncome = 0;
             foreach ($group as $record) {
                 $copy = clone $record;
                 $amount = Money::cents($record->tax_withheld);
                 $deduction = min($remaining, $amount);
                 if ($deduction > 0) {
                     $copy->tax_withheld = Money::money($amount - $deduction);
-                    $changes[] = ['id' => $record->id, 'before' => $record->tax_withheld, 'after' => $copy->tax_withheld];
+                    $allocatedTax += $deduction;
+                    // Cumulative rounding preserves the group deduction across sources.
+                    $baseTotal = (int) round($allocatedTax * 10000 / $rateUnits);
+                    $baseDeduction = $baseTotal - $allocatedIncome;
+                    $allocatedIncome = $baseTotal;
+                    $income = Money::cents($record->income_payment);
+                    if ($baseDeduction > $income) {
+                        $issues[] = "{$target['supplier']}: Income Payment is insufficient for the rate-based deduction.";
+                    }
+                    $copy->income_payment = Money::money($income - $baseDeduction);
+                    $changes[] = ['id' => $record->id, 'before' => $record->tax_withheld, 'after' => $copy->tax_withheld,
+                        'income_before' => $record->income_payment, 'income_after' => $copy->income_payment];
                     $remaining -= $deduction;
                 }
                 $adjusted->push($copy);
             }
+            $target['income_before'] = Money::money($incomeBefore);
+            $target['income_deduction'] = Money::money($allocatedIncome);
+            $target['income_after'] = Money::money($incomeBefore - $allocatedIncome);
             foreach (ExpandedWtaxEntry::consolidate($adjusted) as $row) {
                 foreach (app(BirExpandedWtaxRowValidator::class)->validate($row, 0) as $error) {
                     $warnings[] = $target['supplier'].': '.preg_replace('/^Row 0: /', '', $error);

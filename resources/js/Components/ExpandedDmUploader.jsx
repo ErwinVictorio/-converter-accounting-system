@@ -67,7 +67,7 @@ export default function ExpandedDmUploader({ scope }) {
 
     return <section className="space-y-4 rounded-xl border border-emerald-200 bg-white p-6">
         <h2 className="text-lg font-semibold">(DM) Expanded Uploader</h2>
-        <p className="text-sm text-slate-600">Upload ACCOUNT DETAILS to deduct DM Debit from existing Tax Withheld totals. Income Payment stays unchanged. Select the company and reporting month above.</p>
+        <p className="text-sm text-slate-600">Upload ACCOUNT DETAILS to deduct DM Debit from Tax Withheld and reduce Income Payment using the selected rate. Select the company and reporting month above.</p>
         {scope.report_type !== "quarterly" ? <p className="text-sm text-amber-800">DM adjustments currently support quarterly records for one reporting month. Select Quarterly above.</p> : <>
             <input ref={input} type="file" accept=".xlsx,.xls" className="hidden" onChange={(event) => { select(event.target.files?.[0]); event.target.value = ""; }} />
             <div className="rounded-lg border-2 border-dashed border-emerald-200 p-8 text-center" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); select(event.dataTransfer.files?.[0]); }}>
@@ -78,7 +78,7 @@ export default function ExpandedDmUploader({ scope }) {
         {result && <p role="status" className="text-sm text-emerald-800">{result} <a className="underline" href="/records/expanded-wtax">View Expanded records</a></p>}
         {!open && errors.map((error, index) => <p role="alert" key={index} className="text-sm text-red-700">{error}</p>)}
         <Dialog open={open} onOpenChange={(value) => { if (!value) close(); }}>
-            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+            <DialogContent className="w-[calc(100%-2rem)] min-w-0 max-h-[90vh] overflow-y-auto sm:max-w-4xl">
                 <DialogHeader>
                     <DialogTitle>{review ? "Review DM Adjustment" : "Enter the Percentage"}</DialogTitle>
                     <DialogDescription>{context?.reporting_month && new Date(`${context.reporting_month}-01T00:00:00`).toLocaleDateString("en-US", { month: "long", year: "numeric" })}{review && ` · Rate: ${Number(review.scope.percentage)}%`}</DialogDescription>
@@ -87,7 +87,7 @@ export default function ExpandedDmUploader({ scope }) {
                     <label htmlFor="dm-percentage" className="text-sm font-medium">Percentage (%)</label>
                     <Input id="dm-percentage" inputMode="decimal" value={percentage} disabled={busy} onChange={(event) => setPercentage(event.target.value)} placeholder="Example: 1" />
                     <p className="text-sm text-slate-600">The percentage must match the account rate in your workbook.</p>
-                </div> : <div className="space-y-4">
+                </div> : <div className="min-w-0 space-y-4">
                     {!review.apply_available && <p role="status" className="text-sm text-slate-600">Preview only. No adjustments have been saved.</p>}
                     <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{["Supplier", "Current Tax", "DM Deduction", "New Tax"].map((label, index) => <th key={label} className={`p-2 ${index ? "text-right whitespace-nowrap" : ""}`}>{label}</th>)}</tr></thead>
                         <tbody>{review.targets.map((target, index) => <tr key={index} className="border-t">
@@ -96,7 +96,7 @@ export default function ExpandedDmUploader({ scope }) {
                         </tr>)}</tbody></table></div>
                     <p className="text-right font-semibold">Total deduction: ₱{money(review.total_deduction)}</p>
                     {review.issues.map((issue, index) => <p key={index} role="alert" className="text-sm text-red-700">{issue}</p>)}
-                    <p className="text-sm text-slate-600">Only Tax Withheld will be reduced. Income Payment stays unchanged.</p>
+                    <p className="text-sm text-slate-600">Tax Withheld and Income Payment will both be reduced. Income Payment deduction = DM deduction ÷ (rate / 100).</p>
                     {review.warnings.length > 0 && <div className="space-y-2 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">
                         <p className="font-semibold">Needs attention before DAT generation</p>
                         <p>The adjusted tax may no longer match Income Payment and rate. Confirming saves the deduction; it does not resolve DAT validation issues.</p>
@@ -108,6 +108,7 @@ export default function ExpandedDmUploader({ scope }) {
                             <p>{review.dm_count} DM rows · {review.excluded_count} PV rows excluded (Debit ₱{money(review.excluded_debit)}).</p>
                             {review.targets.map((target, index) => <div key={index}>
                                 <p className="font-medium">{target.supplier}</p>
+                                {target.income_after !== undefined && <p>Income Payment: ₱{money(target.income_before)} − ₱{money(target.income_deduction)} = ₱{money(target.income_after)}</p>}
                                 <p>TIN {target.tin} · ATC {target.atc} · {target.rate}% · {target.source_count} source rows</p>
                                 <ul className="mt-1 space-y-1">{target.items.map((item) => <li key={item.reference}>Row {item.row}: {item.reference} · ₱{money(item.debit_cents / 100)}</li>)}</ul>
                             </div>)}
