@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\Dashboard;
 use App\Http\Controllers\DatFileController;
+use App\Http\Controllers\ExpandedWtaxDmUploadController;
 use App\Http\Controllers\ImportationController;
 use App\Http\Controllers\ManageBrokerController;
 use App\Http\Controllers\PendingPurchaseUploadController;
@@ -32,6 +33,8 @@ Route::middleware('auth')->group(function () {
     //  for record entry
     Route::get('/records', [VatInputController::class, 'index']);
     Route::post('/vat-import', [VatInputController::class, 'import']);
+    Route::post('/expanded-dm/review', [ExpandedWtaxDmUploadController::class, 'review']);
+    Route::post('/expanded-dm/apply', [ExpandedWtaxDmUploadController::class, 'apply']);
     Route::get('/pending-purchase-uploads/{pendingPurchaseUpload}', [PendingPurchaseUploadController::class, 'show'])
         ->name('pending-purchase-uploads.show');
     Route::post('/pending-purchase-uploads/{pendingPurchaseUpload}/refresh', [PendingPurchaseUploadController::class, 'refresh'])

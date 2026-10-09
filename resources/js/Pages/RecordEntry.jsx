@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowRight, Copy, Loader2 } from "lucide-react";
 
 import PurchaseCompanySelect from "@/Components/PurchaseCompanySelect";
 import ExcelUploadPanel from "@/Components/ExcelUploadPanel";
+import ExpandedDmUploader from "@/Components/ExpandedDmUploader";
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
 import { Input } from "@/Components/ui/input";
@@ -650,6 +651,13 @@ function RecordEntry() {
           </form>
         </CardContent>
       </Card>
+
+      {isExpandedMode && <ExpandedDmUploader scope={{
+        reporting_month: data.reporting_month,
+        report_type: data.report_type,
+        withholding_agent_tin: data.withholding_agent_tin,
+        withholding_agent_branch_code: data.withholding_agent_branch_code,
+      }} />}
 
       <Dialog open={uploadErrorDialogOpen} onOpenChange={setUploadErrorDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
