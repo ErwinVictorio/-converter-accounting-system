@@ -97,7 +97,11 @@ export default function ExpandedDmUploader({ scope }) {
                     <p className="text-right font-semibold">Total deduction: ₱{money(review.total_deduction)}</p>
                     {review.issues.map((issue, index) => <p key={index} role="alert" className="text-sm text-red-700">{issue}</p>)}
                     <p className="text-sm text-slate-600">Tax Withheld and Income Payment will both be reduced. Income Payment deduction = DM deduction ÷ (rate / 100).</p>
-                    {review.warnings.length > 0 && <div className="space-y-2 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">
+                    {(review.negative_balance_warnings || []).length > 0 && <div role="alert" className="space-y-2 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">
+                        <p className="font-semibold">Negative balance after DM deduction</p>
+                        {review.negative_balance_warnings.map((warning, index) => <p key={index}>{warning}</p>)}
+                    </div>}
+                    {(review.bir_warnings || []).length > 0 && <div className="space-y-2 rounded-lg bg-amber-50 p-4 text-sm text-amber-950">
                         <p className="font-semibold">Needs attention before DAT generation</p>
                         <p>The adjusted tax may no longer match Income Payment and rate. Confirming saves the deduction; it does not resolve DAT validation issues.</p>
                     </div>}

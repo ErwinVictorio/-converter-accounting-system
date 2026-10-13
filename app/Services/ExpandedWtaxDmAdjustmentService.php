@@ -64,6 +64,7 @@ class ExpandedWtaxDmAdjustmentService
         }
         $changes = [];
         $warnings = [];
+        $negativeWarnings = [];
         foreach ($targets as $key => &$target) {
             $group = $groups[$key];
             $before = $group->sum(fn ($record) => Money::cents($record->tax_withheld));
@@ -71,11 +72,6 @@ class ExpandedWtaxDmAdjustmentService
             $target['before'] = Money::money($before);
             $target['deduction'] = Money::money($remaining);
             $target['after'] = Money::money($before - $remaining);
-            if ($remaining > $before || $group->contains(fn ($record) => Money::cents($record->tax_withheld) < 0)) {
-                $issues[] = "{$target['supplier']}: deduction exceeds the available total or the group contains negative source amounts; manual review is required.";
-
-                continue;
-            }
             $adjusted = collect();
             $incomeBefore = $group->sum(fn ($record) => Money::cents($record->income_payment));
             $rateUnits = Money::cents($group->first()->tax_rate);
@@ -84,7 +80,11 @@ class ExpandedWtaxDmAdjustmentService
             foreach ($group as $record) {
                 $copy = clone $record;
                 $amount = Money::cents($record->tax_withheld);
-                $deduction = min($remaining, $amount);
+                // Preserve ID-order allocation; the last source absorbs any excess.
+                // Existing zero/negative sources never turn a deduction into an addition.
+                $deduction = $record->id === $group->last()->id
+                    ? $remaining
+                    : min($remaining, max(0, $amount));
                 if ($deduction > 0) {
                     $copy->tax_withheld = Money::money($amount - $deduction);
                     $allocatedTax += $deduction;
@@ -93,9 +93,6 @@ class ExpandedWtaxDmAdjustmentService
                     $baseDeduction = $baseTotal - $allocatedIncome;
                     $allocatedIncome = $baseTotal;
                     $income = Money::cents($record->income_payment);
-                    if ($baseDeduction > $income) {
-                        $issues[] = "{$target['supplier']}: Income Payment is insufficient for the rate-based deduction.";
-                    }
                     $copy->income_payment = Money::money($income - $baseDeduction);
                     $changes[] = ['id' => $record->id, 'before' => $record->tax_withheld, 'after' => $copy->tax_withheld,
                         'income_before' => $record->income_payment, 'income_after' => $copy->income_payment];
@@ -106,6 +103,9 @@ class ExpandedWtaxDmAdjustmentService
             $target['income_before'] = Money::money($incomeBefore);
             $target['income_deduction'] = Money::money($allocatedIncome);
             $target['income_after'] = Money::money($incomeBefore - $allocatedIncome);
+            if ($adjusted->contains(fn ($record) => Money::cents($record->tax_withheld) < 0 || Money::cents($record->income_payment) < 0)) {
+                $negativeWarnings[] = "{$target['supplier']}: this deduction leaves a negative Tax Withheld or Income Payment balance (supplier totals: Tax Withheld {$target['after']}, Income Payment {$target['income_after']}). You may confirm to save the negative amounts.";
+            }
             foreach (ExpandedWtaxEntry::consolidate($adjusted) as $row) {
                 foreach (app(BirExpandedWtaxRowValidator::class)->validate($row, 0) as $error) {
                     $warnings[] = $target['supplier'].': '.preg_replace('/^Row 0: /', '', $error);
@@ -114,7 +114,7 @@ class ExpandedWtaxDmAdjustmentService
         }
         unset($target);
 
-        return ['targets' => array_values($targets), 'issues' => $issues, 'warnings' => array_values(array_unique($warnings)), 'changes' => $changes,
+        return ['targets' => array_values($targets), 'issues' => $issues, 'warnings' => array_values(array_unique(array_merge($negativeWarnings, $warnings))), 'negative_balance_warnings' => $negativeWarnings, 'bir_warnings' => array_values(array_unique($warnings)), 'changes' => $changes,
             'total_deduction' => Money::money(array_sum(array_column($parsed['items'], 'debit_cents'))),
             'dm_count' => count($parsed['items']), 'excluded_count' => $parsed['excluded_count'], 'excluded_debit' => $parsed['excluded_debit']];
     }

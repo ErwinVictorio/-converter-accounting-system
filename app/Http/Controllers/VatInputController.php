@@ -11,7 +11,9 @@ use App\Models\ImportationEntry;
 use App\Models\PurchaseAdjustment;
 use App\Models\VatInput;
 use App\Services\BIR\AnnualCoveredPeriodValidator;
+use App\Services\BIR\PurchaseCompanyDirectory;
 use App\Services\BIR\WithholdingCompanyDirectory;
+use App\Services\ExpandedWtaxDmReferenceResetService;
 use App\Services\PendingPurchaseUploadService;
 use App\Services\PendingSalesUploadService;
 use App\Services\PurchaseUploadService;
@@ -69,7 +71,7 @@ class VatInputController extends Controller
     {
         return Inertia::render('RecordEntry', [
             'birCompanies' => $this->companies->activeCompanies(),
-            'purchaseCompanies' => app(\App\Services\BIR\PurchaseCompanyDirectory::class)->companies(),
+            'purchaseCompanies' => app(PurchaseCompanyDirectory::class)->companies(),
         ]);
     }
 
@@ -105,7 +107,7 @@ class VatInputController extends Controller
         ]);
 
         $purchaseCompany = $request->input('record_type') === 'purchase'
-            ? app(\App\Services\BIR\PurchaseCompanyDirectory::class)->resolve(
+            ? app(PurchaseCompanyDirectory::class)->resolve(
                 $request->input('filing_company_tin'), $request->input('filing_company_branch_code')
             ) : null;
         try {
@@ -272,7 +274,10 @@ class VatInputController extends Controller
                  * and file twice the real figure, which is worse than losing a manual
                  * correction.
                  */
-                DB::transaction(function () use ($reportingPeriod, $file, $withholdingAgent) {
+                $scope = ['withholding_agent_tin' => $withholdingAgent['tin'], 'withholding_agent_branch_code' => $withholdingAgent['branch_code'], 'report_type' => 'quarterly', 'reporting_month' => substr($reportingPeriod, 0, 7)];
+                $reset = app(ExpandedWtaxDmReferenceResetService::class);
+                $cleared = DB::transaction(function () use ($reportingPeriod, $file, $withholdingAgent, $scope, $reset) {
+                    $reset->lock($scope);
                     ExpandedWtaxEntry::query()
                         ->where('report_type', 'quarterly')
                         ->where('reporting_period', $reportingPeriod)
@@ -281,9 +286,11 @@ class VatInputController extends Controller
                         ->delete();
 
                     Excel::import(new ExpandedWtaxImport($reportingPeriod, $withholdingAgent, false, 'quarterly'), $file);
+
+                    return $reset->reset($scope);
                 });
 
-                return back()->with('success', 'Expanded withholding tax report successfully imported!');
+                return back()->with('success', 'Expanded withholding tax report successfully imported!'.($cleared ? ' Previous DM deductions were reset; upload the DM file again if needed.' : ''));
             }
 
             $reportingPeriod = Carbon::parse($request->input('reporting_month'))->endOfMonth()->toDateString();
@@ -384,6 +391,7 @@ class VatInputController extends Controller
     private function purchaseReturnUrl(Request $request): string
     {
         $url = (string) $request->input('return_to', '/records/purchases');
+
         return preg_match('~^/records/purchases(?:\?[^\r\n]*)?$~D', $url) ? $url : '/records/purchases';
     }
 

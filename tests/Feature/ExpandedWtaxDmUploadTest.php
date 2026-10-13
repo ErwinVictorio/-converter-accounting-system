@@ -7,9 +7,13 @@ use App\Models\ExpandedWtaxEntry;
 use App\Models\User;
 use App\Services\BIR\BirExpandedWtaxRowValidator;
 use App\Services\ExpandedWtaxDmAdjustmentService;
+use App\Services\ExpandedWtaxDmReferenceResetService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
@@ -59,6 +63,104 @@ class ExpandedWtaxDmUploadTest extends TestCase
     {
         return array_replace(['excel_file' => $this->workbook(), 'reporting_month' => '2026-09', 'report_type' => 'quarterly',
             'withholding_agent_tin' => '008791976', 'withholding_agent_branch_code' => '0000', 'percentage' => '1'], $overrides);
+    }
+
+    private function regularUpload(bool $invalid = false): TestResponse
+    {
+        $csv = "Reporting_Month,Vendor_TIN,branchCode,companyName,surName,firstName,middleName,ATC,income_payment,ewt_rate,tax_amount\n"
+            .($invalid ? '08/30/2026' : '09/30/2026').",000227599,0000,WORLD BEST IND L SALES INC,,,,WC158,1068486,1,10684.86\n";
+
+        return $this->post('/vat-import', ['record_type' => 'expanded', 'report_type' => 'quarterly',
+            'reporting_month' => '2026-09', 'withholding_agent_tin' => '008791976', 'withholding_agent_branch_code' => '0000',
+            'excel_file' => UploadedFile::fake()->createWithContent('regular.csv', $csv)]);
+    }
+
+    public function test_regular_reupload_resets_references_preserves_history_and_allows_new_dm(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->entry();
+        $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $this->postJson('/expanded-dm/apply', ['token' => $token, 'acknowledge_warnings' => true])->assertOk();
+        $this->regularUpload()->assertSessionHasNoErrors()->assertSessionHas('success');
+        $this->assertDatabaseCount('expanded_dm_references', 0);
+        $this->assertDatabaseCount('expanded_dm_applications', 1);
+        $this->assertNotNull(DB::table('expanded_dm_applications')->first()->superseded_at);
+        $this->assertSame('10684.86', ExpandedWtaxEntry::first()->tax_withheld);
+        $this->postJson('/expanded-dm/apply', ['token' => $token, 'acknowledge_warnings' => true])->assertUnprocessable();
+        $new = $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('issues', [])->json('token');
+        $this->postJson('/expanded-dm/apply', ['token' => $new, 'acknowledge_warnings' => true])->assertOk();
+        $this->assertSame('9523.50', ExpandedWtaxEntry::first()->tax_withheld);
+        $this->assertSame('952350.00', ExpandedWtaxEntry::first()->income_payment);
+        $this->assertDatabaseCount('expanded_dm_applications', 2);
+        $this->assertDatabaseCount('expanded_dm_references', 2);
+        $this->postJson('/expanded-dm/review', $this->payload())->assertJsonPath('token', null);
+    }
+
+    public function test_failed_regular_validation_keeps_active_references(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->entry();
+        $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $this->postJson('/expanded-dm/apply', ['token' => $token, 'acknowledge_warnings' => true])->assertOk();
+        $this->regularUpload(true)->assertSessionHas('error');
+        $this->assertDatabaseCount('expanded_dm_references', 2);
+        $this->assertNull(DB::table('expanded_dm_applications')->first()->superseded_at);
+        $this->assertSame('9523.50', ExpandedWtaxEntry::first()->tax_withheld);
+    }
+
+    public function test_reset_failure_rolls_back_regular_import_and_history(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $entry = $this->entry();
+        $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $this->postJson('/expanded-dm/apply', ['token' => $token, 'acknowledge_warnings' => true])->assertOk();
+        $this->app->instance(ExpandedWtaxDmReferenceResetService::class, new class extends ExpandedWtaxDmReferenceResetService
+        {
+            public function reset(array $scope): int
+            {
+                parent::reset($scope);
+                throw new \RuntimeException('Simulated reset failure');
+            }
+        });
+        $this->regularUpload()->assertSessionHas('error');
+        $this->assertSame('9523.50', $entry->fresh()->tax_withheld);
+        $this->assertDatabaseCount('expanded_dm_references', 2);
+        $this->assertNull(DB::table('expanded_dm_applications')->first()->superseded_at);
+    }
+
+    public function test_identical_regular_replacement_invalidates_pending_preview(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->entry();
+        $token = $this->postJson('/expanded-dm/review', $this->payload())->json('token');
+        $this->regularUpload()->assertSessionHas('success');
+        $this->postJson('/expanded-dm/apply', ['token' => $token, 'acknowledge_warnings' => true])->assertUnprocessable();
+        $this->assertSame('10684.86', ExpandedWtaxEntry::first()->tax_withheld);
+        $this->assertDatabaseCount('expanded_dm_applications', 0);
+    }
+
+    public function test_replacement_resets_all_rates_only_inside_exact_scope(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->entry();
+        $scope = ['withholding_agent_tin' => '008791976', 'withholding_agent_branch_code' => '0000', 'report_type' => 'quarterly', 'reporting_month' => '2026-09', 'percentage' => '1.00'];
+        $ids = [];
+        foreach ([[], ['percentage' => '2.00'], ['withholding_agent_tin' => '123456789'], ['withholding_agent_branch_code' => '0001'], ['report_type' => 'annual'], ['reporting_month' => '2026-08']] as $index => $overrides) {
+            $ids[] = $id = DB::table('expanded_dm_applications')->insertGetId([
+                'token' => (string) Str::uuid(), 'user_id' => auth()->id(), 'file_digest' => str_repeat('a', 64),
+                'scope' => json_encode(array_replace($scope, $overrides)), 'details' => json_encode(['original' => $index]),
+                'total_deduction' => 10, 'created_at' => now(),
+            ]);
+            DB::table('expanded_dm_references')->insert(['application_id' => $id, 'identity' => hash('sha256', (string) $index), 'reference' => 'DM#'.$index]);
+        }
+        $this->regularUpload()->assertSessionHas('success');
+        $this->assertDatabaseCount('expanded_dm_applications', 6);
+        $this->assertDatabaseCount('expanded_dm_references', 4);
+        foreach ($ids as $index => $id) {
+            $application = DB::table('expanded_dm_applications')->find($id);
+            $this->assertSame($index < 2, $application->superseded_at !== null);
+            $this->assertSame(['original' => $index], json_decode($application->details, true));
+        }
     }
 
     public function test_dm_only_file_uses_modal_rate_and_applies_both_amounts(): void
@@ -123,12 +225,51 @@ class ExpandedWtaxDmUploadTest extends TestCase
         $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('token', null);
     }
 
-    public function test_over_balance_deduction_is_blocked(): void
+    public function test_over_balance_deduction_warns_and_saves_negative_amounts_once(): void
     {
         $this->actingAs(User::factory()->create());
-        $this->entry(['tax_withheld' => '100.00']);
-        $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('token', null);
-        $this->assertSame('100.00', ExpandedWtaxEntry::first()->tax_withheld);
+        $entry = $this->entry(['tax_withheld' => '100.00', 'income_payment' => '10000.00']);
+        $review = $this->postJson('/expanded-dm/review', $this->payload())->assertOk()
+            ->assertJsonPath('issues', [])->assertJsonPath('bir_warnings', [])
+            ->assertJsonPath('targets.0.after', '-1061.36')->assertJsonPath('targets.0.income_after', '-106136.00');
+        $this->assertNotEmpty($review->json('negative_balance_warnings'));
+        $this->assertNotEmpty($review->json('token'));
+        $this->assertSame('100.00', $entry->fresh()->tax_withheld);
+        $this->postJson('/expanded-dm/apply', ['token' => $review->json('token')])->assertUnprocessable();
+        $body = ['token' => $review->json('token'), 'acknowledge_warnings' => true];
+        $this->postJson('/expanded-dm/apply', $body)->assertOk();
+        $this->postJson('/expanded-dm/apply', $body)->assertOk();
+        $this->assertSame('-1061.36', $entry->fresh()->tax_withheld);
+        $this->assertSame('-106136.00', $entry->fresh()->income_payment);
+        $this->assertSame([], app(BirExpandedWtaxRowValidator::class)->validate($entry->fresh()->toBirExpandedRow(), 0));
+        $this->assertDatabaseCount('expanded_dm_applications', 1);
+        $this->assertDatabaseCount('expanded_dm_references', 2);
+    }
+
+    public function test_mixed_sources_and_existing_negative_totals_preserve_full_deduction(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $negative = $this->entry(['tax_withheld' => '-200.00', 'income_payment' => '-20000.00']);
+        $positive = $this->entry(['tax_withheld' => '100.00', 'income_payment' => '10000.00']);
+        $review = $this->postJson('/expanded-dm/review', $this->payload())->assertOk()
+            ->assertJsonPath('issues', [])->assertJsonPath('targets.0.before', '-100.00')
+            ->assertJsonPath('targets.0.after', '-1261.36')->assertJsonPath('targets.0.income_after', '-126136.00');
+        $this->postJson('/expanded-dm/apply', ['token' => $review->json('token'), 'acknowledge_warnings' => true])->assertOk();
+        $this->assertSame('-200.00', $negative->fresh()->tax_withheld);
+        $this->assertSame('-1061.36', $positive->fresh()->tax_withheld);
+        $this->assertSame('-106136.00', $positive->fresh()->income_payment);
+    }
+
+    public function test_income_only_negative_result_is_a_warning_not_a_block(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $entry = $this->entry(['income_payment' => '10000.00']);
+        $review = $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('issues', [])
+            ->assertJsonPath('targets.0.after', '9523.50')->assertJsonPath('targets.0.income_after', '-106136.00');
+        $this->assertNotEmpty($review->json('negative_balance_warnings'));
+        $this->assertNotEmpty($review->json('bir_warnings'));
+        $this->postJson('/expanded-dm/apply', ['token' => $review->json('token'), 'acknowledge_warnings' => true])->assertOk();
+        $this->assertSame('-106136.00', $entry->fresh()->income_payment);
     }
 
     public function test_allocation_reduces_tax_once_in_id_order(): void

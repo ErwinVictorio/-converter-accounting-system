@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Imports\ExpandedWtaxDmReader;
 use App\Services\ExpandedWtaxDmAdjustmentService;
+use App\Services\ExpandedWtaxDmReferenceResetService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -36,6 +37,7 @@ class ExpandedWtaxDmUploadController extends Controller
             report($error);
             throw ValidationException::withMessages(['excel_file' => 'Unable to read the workbook. Use an unencrypted ACCOUNT DETAILS Excel file.']);
         }
+        $generation = app(ExpandedWtaxDmReferenceResetService::class)->generation($scope);
         $records = $service->query($scope)->get();
         $review = $service->review($parsed, $records);
         $available = Schema::hasTable('expanded_dm_references') && Schema::hasTable('expanded_dm_applications');
@@ -46,7 +48,7 @@ class ExpandedWtaxDmUploadController extends Controller
         if ($available && ! $review['issues']) {
             $token = (string) Str::uuid();
             Cache::put('expanded-dm:'.$token, ['user_id' => $request->user()->getAuthIdentifier(), 'scope' => $scope, 'parsed' => $parsed,
-                'calculation_version' => 2, 'snapshot' => $service->snapshot($records), 'digest' => hash_file('sha256', $request->file('excel_file')->getRealPath())], now()->addMinutes(20));
+                'generation' => $generation, 'calculation_version' => 3, 'snapshot' => $service->snapshot($records), 'digest' => hash_file('sha256', $request->file('excel_file')->getRealPath())], now()->addMinutes(20));
         }
         unset($review['changes']);
 
@@ -64,15 +66,25 @@ class ExpandedWtaxDmUploadController extends Controller
         if ($completed) {
             abort_unless((string) $completed->user_id === (string) $request->user()->getAuthIdentifier(), 403);
 
-            return $this->success($completed->total_deduction);
+            return $this->completedResponse($completed);
         }
         $pending = Cache::get('expanded-dm:'.$token);
-        if (! $pending || ($pending['calculation_version'] ?? 1) !== 2) {
+        if (! $pending || ($pending['calculation_version'] ?? 1) !== 3) {
             throw ValidationException::withMessages(['token' => 'This review has expired. Upload the file again to review current totals.']);
         }
         abort_unless((string) $pending['user_id'] === (string) $request->user()->getAuthIdentifier(), 403);
         try {
             $total = DB::transaction(function () use ($pending, $service, $token, $request) {
+                $generation = app(ExpandedWtaxDmReferenceResetService::class)->lock($pending['scope']);
+                $completed = DB::table('expanded_dm_applications')->where('token', $token)->first();
+                if ($completed) {
+                    $this->ensureActive($completed);
+
+                    return $completed->total_deduction;
+                }
+                if (! isset($pending['generation']) || $pending['generation'] !== $generation) {
+                    throw ValidationException::withMessages(['token' => 'Expanded records were replaced. Upload the DM file again to review the new records.']);
+                }
                 $records = $service->query($pending['scope'])->lockForUpdate()->get();
                 if ($service->snapshot($records) !== $pending['snapshot']) {
                     throw ValidationException::withMessages(['token' => 'Expanded records changed after review. Upload again to review the latest totals.']);
@@ -84,7 +96,7 @@ class ExpandedWtaxDmUploadController extends Controller
                 }
                 // Confirmation acknowledges the concise warning shown with the review.
                 if ($review['warnings'] && ! $request->boolean('acknowledge_warnings')) {
-                    throw ValidationException::withMessages(['token' => 'Review the DAT warning before confirming this deduction.']);
+                    throw ValidationException::withMessages(['token' => 'Review the adjustment warnings before confirming this deduction.']);
                 }
                 $application = DB::table('expanded_dm_applications')->insertGetId([
                     'token' => $token, 'user_id' => $pending['user_id'], 'file_digest' => $pending['digest'],
@@ -108,7 +120,7 @@ class ExpandedWtaxDmUploadController extends Controller
             // Unique token/reference keys are the final guard across concurrent reviews.
             $completed = DB::table('expanded_dm_applications')->where('token', $token)->where('user_id', $pending['user_id'])->first();
             if ($completed) {
-                return $this->success($completed->total_deduction);
+                return $this->completedResponse($completed);
             }
             throw ValidationException::withMessages(['token' => 'One or more DM references have already been applied. No new deductions were saved.']);
         }
@@ -134,5 +146,24 @@ class ExpandedWtaxDmUploadController extends Controller
     private function success(string $total)
     {
         return response()->json(['message' => 'DM deduction of PHP '.number_format((float) $total, 2).' saved. Review the updated Expanded totals.']);
+    }
+
+    private function ensureActive(object $application): void
+    {
+        if ($application->superseded_at !== null) {
+            throw ValidationException::withMessages(['token' => 'This DM application was superseded by a regular re-upload. Upload the DM file again to review the new records.']);
+        }
+    }
+
+    private function completedResponse(object $application)
+    {
+        // Serialize completed-token retries with replacement as well.
+        return DB::transaction(function () use ($application) {
+            app(ExpandedWtaxDmReferenceResetService::class)->lock(json_decode($application->scope, true));
+            $current = DB::table('expanded_dm_applications')->where('id', $application->id)->first();
+            $this->ensureActive($current);
+
+            return $this->success($current->total_deduction);
+        });
     }
 }
