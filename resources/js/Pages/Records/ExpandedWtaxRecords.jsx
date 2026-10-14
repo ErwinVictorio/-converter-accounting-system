@@ -34,6 +34,8 @@ function ExpandedWtaxRecords() {
         months = [],
         filters = {},
     } = usePage().props;
+    const scopeParams = Object.fromEntries(["withholding_agent_tin", "withholding_agent_branch_code", "report_type", "tax_rate"]
+        .filter(key => filters[key] !== undefined && filters[key] !== null && filters[key] !== "").map(key => [key, filters[key]]));
     const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
     useEffect(() => {
@@ -43,6 +45,10 @@ function ExpandedWtaxRecords() {
 
     return (
         <section className="w-full max-w-full space-y-6 overflow-hidden">
+            {Object.keys(scopeParams).length > 0 && <p className="text-sm text-slate-600">
+                Showing company {filters.withholding_agent_tin}-{filters.withholding_agent_branch_code}, {filters.report_type}, rate {filters.tax_rate}%.
+                {" "}<a className="underline" href="/records/expanded-wtax">View all Expanded records</a>
+            </p>}
             {/* Above the shell rather than inside it: the table area scrolls
                 horizontally at 1100px, and the cards should not scroll with it. */}
             <WithholdingTaxRateSummary
@@ -60,13 +66,14 @@ function ExpandedWtaxRecords() {
                             url="/records/expanded-wtax"
                             placeholder="Search payee, TIN, or ATC..."
                             initialValue={filters.search || ""}
-                            params={filters.period ? { period: filters.period } : {}}
+                            params={{ ...scopeParams, ...(filters.period ? { period: filters.period } : {}) }}
                         />
                         <RecordPeriodFilter
                             url="/records/expanded-wtax"
                             months={months}
                             initialValue={filters.period || ""}
                             search={filters.search || ""}
+                            params={scopeParams}
                         />
                     </div>
                 }

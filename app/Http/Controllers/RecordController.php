@@ -7,6 +7,7 @@ use App\Models\PurchaseAdjustment;
 use App\Models\SalesVatInput;
 use App\Models\VatInput;
 use App\Services\BIR\BirExpandedWtaxRowValidator;
+use App\Services\BIR\PurchaseCompanyDirectory;
 use App\Services\BIR\SalesSiCmConsolidator;
 use App\Services\PurchaseAmountPresenter;
 use Carbon\Carbon;
@@ -65,7 +66,7 @@ class RecordController extends Controller
             $companyQuery->whereNull('filing_company_tin')->excludingImportationMirrors();
         } elseif ($companyKey !== '') {
             [$tin, $branch] = array_pad(explode('|', $companyKey, 2), 2, null);
-            $company = app(\App\Services\BIR\PurchaseCompanyDirectory::class)->resolve($tin, $branch, true);
+            $company = app(PurchaseCompanyDirectory::class)->resolve($tin, $branch, true);
             $companyQuery->forFilingCompany($company)->excludingImportationMirrors();
         }
         $vatInputs = (clone $companyQuery)
@@ -144,7 +145,7 @@ class RecordController extends Controller
             'vatInputs' => $vatInputs,
             'companyFilter' => $companyKey,
             'months' => $this->availableMonths(clone $companyQuery, 'date_uploaded'),
-            'purchaseCompanies' => app(\App\Services\BIR\PurchaseCompanyDirectory::class)->companies(true),
+            'purchaseCompanies' => app(PurchaseCompanyDirectory::class)->companies(true),
             'filters' => [
                 'search' => $search,
                 'period' => $period?->format('Y-m') ?? '',
@@ -216,8 +217,21 @@ class RecordController extends Controller
         $search = $request->input('search');
         $period = $this->normalisedMonth($request->input('period'));
 
+        $dmScope = $request->validate([
+            'withholding_agent_tin' => ['nullable', 'regex:/^\d{9}$/'],
+            'withholding_agent_branch_code' => ['nullable', 'regex:/^\d{4}$/'],
+            'report_type' => ['nullable', 'in:quarterly,annual'],
+            'tax_rate' => ['nullable', 'numeric', 'gt:0', 'max:100'],
+        ]);
+        $scopedQuery = ExpandedWtaxEntry::query();
+        foreach ($dmScope as $field => $value) {
+            if ($value !== null && $value !== '') {
+                $scopedQuery->where($field, $value);
+            }
+        }
+
         $expandedRows = ExpandedWtaxEntry::consolidate(
-            ExpandedWtaxEntry::query()
+            (clone $scopedQuery)
                 ->when($search, function ($query, $search) {
                     $query->where(function ($q) use ($search) {
                         $q->where('payee_name', 'LIKE', "%{$search}%")
@@ -267,8 +281,9 @@ class RecordController extends Controller
             // Built from $expandedRows, not from the page above: the cards total
             // the whole filtered listing, so paging must not move them.
             'withholdingTaxRateSummary' => $this->withholdingTaxRateSummary($expandedRows),
-            'months' => $this->availableMonths(ExpandedWtaxEntry::query(), 'reporting_period'),
+            'months' => $this->availableMonths(clone $scopedQuery, 'reporting_period'),
             'filters' => [
+                ...$dmScope,
                 'search' => $search,
                 'period' => $period?->format('Y-m') ?? '',
             ],

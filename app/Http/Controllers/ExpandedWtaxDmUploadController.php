@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Imports\ExpandedWtaxDmReader;
 use App\Services\ExpandedWtaxDmAdjustmentService;
 use App\Services\ExpandedWtaxDmReferenceResetService;
+use App\Services\ExpandedWtaxDmReviewService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -37,20 +38,18 @@ class ExpandedWtaxDmUploadController extends Controller
             report($error);
             throw ValidationException::withMessages(['excel_file' => 'Unable to read the workbook. Use an unencrypted ACCOUNT DETAILS Excel file.']);
         }
-        $generation = app(ExpandedWtaxDmReferenceResetService::class)->generation($scope);
+        $available = $this->available();
+        $generation = $available ? app(ExpandedWtaxDmReferenceResetService::class)->generation($scope) : 0;
         $records = $service->query($scope)->get();
-        $review = $service->review($parsed, $records);
-        $available = Schema::hasTable('expanded_dm_references') && Schema::hasTable('expanded_dm_applications');
-        if ($available) {
-            $review['issues'] = array_merge($review['issues'], $this->duplicateIssues($scope, $parsed));
-        }
+        $review = app(ExpandedWtaxDmReviewService::class)->review($scope, $parsed, $records, $available);
         $token = null;
-        if ($available && ! $review['issues']) {
+        if ($available && ! $review['issues'] && $review['summary']['eligible_count'] > 0) {
             $token = (string) Str::uuid();
             Cache::put('expanded-dm:'.$token, ['user_id' => $request->user()->getAuthIdentifier(), 'scope' => $scope, 'parsed' => $parsed,
-                'generation' => $generation, 'calculation_version' => 3, 'snapshot' => $service->snapshot($records), 'digest' => hash_file('sha256', $request->file('excel_file')->getRealPath())], now()->addMinutes(20));
+                'eligible_keys' => array_column(array_filter($review['entries'], fn ($item) => $item['status'] === 'ready'), 'key'),
+                'generation' => $generation, 'calculation_version' => ExpandedWtaxDmReviewService::VERSION, 'fingerprint' => $review['fingerprint'], 'snapshot' => $service->snapshot($records), 'digest' => hash_file('sha256', $request->file('excel_file')->getRealPath())], now()->addMinutes(20));
         }
-        unset($review['changes']);
+        unset($review['changes'], $review['fingerprint']);
 
         return response()->json($review + ['token' => $token, 'scope' => $scope, 'apply_available' => $available]);
     }
@@ -58,7 +57,7 @@ class ExpandedWtaxDmUploadController extends Controller
     public function apply(Request $request, ExpandedWtaxDmAdjustmentService $service)
     {
         $request->validate(['token' => ['required', 'uuid']]);
-        if (! Schema::hasTable('expanded_dm_applications') || ! Schema::hasTable('expanded_dm_references')) {
+        if (! $this->available()) {
             throw ValidationException::withMessages(['token' => 'DM adjustments are currently preview-only.']);
         }
         $token = $request->string('token')->toString();
@@ -68,19 +67,20 @@ class ExpandedWtaxDmUploadController extends Controller
 
             return $this->completedResponse($completed);
         }
+        $request->validate(['review_version' => ['required', 'integer', 'in:4']], ['review_version.*' => 'The DM review format changed. Refresh the page and review the file again.']);
         $pending = Cache::get('expanded-dm:'.$token);
-        if (! $pending || ($pending['calculation_version'] ?? 1) !== 3) {
+        if (! $pending || ($pending['calculation_version'] ?? 1) !== ExpandedWtaxDmReviewService::VERSION) {
             throw ValidationException::withMessages(['token' => 'This review has expired. Upload the file again to review current totals.']);
         }
         abort_unless((string) $pending['user_id'] === (string) $request->user()->getAuthIdentifier(), 403);
         try {
-            $total = DB::transaction(function () use ($pending, $service, $token, $request) {
+            $outcome = DB::transaction(function () use ($pending, $service, $token, $request) {
                 $generation = app(ExpandedWtaxDmReferenceResetService::class)->lock($pending['scope']);
                 $completed = DB::table('expanded_dm_applications')->where('token', $token)->first();
                 if ($completed) {
                     $this->ensureActive($completed);
 
-                    return $completed->total_deduction;
+                    return $this->outcome($completed);
                 }
                 if (! isset($pending['generation']) || $pending['generation'] !== $generation) {
                     throw ValidationException::withMessages(['token' => 'Expanded records were replaced. Upload the DM file again to review the new records.']);
@@ -89,11 +89,14 @@ class ExpandedWtaxDmUploadController extends Controller
                 if ($service->snapshot($records) !== $pending['snapshot']) {
                     throw ValidationException::withMessages(['token' => 'Expanded records changed after review. Upload again to review the latest totals.']);
                 }
-                $review = $service->review($pending['parsed'], $records);
-                $issues = array_merge($review['issues'], $this->duplicateIssues($pending['scope'], $pending['parsed']));
-                if ($issues) {
-                    throw ValidationException::withMessages(['token' => $issues]);
+                $review = app(ExpandedWtaxDmReviewService::class)->review($pending['scope'], $pending['parsed'], $records);
+                if (($pending['eligible_keys'] ?? []) !== array_column(array_filter($review['entries'], fn ($item) => $item['status'] === 'ready'), 'key') || $review['issues'] || $review['summary']['eligible_count'] === 0 || ! hash_equals($pending['fingerprint'] ?? '', $review['fingerprint'])) {
+                    throw ValidationException::withMessages(['token' => 'Records or DM status changed. Review the file again.']);
                 }
+                if ($review['summary']['skipped_count'] > 0 && ! $request->boolean('acknowledge_skipped')) {
+                    throw ValidationException::withMessages(['token' => 'Acknowledge the skipped entries before applying eligible DM only.']);
+                }
+                $review['acknowledgments'] = ['skipped' => $request->boolean('acknowledge_skipped'), 'warnings' => $request->boolean('acknowledge_warnings')];
                 // Confirmation acknowledges the concise warning shown with the review.
                 if ($review['warnings'] && ! $request->boolean('acknowledge_warnings')) {
                     throw ValidationException::withMessages(['token' => 'Review the adjustment warnings before confirming this deduction.']);
@@ -103,9 +106,9 @@ class ExpandedWtaxDmUploadController extends Controller
                     'scope' => json_encode($pending['scope']), 'details' => json_encode($review),
                     'total_deduction' => $review['total_deduction'], 'created_at' => now(),
                 ]);
-                foreach ($pending['parsed']['items'] as $item) {
+                foreach (array_filter($review['entries'], fn ($item) => $item['status'] === 'ready') as $item) {
                     DB::table('expanded_dm_references')->insert(['application_id' => $application,
-                        'identity' => $this->identity($pending['scope'], $item), 'reference' => $item['reference']]);
+                        'identity' => $item['key'], 'reference' => $item['reference']]);
                 }
                 foreach ($review['changes'] as $change) {
                     $record = $records->firstWhere('id', $change['id']);
@@ -114,7 +117,7 @@ class ExpandedWtaxDmUploadController extends Controller
                     $record->save();
                 }
 
-                return $review['total_deduction'];
+                return ['total' => $review['total_deduction'], 'summary' => $review['summary'], 'skipped_entries' => array_values(array_filter($review['entries'], fn ($item) => $item['status'] !== 'ready'))];
             }, 3);
         } catch (UniqueConstraintViolationException $error) {
             // Unique token/reference keys are the final guard across concurrent reviews.
@@ -126,26 +129,32 @@ class ExpandedWtaxDmUploadController extends Controller
         }
         Cache::forget('expanded-dm:'.$token);
 
-        return $this->success($total);
+        return $this->success($outcome);
     }
 
-    private function identity(array $scope, array $item): string
+    private function available(): bool
     {
-        return hash('sha256', implode('|', [$scope['withholding_agent_tin'], $scope['withholding_agent_branch_code'],
-            $scope['report_type'], $scope['reporting_month'], $scope['percentage'], $item['reference']]));
+        return Schema::hasTable('expanded_dm_applications') && Schema::hasTable('expanded_dm_references')
+            && Schema::hasTable('expanded_dm_scopes') && Schema::hasColumn('expanded_dm_applications', 'superseded_at');
     }
 
-    private function duplicateIssues(array $scope, array $parsed): array
+    private function outcome(object $application): array
     {
-        $identities = array_map(fn ($item) => $this->identity($scope, $item), $parsed['items']);
+        $details = json_decode($application->details, true) ?? [];
 
-        return DB::table('expanded_dm_references')->whereIn('identity', $identities)->pluck('reference')
-            ->map(fn ($reference) => "{$reference} was already applied for this company, month and rate. No additional deduction will be saved.")->all();
+        return ['total' => $application->total_deduction, 'summary' => $details['summary'] ?? null,
+            'skipped_entries' => array_values(array_filter($details['entries'] ?? [], fn ($entry) => $entry['status'] !== 'ready'))];
     }
 
-    private function success(string $total)
+    private function success(array $outcome)
     {
-        return response()->json(['message' => 'DM deduction of PHP '.number_format((float) $total, 2).' saved. Review the updated Expanded totals.']);
+        $summary = $outcome['summary'];
+        $message = 'DM deduction of PHP '.number_format((float) $outcome['total'], 2).' saved.';
+        if ($summary) {
+            $message .= " {$summary['eligible_count']} DM entries applied; {$summary['skipped_count']} skipped. Skipped entries were not saved as deductions.";
+        }
+
+        return response()->json(['message' => $message.' Review the updated Expanded totals.', 'summary' => $summary, 'skipped_entries' => $outcome['skipped_entries']]);
     }
 
     private function ensureActive(object $application): void
@@ -163,7 +172,7 @@ class ExpandedWtaxDmUploadController extends Controller
             $current = DB::table('expanded_dm_applications')->where('id', $application->id)->first();
             $this->ensureActive($current);
 
-            return $this->success($current->total_deduction);
+            return $this->success($this->outcome($current));
         });
     }
 }

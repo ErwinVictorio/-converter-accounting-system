@@ -236,3 +236,9 @@ Do not change Purchase, Sales, Importation, normal Expanded workbook mapping, co
 - Run relevant `ExpandedWtaxImportTest`, `ExpandedWtaxConsolidationTest`, `ExpandedWtaxDatFileTest`, and `RecordPagesTest` coverage plus new DM tests. Run the frontend build and browser-check upload, review, apply, cancel, and validation states.
 
 This document now tracks execution as well as the original proposal. See the execution update at the top for implemented behavior, unresolved decisions, and verification evidence.
+
+## Eligible-only DM review update - 2026-10-14
+
+The current review now classifies parsed entries individually, skips already-applied and unresolved references, and applies only the exact eligible subset after explicit confirmation. File total, eligible deduction and skipped amount are separate. Negative results remain confirmable with acknowledgment; malformed workbooks still fail as a whole. Skipped entries never create active references, so corrected matches can be reviewed again. Versioned previews, generation/source checks, and the existing lock protect against changed data and duplicate application.
+
+Implementation details, test coverage, and rollout notes: [Eligible-only review plan](EXPANDED_WTAX_DM_ELIGIBLE_ONLY_REVIEW_PLAN.md).

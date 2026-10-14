@@ -38,27 +38,15 @@ class ExpandedWtaxDmAdjustmentService
         $targets = [];
         $issues = [];
         foreach ($parsed['items'] as $item) {
-            $matches = $records->filter(fn ($record) => self::name($record->payee_name) === self::name($item['supplier']));
-            $tins = $matches->pluck('payee_tin')->unique()->values();
-            if ($tins->count() !== 1 || ! preg_match('/^(?!000000000)\d{9}$/', (string) $tins->first())) {
-                $issues[] = "Row {$item['row']}: {$item['supplier']} has no unique valid TIN match in the selected scope.";
+            [$status, $reason, $key] = app(ExpandedWtaxDmReviewService::class)->match($item, $records);
+            if ($status !== 'ready') {
+                $issues[] = "Row {$item['row']}: {$item['supplier']}: {$reason}";
 
                 continue;
             }
-            $keys = $records->where('payee_tin', $tins->first())->map(fn ($record) => ExpandedWtaxEntry::consolidationKey($record))->unique();
-            if ($keys->count() !== 1) {
-                $issues[] = "Row {$item['row']}: multiple payee/ATC groups match this TIN and rate.";
-
-                continue;
-            }
-            $key = $keys->first();
             $group = $groups[$key];
-            if ($group->pluck('payee_tin')->unique()->count() !== 1 || $group->pluck('payee_branch_code')->unique()->count() !== 1) {
-                $issues[] = "Row {$item['row']}: the consolidated group has conflicting TINs or branches.";
-
-                continue;
-            }
-            $targets[$key] ??= ['supplier' => $group->first()->payee_name, 'tin' => $tins->first(), 'atc' => $group->first()->atc_code, 'rate' => $group->first()->tax_rate, 'source_count' => $group->count(), 'debit_cents' => 0, 'items' => []];
+            $tin = $group->first()->payee_tin;
+            $targets[$key] ??= ['supplier' => $group->first()->payee_name, 'key' => $key, 'tin' => $tin, 'atc' => $group->first()->atc_code, 'rate' => $group->first()->tax_rate, 'source_count' => $group->count(), 'debit_cents' => 0, 'items' => []];
             $targets[$key]['debit_cents'] += $item['debit_cents'];
             $targets[$key]['items'][] = $item;
         }
