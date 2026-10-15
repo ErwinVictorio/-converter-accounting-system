@@ -226,6 +226,50 @@ class ExpandedWtaxDmUploadTest extends TestCase
         $this->postJson('/expanded-dm/review', $this->payload())->assertOk()->assertJsonPath('token', null);
     }
 
+    public function test_uploaded_zero_can_be_adjusted_and_reuploaded_for_dm(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $upload = function () {
+            $csv = "No,Date,Supplier Name,TIN,Reference,(1%),(2%),(5%),(10%),(15%),Total\n"
+                ."1,09/30/2026,WORLD BEST IND L SALES INC,000227599,A-1,,00,,,,0\n";
+            return $this->post('/vat-import', [
+                'record_type' => 'expanded', 'reporting_month' => '2026-09',
+                'withholding_agent_tin' => '008791976', 'withholding_agent_branch_code' => '0000',
+                'excel_file' => UploadedFile::fake()->createWithContent('zero.csv', $csv),
+            ]);
+        };
+        $upload()->assertSessionHas('success');
+        $record = ExpandedWtaxEntry::sole();
+        $scope = ['withholding_agent_tin' => '008791976', 'withholding_agent_branch_code' => '0000',
+            'reporting_month' => '2026-09', 'percentage' => '2'];
+        foreach ([['withholding_agent_tin' => '123456789'], ['withholding_agent_branch_code' => '0001'],
+            ['reporting_month' => '2026-08'], ['percentage' => '1']] as $override) {
+            $this->assertSame(0, app(ExpandedWtaxDmAdjustmentService::class)->query(array_replace($scope, $override))->count());
+        }
+        // DM-only workbook uses the chosen modal rate.
+        $payload = fn () => $this->payload(['excel_file' => $this->workbook([], true), 'percentage' => '2']);
+        $this->postJson('/expanded-dm/review', $this->payload(['excel_file' => $this->workbook([], true)]))
+            ->assertOk()->assertJsonPath('token', null);
+        $review = $this->postJson('/expanded-dm/review', $payload())->assertOk()
+            ->assertJsonPath('issues', [])->assertJsonPath('bir_warnings', [])
+            ->assertJsonPath('targets.0.before', '0.00')
+            ->assertJsonPath('targets.0.after', '-1161.36')
+            ->assertJsonPath('targets.0.income_after', '-58068.00');
+        $this->assertNotEmpty($review->json('negative_balance_warnings'));
+        $this->assertSame('0.00', $record->fresh()->tax_withheld);
+        $body = ['review_version' => 4, 'token' => $review->json('token')];
+        $this->postJson('/expanded-dm/apply', $body)->assertUnprocessable();
+        $this->assertSame('0.00', $record->fresh()->tax_withheld);
+        $this->postJson('/expanded-dm/apply', $body + ['acknowledge_warnings' => true])->assertOk();
+        $this->assertSame('-1161.36', $record->fresh()->tax_withheld);
+        $this->assertSame('-58068.00', $record->fresh()->income_payment);
+        $this->postJson('/expanded-dm/review', $payload())->assertOk()->assertJsonPath('token', null);
+        $upload()->assertSessionHas('success');
+        $this->assertSame('0.00', ExpandedWtaxEntry::sole()->tax_withheld);
+        $this->assertDatabaseCount('expanded_dm_references', 0);
+        $this->assertNotEmpty($this->postJson('/expanded-dm/review', $payload())->assertOk()->json('token'));
+    }
+
     public function test_zero_balance_match_accepts_negative_dm_result_after_warning_confirmation(): void
     {
         $this->actingAs(User::factory()->create());

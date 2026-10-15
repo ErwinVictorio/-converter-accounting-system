@@ -469,6 +469,96 @@ class ExpandedWtaxUploadBirInfoValidationTest extends TestCase
         $this->assertSame('payee_tin', $issues[0]['field']);
     }
 
+    public function test_explicit_company_zeros_select_rates_but_blank_columns_do_not(): void
+    {
+        foreach (['0', '00', '0.00'] as $zero) {
+            $this->upload($this->systemCsv([
+                ['1', '07/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007086184', 'A-1', $zero, $zero, '', '', '', '0'],
+                ['2', '07/03/2026', 'BLANK COMPANY', '123456789', 'A-2', '', '', '', '', '', '0'],
+            ]))->assertSessionHas('success');
+
+            $records = ExpandedWtaxEntry::orderBy('tax_rate')->get();
+            $this->assertCount(2, $records);
+            $this->assertSame(['1.00', '2.00'], $records->pluck('tax_rate')->all());
+            $this->assertSame(['WC158', 'WC160'], $records->pluck('atc_code')->all());
+            foreach ($records as $record) {
+                $this->assertSame('0.00', $record->tax_withheld);
+                $this->assertSame('0.00', $record->income_payment);
+            }
+        }
+    }
+
+    public function test_explicit_zero_identity_and_numeric_errors_preserve_existing_records(): void
+    {
+        $existing = $this->storedExpanded();
+        foreach ([
+            ['ACERSTEEL INDUSTRIAL SALES INC', '', '0'],
+            ['ACERSTEEL INDUSTRIAL SALES INC', '000000000', '00'],
+            ['ACERSTEEL INDUSTRIAL SALES INC', '12345678', '0.00'],
+            ['', '007086184', '0'],
+            ['ACERSTEEL INDUSTRIAL SALES INC', '007086184', '-'],
+        ] as [$name, $tin, $amount]) {
+            $this->upload($this->systemCsv([
+                ['1', '07/03/2026', $name, $tin, 'A-1', '', $amount, '', '', '', '0'],
+            ]))->assertSessionHas('error');
+            $this->assertSame(1, ExpandedWtaxEntry::count());
+            $this->assertSame('1000.00', $existing->fresh()->tax_withheld);
+        }
+    }
+
+    public function test_calculated_numeric_zero_is_imported_from_xlsx(): void
+    {
+        $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet;
+        $sheet = $book->getActiveSheet();
+        $sheet->fromArray([
+            ['No', 'Date', 'Supplier Name', 'TIN', 'Reference', '(1%)', '(2%)', '(5%)', '(10%)', '(15%)', 'Total'],
+            [1, '07/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007086184', 'A-1', 0, '=1-1', null, null, null, 0],
+        ], null, 'A1', true);
+        $path = tempnam(sys_get_temp_dir(), 'expanded-zero');
+        try {
+            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+            $this->upload(UploadedFile::fake()->createWithContent('zero.xlsx', file_get_contents($path)))
+                ->assertSessionHas('success');
+            $this->assertSame(2, ExpandedWtaxEntry::count());
+            $this->assertSame(['0.00', '0.00'], ExpandedWtaxEntry::pluck('tax_withheld')->all());
+        } finally {
+            unlink($path);
+            $book->disconnectWorksheets();
+        }
+    }
+
+    public function test_bir_layout_zero_amounts_remain_supported(): void
+    {
+        $this->upload($this->csv([$this->row([8 => '0', 10 => '0'])]))->assertSessionHas('success');
+        $this->assertSame('0.00', ExpandedWtaxEntry::sole()->tax_withheld);
+    }
+
+    public function test_zero_rows_still_require_a_valid_period_and_atc_mapping(): void
+    {
+        $existing = $this->storedExpanded();
+        $makeFile = fn ($date) => $this->systemCsv([
+            ['1', $date, 'ACERSTEEL INDUSTRIAL SALES INC', '007086184', 'A-1', '', '0', '', '', '', '0'],
+        ]);
+        $this->upload($makeFile('08/03/2026'))->assertSessionHas('error');
+        config(['bir.expanded_wtax.default_rate_codes' => [], 'bir.expanded_wtax.payee_atc_overrides' => []]);
+        $this->upload($makeFile('07/03/2026'))->assertSessionHas('error');
+        $this->assertSame(1, ExpandedWtaxEntry::count());
+        $this->assertSame('1000.00', $existing->fresh()->tax_withheld);
+    }
+
+    public function test_annual_system_upload_retains_zero_rows_in_their_own_months(): void
+    {
+        $this->uploadAnnual($this->systemCsv([
+            ['1', '07/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007086184', 'A-1', '', '0', '', '', '', '0'],
+            ['2', '08/03/2026', 'ACERSTEEL INDUSTRIAL SALES INC', '007086184', 'A-2', '', '00', '', '', '', '0'],
+        ]))->assertSessionHas('success');
+        $records = ExpandedWtaxEntry::orderBy('reporting_period')->get();
+        $this->assertCount(2, $records);
+        $this->assertSame(['2026-07-31', '2026-08-31'], $records->map(fn ($record) => $record->reporting_period->toDateString())->all());
+        $this->assertSame(['annual', 'annual'], $records->pluck('report_type')->all());
+        $this->assertSame(['0.00', '0.00'], $records->pluck('tax_withheld')->all());
+    }
+
     public function test_a_blank_rate_column_in_a_system_export_is_not_made_required(): void
     {
         // Only (1%) is filled; the other four are blank and stay optional.

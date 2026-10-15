@@ -602,6 +602,11 @@ function RecordEntry() {
                     is computed from tax withheld and rate because that export has no income-payment column.
                   </li>
                   <li>
+                    To retain a zero-amount company record for DM, provide a valid TIN and company name,
+                    and enter 0.00 in the intended rate column. Leave unused rate columns blank.
+                    Each explicitly filled zero rate column creates a separate record; zero in Total alone does not select a rate.
+                  </li>
+                  <li>
                     System export ATC codes come from the configured rate mapping: 1% WC158, 2% WC160,
                     5% WC100, and 10% WC139 by default.
                   </li>

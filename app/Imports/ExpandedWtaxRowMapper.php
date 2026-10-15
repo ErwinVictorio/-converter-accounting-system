@@ -107,7 +107,7 @@ class ExpandedWtaxRowMapper
     /**
      * @param  array<int, mixed>  $data
      * @param  array<string, int>  $columnIndexes
-     * @return array<int, array<string, mixed>> one entry per nonzero rate column
+     * @return array<int, array<string, mixed>> one entry per nonzero or explicit company-zero rate column
      */
     public function mapSystemRow(array $data, array $columnIndexes, int $worksheetRow): array
     {
@@ -126,9 +126,16 @@ class ExpandedWtaxRowMapper
         $entries = [];
 
         foreach (self::SYSTEM_RATES as $column => $rate) {
-            $taxWithheld = $this->parseNumber($this->cell($data, $columnIndexes, $column));
+            $rawAmount = $this->cell($data, $columnIndexes, $column);
+            $taxWithheld = $this->parseNumber($rawAmount);
+            // Blank columns remain unused. Only an actual numeric zero selects
+            // a company rate for later DM matching; malformed text is not zero.
+            $candidate = str_replace([' ', ',', "\u{00A0}"], '', trim((string) $rawAmount));
+            $explicitZero = $payeeType === 'company'
+                && preg_match('/^[+-]?\d+(\.\d+)?$/', $candidate) === 1
+                && (float) $candidate === 0.0;
 
-            if (abs($taxWithheld) < 0.005) {
+            if (abs($taxWithheld) < 0.005 && ! $explicitZero) {
                 continue;
             }
 
