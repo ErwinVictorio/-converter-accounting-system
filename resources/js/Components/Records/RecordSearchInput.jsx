@@ -1,8 +1,10 @@
+import { currentTableQuery } from '@/lib/dataTable';
 import { useEffect, useState } from "react";
 import { router } from "@inertiajs/react";
 import { Search } from "lucide-react";
 
 import { Input } from "@/Components/ui/input";
+
 
 /**
  * Debounced server-side search for a Record page.
@@ -23,7 +25,7 @@ export default function RecordSearchInput({ url, placeholder, initialValue = "",
             if (searchTerm !== initialValue) {
                 router.get(
                     url,
-                    { ...params, search: searchTerm },
+                    currentTableQuery(currentTableQuery({ ...params, search: searchTerm })),
                     { preserveState: true, replace: true }
                 );
             }

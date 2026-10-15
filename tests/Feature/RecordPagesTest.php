@@ -96,6 +96,49 @@ class RecordPagesTest extends TestCase
         ], $overrides));
     }
 
+    public function test_expanded_table_sorts_consolidated_amounts_before_pagination_and_keeps_totals(): void
+    {
+        for ($i = 1; $i <= 16; $i++) {
+            $this->withholding(['payee_name' => sprintf('PAYEE %02d', $i), 'company_name' => sprintf('PAYEE %02d', $i),
+                'tax_withheld' => $i, 'income_payment' => $i * 100]);
+        }
+        $this->withholding(['payee_name' => 'PAYEE 01', 'company_name' => 'PAYEE 01', 'tax_withheld' => 100, 'income_payment' => 10000]);
+        $this->withholding(['payee_name' => 'NEGATIVE', 'company_name' => 'NEGATIVE', 'tax_withheld' => -2, 'income_payment' => -200]);
+        $this->get('/records/expanded-wtax?sort=tax_withheld&direction=desc&per_page=10')->assertOk()->assertInertia(
+            fn ($page) => $page->has('expandedWtaxEntries.data', 10)
+                ->where('expandedWtaxEntries.total', 17)
+                ->where('expandedWtaxEntries.data.0.payee_name', 'PAYEE 01')
+                ->where('expandedWtaxEntries.data.0.merged_rows', 2)
+                ->where('expandedWtaxEntries.data.1.payee_name', 'PAYEE 16')
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '234.00')
+                ->where('filters.sort', 'tax_withheld')->where('filters.per_page', 10)
+        );
+        $this->get('/records/expanded-wtax?sort=tax_withheld&direction=asc&per_page=10')->assertOk()->assertInertia(
+            fn ($page) => $page->where('expandedWtaxEntries.data.0.payee_name', 'NEGATIVE')
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '234.00')
+        );
+        $this->get('/records/expanded-wtax?sort=tax_withheld&direction=desc&per_page=10&page=999')->assertOk()->assertInertia(
+            fn ($page) => $page->where('expandedWtaxEntries.current_page', 2)->has('expandedWtaxEntries.data', 7)
+                ->where('withholdingTaxRateSummary.total_tax_withheld', '234.00')
+        );
+    }
+
+    public function test_expanded_table_validates_controls_and_preserves_scope(): void
+    {
+        foreach (['per_page=1000', 'sort=unknown', 'direction=sideways', 'page=-1'] as $query) {
+            $this->getJson('/records/expanded-wtax?'.$query)->assertUnprocessable();
+        }
+        $this->withholding(['withholding_agent_tin' => '008791976', 'withholding_agent_branch_code' => '0000', 'report_type' => 'quarterly']);
+        $this->withholding(['withholding_agent_tin' => '123456789', 'withholding_agent_branch_code' => '0000']);
+        $this->get('/records/expanded-wtax?withholding_agent_tin=008791976&withholding_agent_branch_code=0000&report_type=quarterly&tax_rate=1&period=2026-04&sort=payee_name&direction=asc&per_page=25')
+            ->assertOk()->assertInertia(fn ($page) => $page->where('expandedWtaxEntries.total', 1)
+                ->where('filters.withholding_agent_tin', '008791976')->where('filters.tax_rate', '1')
+                ->where('filters.period', '2026-04')->where('expandedWtaxEntries.per_page', 25));
+        $this->get('/records/expanded-wtax?search=NO_MATCH&page=99&per_page=10')->assertOk()->assertInertia(
+            fn ($page) => $page->where('expandedWtaxEntries.total', 0)->where('expandedWtaxEntries.current_page', 1)
+        );
+    }
+
     private function importation(array $overrides = []): ImportationEntry
     {
         return ImportationEntry::create(array_merge([

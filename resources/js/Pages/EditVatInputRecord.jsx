@@ -1,3 +1,4 @@
+import { DataTable } from '@/Components/DataTable';
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -14,14 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/Components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/Components/ui/table";
 import { birFieldLimits } from "@/lib/FormSchema";
 import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 
@@ -232,30 +225,14 @@ function EditVatInputRecord() {
           </CardTitle>
         </CardHeader>
 
-        <CardContent className="p-0 overflow-x-auto">
-          <Table className="min-w-[800px]">
-            <TableHeader>
-              <TableRow className="bg-slate-50 hover:bg-slate-50">
-                <TableHead className="font-semibold text-slate-700">Supplier Name</TableHead>
-                <TableHead className="font-semibold text-slate-700">TIN Number</TableHead>
-                <TableHead className="font-semibold text-slate-700">Imported</TableHead>
-                <TableHead className="font-semibold text-slate-700 text-right">Purchase Imported</TableHead>
-                <TableHead className="font-semibold text-slate-700 text-right">Purchase Local</TableHead>
-                <TableHead className="font-semibold text-slate-700 text-right">Services</TableHead>
-                <TableHead className="font-semibold text-slate-700 text-right">Others</TableHead>
-                <TableHead className="font-semibold text-slate-700 text-right">Total</TableHead>
-                <TableHead className="font-semibold text-slate-700 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell className="font-medium text-slate-900 whitespace-nowrap">
+        <CardContent className="p-0">
+          <DataTable mode="client" data={[vatInput]} getRowId={row => String(row.id)} showToolbar={false} showPagination={false} tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[{ id: 'supplier_name', accessorKey: 'supplier_name', header: "Supplier Name", enableSorting: false, enableHiding: false, meta: { label: "Supplier Name", cellClassName: "font-medium text-slate-900 whitespace-nowrap", headerClassName: "" }, cell: ({ row }) => { const vatInput = row.original;  return (<>
                   {vatInput.supplier_name}
-                </TableCell>
-                <TableCell className="text-slate-600 font-mono text-xs whitespace-nowrap">
+                </>); } },
+{ id: 'tin_number', accessorKey: 'tin_number', header: "TIN Number", enableSorting: false, enableHiding: true, meta: { label: "TIN Number", cellClassName: "text-slate-600 font-mono text-xs whitespace-nowrap", headerClassName: "" }, cell: ({ row }) => { const vatInput = row.original;  return (<>
                   {vatInput.tin_number || "-"}
-                </TableCell>
-                <TableCell>
+                </>); } },
+{ id: 'is_imported', accessorKey: 'is_imported', header: "Imported", enableSorting: false, enableHiding: true, meta: { label: "Imported", cellClassName: "", headerClassName: "" }, cell: ({ row }) => { const vatInput = row.original;  return (<>
                   <Badge
                     variant={Number(vatInput.is_imported) === 1 ? "default" : "secondary"}
                     className={
@@ -266,23 +243,23 @@ function EditVatInputRecord() {
                   >
                     {Number(vatInput.is_imported) === 1 ? "Yes" : "No"}
                   </Badge>
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                </>); } },
+{ id: 'purchase_imported', accessorKey: 'purchase_imported', header: "Purchase Imported", enableSorting: false, enableHiding: true, meta: { label: "Purchase Imported", cellClassName: "text-right font-mono text-xs text-slate-700 whitespace-nowrap", headerClassName: "text-right" }, cell: ({ row }) => { const vatInput = row.original;  return (<>
                   {formatCurrency(vatInput.purchase_imported)}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                </>); } },
+{ id: 'local', accessorKey: 'local', header: "Purchase Local", enableSorting: false, enableHiding: true, meta: { label: "Purchase Local", cellClassName: "text-right font-mono text-xs text-slate-700 whitespace-nowrap", headerClassName: "text-right" }, cell: ({ row }) => { const vatInput = row.original;  return (<>
                   {formatCurrency(vatAmountBalances.purchase_local_vat_amount)}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                </>); } },
+{ id: 'services', accessorKey: 'services', header: "Services", enableSorting: false, enableHiding: true, meta: { label: "Services", cellClassName: "text-right font-mono text-xs text-slate-700 whitespace-nowrap", headerClassName: "text-right" }, cell: ({ row }) => { const vatInput = row.original;  return (<>
                   {formatCurrency(vatAmountBalances.services_vat_amount)}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs text-slate-700 whitespace-nowrap">
+                </>); } },
+{ id: 'others', accessorKey: 'others', header: "Others", enableSorting: false, enableHiding: true, meta: { label: "Others", cellClassName: "text-right font-mono text-xs text-slate-700 whitespace-nowrap", headerClassName: "text-right" }, cell: ({ row }) => { const vatInput = row.original;  return (<>
                   {formatCurrency(vatAmountBalances.others_vat_amount)}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs font-bold text-slate-900 whitespace-nowrap">
+                </>); } },
+{ id: 'total', accessorKey: 'total', header: "Total", enableSorting: false, enableHiding: true, meta: { label: "Total", cellClassName: "text-right font-mono text-xs font-bold text-slate-900 whitespace-nowrap", headerClassName: "text-right" }, cell: ({ row }) => { const vatInput = row.original;  return (<>
                   {formatCurrency(vatInput.total)}
-                </TableCell>
-                <TableCell className="whitespace-nowrap text-right">
+                </>); } },
+{ id: 'actions', accessorKey: 'actions', header: "Actions", enableSorting: false, enableHiding: false, meta: { label: "Actions", cellClassName: "whitespace-nowrap text-right", headerClassName: "text-right" }, cell: ({ row }) => { const vatInput = row.original;  return (<>
                   <Button
                     type="button"
                     variant="outline"
@@ -293,10 +270,7 @@ function EditVatInputRecord() {
                     <Eye className="h-3.5 w-3.5" />
                     View Info
                   </Button>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+                </>); } }]} />
         </CardContent>
       </Card>
 

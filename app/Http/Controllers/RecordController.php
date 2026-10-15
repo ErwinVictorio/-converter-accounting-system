@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
+use App\Support\DataTableQuery;
 
 /**
  * Read-only listings for the Record section.
@@ -69,7 +70,8 @@ class RecordController extends Controller
             $company = app(PurchaseCompanyDirectory::class)->resolve($tin, $branch, true);
             $companyQuery->forFilingCompany($company)->excludingImportationMirrors();
         }
-        $vatInputs = (clone $companyQuery)
+        $tableOptions = DataTableQuery::options($request, ['supplier_name', 'tin_number', 'is_imported', 'purchase_imported', 'display_purchase_local_amount', 'display_services_amount', 'display_others_amount', 'display_calculated_total']);
+        $purchaseQuery = (clone $companyQuery)
             ->select('vat_inputs.*')
             ->selectRaw("case when vat_inputs.is_adjusted = 1 then 0 else exists(select 1 from brokers where SUBSTR(REPLACE(REPLACE(REPLACE(brokers.tin_number, '-', ''), ' ', ''), '.', ''), 1, 9) = SUBSTR(REPLACE(REPLACE(REPLACE(vat_inputs.tin_number, '-', ''), ' ', ''), '.', ''), 1, 9)) end as is_broker")
             ->when($search, function ($query, $search) {
@@ -85,9 +87,21 @@ class RecordController extends Controller
                 ]);
             })
             ->orderBy('supplier_name')
-            ->orderBy('id')
-            ->paginate(15)
-            ->withQueryString();
+            ->orderBy('id');
+        $present = function (VatInput $record) use ($amountPresenter) {
+            foreach ($amountPresenter->forRecord($record) as $field => $value) {
+                $record->setAttribute($field, $value);
+            }
+        };
+        if (str_starts_with($tableOptions['sort'] ?? '', 'display_')) {
+            // Historical rows have different display rules; sort the presenter's
+            // actual values instead of guessing a SQL formula from stored amounts.
+            $vatInputs = DataTableQuery::collection($purchaseQuery->get()->each($present), $request, $tableOptions,
+                ['display_purchase_local_amount', 'display_services_amount', 'display_others_amount', 'display_calculated_total']);
+        } else {
+            $vatInputs = DataTableQuery::query($purchaseQuery, $request, $tableOptions);
+            $vatInputs->getCollection()->each($present);
+        }
 
         $adjustedIds = $vatInputs->getCollection()
             ->filter(fn (VatInput $record) => (bool) $record->is_adjusted)
@@ -97,10 +111,7 @@ class RecordController extends Controller
             ->get()
             ->groupBy('target_vat_input_id');
 
-        $vatInputs->getCollection()->each(function (VatInput $record) use ($adjustmentHistory, $amountPresenter) {
-            foreach ($amountPresenter->forRecord($record) as $field => $value) {
-                $record->setAttribute($field, $value);
-            }
+        $vatInputs->getCollection()->each(function (VatInput $record) use ($adjustmentHistory) {
 
             if (! $record->is_adjusted) {
                 return;
@@ -147,6 +158,7 @@ class RecordController extends Controller
             'months' => $this->availableMonths(clone $companyQuery, 'date_uploaded'),
             'purchaseCompanies' => app(PurchaseCompanyDirectory::class)->companies(true),
             'filters' => [
+                ...$tableOptions,
                 'search' => $search,
                 'period' => $period?->format('Y-m') ?? '',
             ],
@@ -161,6 +173,7 @@ class RecordController extends Controller
         $search = $request->input('search');
         $period = $this->normalisedMonth($request->input('period'));
 
+        $tableOptions = DataTableQuery::options($request, ['customer_name', 'customer_tin', 'customer_type', 'si_count', 'cm_count', 'exempt_sales', 'zero_rated_sales', 'taxable_net_of_vat', 'output_vat', 'gross_amount']);
         $salesRows = $salesConsolidator->consolidate(
             SalesVatInput::query()
                 ->when($search, function ($query, $search) {
@@ -181,20 +194,13 @@ class RecordController extends Controller
                 ->get()
         );
 
-        $page = LengthAwarePaginator::resolveCurrentPage();
-
-        $salesVatInputs = (new LengthAwarePaginator(
-            $salesRows->forPage($page, 15)->values(),
-            $salesRows->count(),
-            15,
-            $page,
-            ['path' => $request->url()]
-        ))->withQueryString();
+        $salesVatInputs = DataTableQuery::collection($salesRows, $request, $tableOptions, ['si_count', 'cm_count', 'exempt_sales', 'zero_rated_sales', 'taxable_net_of_vat', 'output_vat', 'gross_amount']);
 
         return Inertia::render('Records/SalesRecords', [
             'salesVatInputs' => $salesVatInputs,
             'months' => $this->availableMonths(SalesVatInput::query(), 'reporting_period'),
             'filters' => [
+                ...$tableOptions,
                 'search' => $search,
                 'period' => $period?->format('Y-m') ?? '',
             ],
@@ -216,6 +222,13 @@ class RecordController extends Controller
     {
         $search = $request->input('search');
         $period = $this->normalisedMonth($request->input('period'));
+        $tableOptions = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'in:10,15,25,50,100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'sort' => ['nullable', 'in:payee_name,withholding_agent_tin,payee_tin,payee_branch_code,atc_code,tax_rate,income_payment,tax_withheld,reporting_period,report_type'],
+            'direction' => ['nullable', 'in:asc,desc'],
+        ]);
+        $perPage = (int) ($tableOptions['per_page'] ?? 15);
 
         $dmScope = $request->validate([
             'withholding_agent_tin' => ['nullable', 'regex:/^\d{9}$/'],
@@ -268,10 +281,24 @@ class RecordController extends Controller
 
         $page = LengthAwarePaginator::resolveCurrentPage();
 
+        // Sort the consolidated display amounts, never individual source amounts.
+        if ($sort = $tableOptions['sort'] ?? null) {
+            $numeric = in_array($sort, ['tax_rate', 'income_payment', 'tax_withheld'], true);
+            $descending = ($tableOptions['direction'] ?? 'asc') === 'desc';
+            $expandedRows = $expandedRows->sort(function ($a, $b) use ($sort, $numeric, $descending) {
+                $comparison = $numeric
+                    ? ((float) $a[$sort] <=> (float) $b[$sort])
+                    : strcasecmp((string) ($a[$sort] ?? ''), (string) ($b[$sort] ?? ''));
+
+                return ($comparison === 0) ? strcmp($a['id'], $b['id']) : ($descending ? -$comparison : $comparison);
+            })->values();
+        }
+        $page = min($page, max(1, (int) ceil($expandedRows->count() / $perPage)));
+
         $expandedWtaxEntries = (new LengthAwarePaginator(
-            $expandedRows->forPage($page, 15)->values(),
+            $expandedRows->forPage($page, $perPage)->values(),
             $expandedRows->count(),
-            15,
+            $perPage,
             $page,
             ['path' => $request->url()]
         ))->withQueryString();
@@ -284,6 +311,9 @@ class RecordController extends Controller
             'months' => $this->availableMonths(clone $scopedQuery, 'reporting_period'),
             'filters' => [
                 ...$dmScope,
+                'per_page' => $perPage,
+                'sort' => $tableOptions['sort'] ?? null,
+                'direction' => ($tableOptions['sort'] ?? null) ? ($tableOptions['direction'] ?? 'asc') : null,
                 'search' => $search,
                 'period' => $period?->format('Y-m') ?? '',
             ],

@@ -60,6 +60,46 @@ class AlphabeticalRecordOrderingTest extends TestCase
         $this->assertSame(['ALPHA IMPORTER', 'ZETA IMPORTER'], $this->prop('/records/importations', 'entries.data.*.supplier'));
     }
 
+    public function test_all_server_listings_sort_the_full_result_before_pagination(): void
+    {
+        for ($i = 1; $i <= 16; $i++) {
+            $name = sprintf('NAME %02d', $i);
+            Customer::create(['name' => $name, 'name_key' => str_replace(' ', '', $name), 'tin' => sprintf('%09d', $i), 'addr' => 'ADDR', 'city' => 'CITY']);
+            Supplier::create(['name' => $name, 'tin' => sprintf('%09d', $i), 'addr' => 'ADDR', 'city' => 'CITY']);
+            WithholdingCompany::create(['registered_name' => $name, 'tin' => sprintf('%09d', $i), 'branch_code' => '0000', 'rdo_code' => '045', 'is_active' => true]);
+            $this->purchase($name);
+            $this->sale($name);
+            $this->importation($name, 'C-'.$i);
+        }
+        foreach ([
+            ['/customers', 'customerList', 'name'], ['/suppliers', 'supplierList', 'name'],
+            ['/withholding-companies', 'companies', 'registered_name'],
+            ['/records/purchases', 'vatInputs', 'supplier_name'], ['/records/sales', 'salesVatInputs', 'customer_name'],
+            ['/records/importations', 'entries', 'supplier'],
+        ] as [$url, $prop, $field]) {
+            $this->get($url.'?sort='.$field.'&direction=desc&per_page=10')->assertOk()->assertInertia(
+                fn ($page) => $page->where($prop.'.total', 16)->has($prop.'.data', 10)
+                    ->where($prop.'.data.0.'.$field, 'NAME 16')->where('filters.per_page', 10)
+            );
+            $this->get($url.'?sort='.$field.'&direction=desc&per_page=10&page=999')->assertOk()->assertInertia(
+                fn ($page) => $page->where($prop.'.current_page', 2)->has($prop.'.data', 6)
+            );
+            $this->getJson($url.'?sort=unknown')->assertUnprocessable();
+            $this->getJson($url.'?per_page=999')->assertUnprocessable();
+        }
+    }
+
+    public function test_purchase_display_sort_uses_actual_presented_values(): void
+    {
+        $this->purchase('RAW LARGE');
+        $this->purchase('DISPLAY LARGE');
+        VatInput::where('supplier_name', 'RAW LARGE')->update(['uses_vat_bucket_amounts' => true,
+            'purchase_local' => 10000, 'purchase_local_vat_amount' => 10]);
+        VatInput::where('supplier_name', 'DISPLAY LARGE')->update(['uses_vat_bucket_amounts' => false, 'purchase_local' => 100]);
+        $this->assertSame(['DISPLAY LARGE', 'RAW LARGE'], $this->prop(
+            '/records/purchases?sort=display_purchase_local_amount&direction=desc', 'vatInputs.data.*.supplier_name'));
+    }
+
     private function prop(string $url, string $path): array
     {
         $props = [];

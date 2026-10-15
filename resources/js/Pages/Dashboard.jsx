@@ -1,3 +1,4 @@
+import { DataTable } from '@/Components/DataTable';
 import { useEffect, useState } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import { motion } from "motion/react";
@@ -804,56 +805,27 @@ export default function Dashboard({
 
               {/* Ang table lang ang pinapayagang mag-scroll pahalang, hindi ang page. */}
               <div className="w-full overflow-x-auto">
-                <table className="w-full min-w-[860px] text-sm">
-                  <thead>
-                    <tr className="border-y border-slate-100 bg-slate-50/60 text-[10px] uppercase tracking-[0.08em] text-slate-500">
-                      <th className="px-5 py-3 text-left font-bold">Import Entry No.</th>
-                      <th className="px-5 py-3 text-left font-bold">Name of Seller</th>
-                      <th className="px-5 py-3 text-left font-bold">Country of Origin</th>
-                      <th className="px-5 py-3 text-left font-bold">Tax Month</th>
-                      <th className="px-5 py-3 text-right font-bold">Taxable Goods</th>
-                      <th className="px-5 py-3 text-right font-bold">VAT</th>
-                      <th className="px-5 py-3 text-left font-bold">Date Added</th>
-                      <th className="px-5 py-3 text-right font-bold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recent.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-500">
-                          No importation entries for {monthLabel}.
-                        </td>
-                      </tr>
-                    ) : (
-                      recent.map((entry, index) => (
-                        <motion.tr
-                          key={entry.id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ duration: 0.2, delay: index * 0.04 }}
-                          className="border-b border-slate-50 transition-colors last:border-0 hover:bg-slate-50/70"
-                        >
-                          <td className="whitespace-nowrap px-5 py-3.5 font-semibold text-slate-900">
+                <DataTable mode="client" data={recent} getRowId={row => String(row.id)} showToolbar={false} showPagination={false} tableClassName="min-w-[800px]" emptyState={{ title: `No importation entries for ${monthLabel}.` }} columns={[{ id: 'column_0', header: "Import Entry No.", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap px-5 py-3.5 font-semibold text-slate-900", headerClassName: '' }, cell: ({row}) => { const entry=row.original;  return (<>
                             {entry.import_entry_no}
-                          </td>
-                          <td className="px-5 py-3.5 text-slate-700">{entry.supplier}</td>
-                          <td className="whitespace-nowrap px-5 py-3.5 text-slate-700">
+                          </>); } },
+{ id: 'column_1', header: "Name of Seller", enableSorting: false, enableHiding: false, meta: { cellClassName: "px-5 py-3.5 text-slate-700", headerClassName: '' }, cell: ({row}) => { const entry=row.original;  return (<>{entry.supplier}</>); } },
+{ id: 'column_2', header: "Country of Origin", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap px-5 py-3.5 text-slate-700", headerClassName: '' }, cell: ({row}) => { const entry=row.original;  return (<>
                             <span className="mr-1.5">{flagFor(entry.country)}</span>
                             {entry.country}
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-3.5 text-slate-600">
+                          </>); } },
+{ id: 'column_3', header: "Tax Month", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap px-5 py-3.5 text-slate-600", headerClassName: '' }, cell: ({row}) => { const entry=row.original;  return (<>
                             {entry.tax_month}
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-3.5 text-right font-medium tabular-nums text-slate-900">
+                          </>); } },
+{ id: 'column_4', header: "Taxable Goods", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap px-5 py-3.5 text-right font-medium tabular-nums text-slate-900", headerClassName: 'text-right' }, cell: ({row}) => { const entry=row.original;  return (<>
                             {peso(entry.taxable_goods)}
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-3.5 text-right font-medium tabular-nums text-slate-900">
+                          </>); } },
+{ id: 'column_5', header: "VAT", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap px-5 py-3.5 text-right font-medium tabular-nums text-slate-900", headerClassName: 'text-right' }, cell: ({row}) => { const entry=row.original;  return (<>
                             {peso(entry.vat_payable)}
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-3.5 text-slate-500">
+                          </>); } },
+{ id: 'column_6', header: "Date Added", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap px-5 py-3.5 text-slate-500", headerClassName: '' }, cell: ({row}) => { const entry=row.original;  return (<>
                             {entry.created_at}
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-3.5 text-right">
+                          </>); } },
+{ id: 'column_7', header: "Actions", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap px-5 py-3.5 text-right", headerClassName: 'text-right' }, cell: ({row}) => { const entry=row.original;  return (<>
                             <Button
                               type="button"
                               variant="outline"
@@ -864,12 +836,7 @@ export default function Dashboard({
                               <Eye className="h-3.5 w-3.5" />
                               View Info
                             </Button>
-                          </td>
-                        </motion.tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                          </>); } }]} />
               </div>
             </Card>
           </motion.div>

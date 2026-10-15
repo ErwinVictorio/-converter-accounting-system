@@ -1,3 +1,4 @@
+import { DataTable } from '@/Components/DataTable';
 import React, { useEffect, useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
@@ -23,15 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/Components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/Components/ui/table";
-import DataTablePagination from "@/Layouts/Pagination";
 import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { brokerSchema } from "@/lib/FormSchema";
 
@@ -343,34 +335,13 @@ function ManageBrokers() {
           </div>
 
           <CardContent className="p-0">
-            <Table>
-              <TableHeader className="bg-slate-50/70">
-                <TableRow>
-                  <TableHead className="font-semibold text-slate-700 pl-6">
-                    Broker Name
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700">
-                    TIN
-                  </TableHead>
-                  <TableHead className="text-right pr-6 font-semibold text-slate-700">
-                    Actions
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {brokerList?.length > 0 ? (
-                  brokerList.map((broker) => (
-                    <TableRow
-                      key={broker.id}
-                      className="hover:bg-slate-50/50 transition-colors"
-                    >
-                      <TableCell className="font-medium text-slate-900 pl-6 py-4">
+            <DataTable mode="client" data={brokerList} getRowId={row => String(row.id)}  tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[{ id: 'broker_name', accessorKey: 'broker_name', header: "Broker Name", enableSorting: true, enableHiding: false, meta: { label: "Broker Name", cellClassName: "font-medium text-slate-900 pl-6 py-4", headerClassName: "" }, cell: ({ row }) => { const broker = row.original;  return (<>
                         {broker.broker_name}
-                      </TableCell>
-                      <TableCell className="text-slate-600">
+                      </>); } },
+{ id: 'tin_number', accessorKey: 'tin_number', header: "TIN", enableSorting: true, enableHiding: true, meta: { label: "TIN", cellClassName: "text-slate-600", headerClassName: "" }, cell: ({ row }) => { const broker = row.original;  return (<>
                         {broker.tin_number || "-"}
-                      </TableCell>
-                      <TableCell className="text-right pr-6 py-4 space-x-1">
+                      </>); } },
+{ id: 'actions', accessorKey: 'actions', header: "Actions", enableSorting: false, enableHiding: false, meta: { label: "Actions", cellClassName: "text-right pr-6 py-4 space-x-1", headerClassName: "text-right" }, cell: ({ row }) => { const broker = row.original;  return (<>
                         <Button
                           type="button"
                           variant="outline"
@@ -400,28 +371,10 @@ function ManageBrokers() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={3}
-                      className="text-center py-8 text-slate-400"
-                    >
-                      No brokers found.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                      </>); } }]} />
           </CardContent>
 
-          {brokerList?.links && (
-            <div className="p-4 border-t border-slate-100">
-              <DataTablePagination links={brokerList.links} />
-            </div>
-          )}
+
         </Card>
       </motion.div>
       <ViewInfoDialog

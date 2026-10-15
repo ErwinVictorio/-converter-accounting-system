@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use App\Support\DataTableQuery;
 
 class CustomerController extends Controller
 {
@@ -41,7 +42,8 @@ class CustomerController extends Controller
             $customerFixContext = ['pending_upload' => $queue, 'current_item' => $currentItem];
         }
 
-        $customerList = Customer::query()
+        $tableOptions = DataTableQuery::options($request, ['tin', 'name', 'addr', 'city'], 10);
+        $customerList = DataTableQuery::query(Customer::query()
             ->select('id', 'tin', 'name', 'addr', 'city')
             ->when($filters['tin'] ?? null, function ($query, string $tin) {
                 $query->where('tin', 'like', '%'.$tin.'%');
@@ -52,13 +54,12 @@ class CustomerController extends Controller
             ->when($addressStatus !== 'all', function (Builder $query) use ($addressStatus) {
                 $this->applyAddressStatusFilter($query, $addressStatus);
             })
-            ->orderBy('name')
-            ->paginate(10)
-            ->withQueryString();
+            ->orderBy('name'), $request, $tableOptions);
 
         return Inertia::render('ManageCustomer', [
             'customerList' => $customerList,
             'filters' => [
+                ...$tableOptions,
                 'tin' => $filters['tin'] ?? '',
                 'name' => $filters['name'] ?? '',
                 'address_status' => $addressStatus,

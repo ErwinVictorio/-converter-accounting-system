@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use App\Support\DataTableQuery;
 
 class SupplierController extends Controller
 {
@@ -47,7 +48,8 @@ class SupplierController extends Controller
             ];
         }
 
-        $supplierList = Supplier::query()
+        $tableOptions = DataTableQuery::options($request, ['tin', 'name', 'addr', 'city'], 10);
+        $supplierList = DataTableQuery::query(Supplier::query()
             ->select('id', 'tin', 'name', 'addr', 'city')
             ->when($filters['tin'] ?? null, function ($query, string $tin) {
                 $query->where('tin', 'like', '%'.$tin.'%');
@@ -58,13 +60,12 @@ class SupplierController extends Controller
             ->when($addressStatus !== 'all', function (Builder $query) use ($addressStatus) {
                 $this->applyAddressStatusFilter($query, $addressStatus);
             })
-            ->orderBy('name')
-            ->paginate(10)
-            ->withQueryString();
+            ->orderBy('name'), $request, $tableOptions);
 
         return Inertia::render('ManageSupplier', [
             'supplierList' => $supplierList,
             'filters' => [
+                ...$tableOptions,
                 'tin' => $filters['tin'] ?? '',
                 'name' => $filters['name'] ?? '',
                 'address_status' => $addressStatus,

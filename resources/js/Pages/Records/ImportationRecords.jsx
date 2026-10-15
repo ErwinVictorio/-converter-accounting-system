@@ -1,3 +1,4 @@
+import { InertiaDataTable } from '@/Components/DataTable';
 import { useEffect, useState } from "react";
 import { router, usePage } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
@@ -15,14 +16,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/Components/ui/dialog";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/Components/ui/table";
 import ImportationFormFields, {
     defaultValues,
     money,
@@ -124,7 +117,6 @@ function ImportationRecords() {
             <RecordTableShell
                 title="Importation Records"
                 description="Manually keyed importations. Add a new one under Data & Transactions > Importation."
-                links={entries?.links}
                 actions={
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                         <RecordSearchInput
@@ -143,50 +135,27 @@ function ImportationRecords() {
                     </div>
                 }
             >
-                <Table>
-                    <TableHeader className="bg-slate-50/70">
-                        <TableRow>
-                            <TableHead className="pl-6 font-semibold text-slate-700">#</TableHead>
-                            <TableHead className="font-semibold text-slate-700">Tax Month</TableHead>
-                            <TableHead className="font-semibold text-slate-700">Import Entry No.</TableHead>
-                            <TableHead className="font-semibold text-slate-700">Name of Seller</TableHead>
-                            <TableHead className="font-semibold text-slate-700">Country</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Landed Cost</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Dutiable</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Charges</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Exempt</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Taxable Goods</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">VAT Rate</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">VAT</TableHead>
-                            <TableHead className="font-semibold text-slate-700">OR No.</TableHead>
-                            <TableHead className="font-semibold text-slate-700">VAT Payment</TableHead>
-                            <TableHead className="pr-6 text-right font-semibold text-slate-700">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>                        {rows.length > 0 ? (
-                            rows.map((entry) => (
-                                <TableRow key={entry.id} className="transition-colors hover:bg-slate-50/50">
-                                    <TableCell className="py-3 pl-6 text-slate-500">{entry.sequence_number}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-slate-700">
+                <InertiaDataTable paginator={entries} tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[{ id: 'sequence_number', accessorKey: 'sequence_number', header: "#", enableSorting: true, enableHiding: false, meta: { label: "#", cellClassName: "py-3 pl-6 text-slate-500", headerClassName: "" }, cell: ({ row }) => { const entry = row.original;  return (<>{entry.sequence_number}</>); } },
+{ id: 'tax_month', accessorKey: 'tax_month', header: "Tax Month", enableSorting: true, enableHiding: true, meta: { label: "Tax Month", cellClassName: "whitespace-nowrap text-slate-700", headerClassName: "" }, cell: ({ row }) => { const entry = row.original;  return (<>
                                         {(entry.tax_month || "").slice(0, 7)}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap font-medium text-slate-900">
+                                    </>); } },
+{ id: 'import_entry_no', accessorKey: 'import_entry_no', header: "Import Entry No.", enableSorting: true, enableHiding: true, meta: { label: "Import Entry No.", cellClassName: "whitespace-nowrap font-medium text-slate-900", headerClassName: "" }, cell: ({ row }) => { const entry = row.original;  return (<>
                                         {entry.import_entry_no}
-                                    </TableCell>
-                                    <TableCell className="min-w-[200px] text-slate-700">{entry.supplier}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-slate-600">{entry.country}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-right text-slate-700">{money(entry.total_landed_cost)}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-right text-slate-600">{money(entry.dutiable_value)}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-right text-slate-600">{money(entry.charges)}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-right text-slate-600">{money(entry.exempt)}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-right text-slate-700">{money(entry.taxable_goods)}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-right text-slate-600">{money(entry.vat_rate)}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-right text-slate-700">{money(entry.vat_payable)}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-slate-600">{entry.or_number}</TableCell>
-                                    <TableCell className="whitespace-nowrap text-slate-600">
+                                    </>); } },
+{ id: 'supplier', accessorKey: 'supplier', header: "Name of Seller", enableSorting: true, enableHiding: true, meta: { label: "Name of Seller", cellClassName: "min-w-[200px] text-slate-700", headerClassName: "" }, cell: ({ row }) => { const entry = row.original;  return (<>{entry.supplier}</>); } },
+{ id: 'country', accessorKey: 'country', header: "Country", enableSorting: true, enableHiding: true, meta: { label: "Country", cellClassName: "whitespace-nowrap text-slate-600", headerClassName: "" }, cell: ({ row }) => { const entry = row.original;  return (<>{entry.country}</>); } },
+{ id: 'total_landed_cost', accessorKey: 'total_landed_cost', header: "Landed Cost", enableSorting: true, enableHiding: true, meta: { label: "Landed Cost", cellClassName: "whitespace-nowrap text-right text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const entry = row.original;  return (<>{money(entry.total_landed_cost)}</>); } },
+{ id: 'dutiable_value', accessorKey: 'dutiable_value', header: "Dutiable", enableSorting: true, enableHiding: true, meta: { label: "Dutiable", cellClassName: "whitespace-nowrap text-right text-slate-600", headerClassName: "text-right" }, cell: ({ row }) => { const entry = row.original;  return (<>{money(entry.dutiable_value)}</>); } },
+{ id: 'charges', accessorKey: 'charges', header: "Charges", enableSorting: true, enableHiding: true, meta: { label: "Charges", cellClassName: "whitespace-nowrap text-right text-slate-600", headerClassName: "text-right" }, cell: ({ row }) => { const entry = row.original;  return (<>{money(entry.charges)}</>); } },
+{ id: 'exempt', accessorKey: 'exempt', header: "Exempt", enableSorting: true, enableHiding: true, meta: { label: "Exempt", cellClassName: "whitespace-nowrap text-right text-slate-600", headerClassName: "text-right" }, cell: ({ row }) => { const entry = row.original;  return (<>{money(entry.exempt)}</>); } },
+{ id: 'taxable_goods', accessorKey: 'taxable_goods', header: "Taxable Goods", enableSorting: true, enableHiding: true, meta: { label: "Taxable Goods", cellClassName: "whitespace-nowrap text-right text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const entry = row.original;  return (<>{money(entry.taxable_goods)}</>); } },
+{ id: 'vat_rate', accessorKey: 'vat_rate', header: "VAT Rate", enableSorting: true, enableHiding: true, meta: { label: "VAT Rate", cellClassName: "whitespace-nowrap text-right text-slate-600", headerClassName: "text-right" }, cell: ({ row }) => { const entry = row.original;  return (<>{money(entry.vat_rate)}</>); } },
+{ id: 'vat_payable', accessorKey: 'vat_payable', header: "VAT", enableSorting: true, enableHiding: true, meta: { label: "VAT", cellClassName: "whitespace-nowrap text-right text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const entry = row.original;  return (<>{money(entry.vat_payable)}</>); } },
+{ id: 'or_number', accessorKey: 'or_number', header: "OR No.", enableSorting: true, enableHiding: true, meta: { label: "OR No.", cellClassName: "whitespace-nowrap text-slate-600", headerClassName: "" }, cell: ({ row }) => { const entry = row.original;  return (<>{entry.or_number}</>); } },
+{ id: 'payment_date', accessorKey: 'payment_date', header: "VAT Payment", enableSorting: true, enableHiding: true, meta: { label: "VAT Payment", cellClassName: "whitespace-nowrap text-slate-600", headerClassName: "" }, cell: ({ row }) => { const entry = row.original;  return (<>
                                         {(entry.payment_date || "").slice(0, 10)}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap py-3 pr-6 text-right">
+                                    </>); } },
+{ id: 'actions', accessorKey: 'actions', header: "Actions", enableSorting: false, enableHiding: false, meta: { label: "Actions", cellClassName: "whitespace-nowrap py-3 pr-6 text-right", headerClassName: "text-right" }, cell: ({ row }) => { const entry = row.original;  return (<>
                                         <Button
                                             type="button"
                                             variant="outline"
@@ -215,17 +184,7 @@ function ImportationRecords() {
                                         >
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))
-                        ) : (
-                            <TableRow>
-                                <TableCell colSpan={15} className="py-8 text-center text-slate-400">
-                                    No importation entries found.
-                                </TableCell>
-                            </TableRow>
-                        )}</TableBody>
-                </Table>
+                                    </>); } }]} />
             </RecordTableShell>
 
             <Dialog open={Boolean(editingEntry)} onOpenChange={(open) => !open && handleCloseEdit()}>

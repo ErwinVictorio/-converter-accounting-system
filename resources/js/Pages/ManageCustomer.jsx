@@ -1,3 +1,5 @@
+import { currentTableQuery } from '@/lib/dataTable';
+import { InertiaDataTable } from '@/Components/DataTable';
 import React, { useEffect, useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
@@ -31,15 +33,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/Components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/Components/ui/table";
-import DataTablePagination from "@/Layouts/Pagination";
 import MasterDataCharacterCount from "@/Components/MasterDataCharacterCount";
 import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { birFieldLimits, customerSchema } from "@/lib/FormSchema";
@@ -192,11 +185,11 @@ function ManageCustomer() {
 
     router.get(
       "/customers",
-      {
+      currentTableQuery({
         tin: filterValues.tin,
         name: filterValues.name,
         address_status: filterValues.address_status,
-      },
+      }),
       {
         preserveState: true,
         preserveScroll: true,
@@ -210,7 +203,7 @@ function ManageCustomer() {
 
     router.get(
       "/customers",
-      {},
+      currentTableQuery({tin: '', name: '', address_status: 'all'}),
       {
         preserveState: true,
         preserveScroll: true,
@@ -450,34 +443,20 @@ function ManageCustomer() {
             </form>
           </div>
 
-          <CardContent className="p-0 overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-slate-50/70">
-                <TableRow>
-                  <TableHead className="font-semibold text-slate-700 pl-6">TIN</TableHead>
-                  <TableHead className="font-semibold text-slate-700">Customer Name</TableHead>
-                  <TableHead className="font-semibold text-slate-700">Address</TableHead>
-                  <TableHead className="font-semibold text-slate-700">City</TableHead>
-                  <TableHead className="text-right pr-6 font-semibold text-slate-700">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {customers.length > 0 ? (
-                  customers.map((customer) => (
-                    <TableRow key={customer.id} className="hover:bg-slate-50/50 transition-colors">
-                      <TableCell className="font-medium text-slate-900 pl-6 py-4 whitespace-nowrap">
+          <CardContent className="p-0">
+            <InertiaDataTable paginator={customerList} tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[{ id: 'tin', accessorKey: 'tin', header: "TIN", enableSorting: true, enableHiding: false, meta: { label: "TIN", cellClassName: "font-medium text-slate-900 pl-6 py-4 whitespace-nowrap", headerClassName: "" }, cell: ({ row }) => { const customer = row.original;  return (<>
                         {customer.tin || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-700 min-w-[220px]">
+                      </>); } },
+{ id: 'name', accessorKey: 'name', header: "Customer Name", enableSorting: true, enableHiding: true, meta: { label: "Customer Name", cellClassName: "text-slate-700 min-w-[220px]", headerClassName: "" }, cell: ({ row }) => { const customer = row.original;  return (<>
                         {customer.name}
-                      </TableCell>
-                      <TableCell className="text-slate-600 min-w-[300px]">
+                      </>); } },
+{ id: 'addr', accessorKey: 'addr', header: "Address", enableSorting: true, enableHiding: true, meta: { label: "Address", cellClassName: "text-slate-600 min-w-[300px]", headerClassName: "" }, cell: ({ row }) => { const customer = row.original;  return (<>
                         {customer.addr}
-                      </TableCell>
-                      <TableCell className="text-slate-600 whitespace-nowrap">
+                      </>); } },
+{ id: 'city', accessorKey: 'city', header: "City", enableSorting: true, enableHiding: true, meta: { label: "City", cellClassName: "text-slate-600 whitespace-nowrap", headerClassName: "" }, cell: ({ row }) => { const customer = row.original;  return (<>
                         {customer.city || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-right pr-6 py-4">
+                      </>); } },
+{ id: 'actions', accessorKey: 'actions', header: "Actions", enableSorting: false, enableHiding: false, meta: { label: "Actions", cellClassName: "text-right pr-6 py-4", headerClassName: "text-right" }, cell: ({ row }) => { const customer = row.original;  return (<>
                         <Button
                           type="button"
                           variant="outline"
@@ -506,23 +485,10 @@ function ManageCustomer() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-slate-400">
-                      No customers found.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                      </>); } }]} />
           </CardContent>
 
-          {customerList?.links && (
-            <DataTablePagination links={customerList.links} />
-          )}
+
         </Card>
       </motion.div>
 

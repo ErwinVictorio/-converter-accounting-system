@@ -1,3 +1,5 @@
+import { currentTableQuery } from '@/lib/dataTable';
+import { InertiaDataTable } from '@/Components/DataTable';
 import React, { useEffect, useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import { useForm } from "react-hook-form";
@@ -31,15 +33,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/Components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/Components/ui/table";
-import DataTablePagination from "@/Layouts/Pagination";
 import MasterDataCharacterCount from "@/Components/MasterDataCharacterCount";
 import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { birFieldLimits, supplierSchema } from "@/lib/FormSchema";
@@ -187,12 +180,12 @@ function ManageSupplier() {
 
     router.get(
       "/suppliers",
-      {
+      currentTableQuery({
         tin: filterValues.tin,
         name: filterValues.name,
         address_status: filterValues.address_status,
         ...fixQueueQuery,
-      },
+      }),
       {
         preserveState: true,
         preserveScroll: true,
@@ -206,7 +199,7 @@ function ManageSupplier() {
 
     router.get(
       "/suppliers",
-      fixQueueQuery,
+      currentTableQuery({ ...fixQueueQuery, tin: "", name: "", address_status: "all" }),
       {
         preserveState: true,
         preserveScroll: true,
@@ -536,47 +529,20 @@ function ManageSupplier() {
             </form>
           </div>
 
-          <CardContent className="p-0 overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-slate-50/70">
-                <TableRow>
-                  <TableHead className="font-semibold text-slate-700 pl-6">
-                    TIN
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700">
-                    Supplier Name
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700">
-                    Address
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700">
-                    City
-                  </TableHead>
-                  <TableHead className="text-right pr-6 font-semibold text-slate-700">
-                    Actions
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {suppliers.length > 0 ? (
-                  suppliers.map((supplier) => (
-                    <TableRow
-                      key={supplier.id}
-                      className="hover:bg-slate-50/50 transition-colors"
-                    >
-                      <TableCell className="font-medium text-slate-900 pl-6 py-4 whitespace-nowrap">
+          <CardContent className="p-0">
+            <InertiaDataTable paginator={supplierList} tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[{ id: 'tin', accessorKey: 'tin', header: "TIN", enableSorting: true, enableHiding: false, meta: { label: "TIN", cellClassName: "font-medium text-slate-900 pl-6 py-4 whitespace-nowrap", headerClassName: "" }, cell: ({ row }) => { const supplier = row.original;  return (<>
                         {supplier.tin || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-700 min-w-[180px]">
+                      </>); } },
+{ id: 'name', accessorKey: 'name', header: "Supplier Name", enableSorting: true, enableHiding: true, meta: { label: "Supplier Name", cellClassName: "text-slate-700 min-w-[180px]", headerClassName: "" }, cell: ({ row }) => { const supplier = row.original;  return (<>
                         {supplier.name || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-600 min-w-[260px]">
+                      </>); } },
+{ id: 'addr', accessorKey: 'addr', header: "Address", enableSorting: true, enableHiding: true, meta: { label: "Address", cellClassName: "text-slate-600 min-w-[260px]", headerClassName: "" }, cell: ({ row }) => { const supplier = row.original;  return (<>
                         {supplier.addr || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-slate-600 whitespace-nowrap">
+                      </>); } },
+{ id: 'city', accessorKey: 'city', header: "City", enableSorting: true, enableHiding: true, meta: { label: "City", cellClassName: "text-slate-600 whitespace-nowrap", headerClassName: "" }, cell: ({ row }) => { const supplier = row.original;  return (<>
                         {supplier.city || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-right pr-6 py-4">
+                      </>); } },
+{ id: 'actions', accessorKey: 'actions', header: "Actions", enableSorting: false, enableHiding: false, meta: { label: "Actions", cellClassName: "text-right pr-6 py-4", headerClassName: "text-right" }, cell: ({ row }) => { const supplier = row.original;  return (<>
                         <Button
                           type="button"
                           variant="outline"
@@ -605,26 +571,10 @@ function ManageSupplier() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="text-center py-8 text-slate-400"
-                    >
-                      No suppliers found.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                      </>); } }]} />
           </CardContent>
 
-          {supplierList?.links && (
-            <DataTablePagination links={supplierList.links} />
-          )}
+
         </Card>
       </motion.div>
 

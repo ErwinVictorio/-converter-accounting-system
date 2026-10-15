@@ -1,3 +1,4 @@
+import { DataTable } from '@/Components/DataTable';
 import { useRef, useState } from "react";
 import axios from "axios";
 import { router } from "@inertiajs/react";
@@ -120,28 +121,33 @@ export default function ExpandedDmUploader({ scope }) {
                                 <option value="all">All suppliers</option><option value="ready">Ready to apply</option><option value="needs_review">Needs review</option><option value="already_applied">Already applied</option>
                             </select>
                         </label>
-                        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-                            <thead><tr>{["Supplier / Status", "Current Tax", "Eligible DM deduction", "New Tax"].map((label, i) => <th key={label} className={`p-2 ${i ? "text-right" : ""}`}>{label}</th>)}</tr></thead>
-                            <tbody>{review.supplier_groups.filter(group => group.entries.some(matchesFilter)).map(group => {
-                                const target = review.targets.find(item => item.key === group.target_key);
+                        <div className="overflow-x-auto"><DataTable mode="client" data={review.supplier_groups.filter(group => group.entries.some(matchesFilter))} getRowId={row => String(row.key)} showToolbar={false} showPagination={false} tableClassName="min-w-[800px]" emptyState={{ title: 'No DM groups match this filter.' }} columns={[{ id: 'column_0', header: "Supplier / Status", enableSorting: false, enableHiding: false, meta: { cellClassName: "min-w-[220px] p-2", headerClassName: '' }, cell: ({row}) => { const group=row.original; const target = review.targets.find(item => item.key === group.target_key);
                                 const ready = group.entries.filter(entry => entry.status === "ready").length;
                                 const skipped = group.entries.length - ready;
                                 const statuses = [...new Set(group.entries.map(entry => labels[entry.status]))];
-                                return <tr key={group.key} className="border-t align-top">
-                                    <td className="min-w-[220px] p-2"><p className="font-medium">{target?.supplier || group.supplier}</p>
+                                 return (<><p className="font-medium">{target?.supplier || group.supplier}</p>
                                         <p className={`text-xs ${skipped ? "text-amber-800" : "text-emerald-800"}`}>{statuses.length > 1 ? `Mixed: ${ready} ready, ${skipped} skipped` : statuses[0]}</p>
                                         {target && (Number(target.after) < 0 || Number(target.income_after) < 0) && <p className="text-xs text-amber-800">Negative after deduction</p>}
                                         <details className="mt-2"><summary className="cursor-pointer text-slate-600">View {group.entries.length} DM entries</summary>
                                             {target && <div className="my-2 text-xs text-slate-600"><p>TIN {target.tin} · ATC {target.atc} · {target.rate}% · {target.source_count} source rows</p><p>Income Payment: PHP {money(target.income_before)} − {money(target.income_deduction)} = {money(target.income_after)}</p></div>}
                                             <ul className="space-y-2 text-xs">{group.entries.map(entry => <li key={entry.key}><p>Row {entry.row}: {entry.reference} · PHP {money(entry.amount)}</p><p>{labels[entry.status]} — {entry.reason}</p></li>)}</ul>
                                         </details>
-                                    </td>
-                                    <td className="whitespace-nowrap p-2 text-right">{target ? money(target.before) : "—"}</td>
-                                    <td className="whitespace-nowrap p-2 text-right">{target ? money(target.deduction) : "—"}</td>
-                                    <td className="whitespace-nowrap p-2 text-right font-semibold">{target ? money(target.after) : "—"}</td>
-                                </tr>;
-                            })}</tbody>
-                        </table></div>
+                                    </>); } },
+{ id: 'column_1', header: "Current Tax", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap p-2 text-right", headerClassName: 'text-right' }, cell: ({row}) => { const group=row.original; const target = review.targets.find(item => item.key === group.target_key);
+                                const ready = group.entries.filter(entry => entry.status === "ready").length;
+                                const skipped = group.entries.length - ready;
+                                const statuses = [...new Set(group.entries.map(entry => labels[entry.status]))];
+                                 return (<>{target ? money(target.before) : "—"}</>); } },
+{ id: 'column_2', header: "Eligible DM deduction", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap p-2 text-right", headerClassName: 'text-right' }, cell: ({row}) => { const group=row.original; const target = review.targets.find(item => item.key === group.target_key);
+                                const ready = group.entries.filter(entry => entry.status === "ready").length;
+                                const skipped = group.entries.length - ready;
+                                const statuses = [...new Set(group.entries.map(entry => labels[entry.status]))];
+                                 return (<>{target ? money(target.deduction) : "—"}</>); } },
+{ id: 'column_3', header: "New Tax", enableSorting: false, enableHiding: false, meta: { cellClassName: "whitespace-nowrap p-2 text-right font-semibold", headerClassName: 'text-right' }, cell: ({row}) => { const group=row.original; const target = review.targets.find(item => item.key === group.target_key);
+                                const ready = group.entries.filter(entry => entry.status === "ready").length;
+                                const skipped = group.entries.length - ready;
+                                const statuses = [...new Set(group.entries.map(entry => labels[entry.status]))];
+                                 return (<>{target ? money(target.after) : "—"}</>); } }]} /></div>
                         <p className="text-xs text-slate-600">Amounts in PHP. Only eligible entries affect New Tax. Unavailable balances are shown as —.</p>
                         <p className="text-sm text-slate-600">Tax Withheld and Income Payment will both be reduced. Income Payment deduction = eligible DM deduction ÷ (rate / 100).</p>
                         {(review.negative_balance_warnings || []).length > 0 && <div role="alert" className="space-y-2 rounded-lg bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">Negative balance after DM deduction</p>{review.negative_balance_warnings.map((warning, i) => <p key={i}>{warning}</p>)}</div>}

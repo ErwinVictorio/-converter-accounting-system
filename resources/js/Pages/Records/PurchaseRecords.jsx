@@ -1,3 +1,5 @@
+import { currentTableQuery } from '@/lib/dataTable';
+import { InertiaDataTable } from '@/Components/DataTable';
 import { useEffect, useState } from "react";
 import { router, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -16,14 +18,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/Components/ui/dialog";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/Components/ui/table";
 import BirVendorDialog from "@/Components/Records/BirVendorDialog";
 import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
@@ -147,12 +141,11 @@ function PurchaseRecords() {
             <RecordTableShell
                 title="Purchase Records"
                 description="Purchase records. Unassigned historical rows are excluded from company DAT downloads until ownership is reviewed."
-                links={vatInputs?.links}
                 actions={
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                         <select aria-label="Filter Purchase company" value={companyFilter}
                             className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
-                            onChange={(event) => router.get("/records/purchases", { ...filters, company: event.target.value }, { preserveScroll: true })}>
+                            onChange={(event) => router.get("/records/purchases", currentTableQuery({ ...filters, company: event.target.value }), { preserveScroll: true })}>
                             <option value="">All companies / unassigned</option>
                             <option value="unassigned">Unassigned Purchase records</option>
                             {purchaseCompanies.map((company) => <option key={`${company.tin}|${company.branch_code}`} value={`${company.tin}|${company.branch_code}`}>{company.name} ({company.tin}-{company.branch_code})</option>)}
@@ -172,24 +165,7 @@ function PurchaseRecords() {
                     </div>
                 }
             >
-                <Table className="min-w-[800px]">
-                    <TableHeader>
-                        <TableRow className="bg-slate-50 hover:bg-slate-50">
-                            <TableHead className="font-semibold text-slate-700">Supplier Name</TableHead>
-                            <TableHead className="font-semibold text-slate-700">TIN Number</TableHead>
-                            <TableHead className="font-semibold text-slate-700">Imported</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Purchase Imported</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Purchase Local</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Services</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Others</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Total</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {vatInputs?.data?.length > 0 ? (
-                            vatInputs.data.map((item) => {
-                                const isBroker = Number(item.is_broker) === 1;
+                <InertiaDataTable paginator={vatInputs} tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[{ id: 'supplier_name', accessorKey: 'supplier_name', header: "Supplier Name", enableSorting: true, enableHiding: false, meta: { label: "Supplier Name", cellClassName: "whitespace-nowrap font-medium text-slate-900", headerClassName: "" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
                                 const isImported = Number(item.is_imported) === 1;
                                 const isAdjusted = Number(item.is_adjusted) === 1;
                                 const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
@@ -198,9 +174,7 @@ function PurchaseRecords() {
                                         ? Boolean(item.last_name && item.first_name && item.middle_name)
                                         : Boolean(item.company_name || item.supplier_name);
 
-                                return (
-                                    <TableRow key={item.id} className="transition-colors hover:bg-slate-50/60">
-                                        <TableCell className="whitespace-nowrap font-medium text-slate-900">
+                                 return (<>
                                             <div className="flex items-center gap-2">
                                                 <span>{item.supplier_name}<small className="block font-normal text-slate-500">{item.filing_company_tin ? `${item.filing_company_tin}-${item.filing_company_branch_code}` : "Unassigned / legacy - review company before adjustment"}</small></span>
                                                 {isAdjusted && (
@@ -209,11 +183,29 @@ function PurchaseRecords() {
                                                     </Badge>
                                                 )}
                                             </div>
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap font-mono text-xs text-slate-600">
+                                        </>); } },
+{ id: 'tin_number', accessorKey: 'tin_number', header: "TIN Number", enableSorting: true, enableHiding: true, meta: { label: "TIN Number", cellClassName: "whitespace-nowrap font-mono text-xs text-slate-600", headerClassName: "" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
+                                const isImported = Number(item.is_imported) === 1;
+                                const isAdjusted = Number(item.is_adjusted) === 1;
+                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
+                                const hasBirName =
+                                    item.vendor_type === "individual"
+                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
+                                        : Boolean(item.company_name || item.supplier_name);
+
+                                 return (<>
                                             {item.tin_number || "—"}
-                                        </TableCell>
-                                        <TableCell>
+                                        </>); } },
+{ id: 'is_imported', accessorKey: 'is_imported', header: "Imported", enableSorting: true, enableHiding: true, meta: { label: "Imported", cellClassName: "", headerClassName: "" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
+                                const isImported = Number(item.is_imported) === 1;
+                                const isAdjusted = Number(item.is_adjusted) === 1;
+                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
+                                const hasBirName =
+                                    item.vendor_type === "individual"
+                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
+                                        : Boolean(item.company_name || item.supplier_name);
+
+                                 return (<>
                                             <Badge
                                                 variant={isImported ? "default" : "secondary"}
                                                 className={
@@ -224,23 +216,77 @@ function PurchaseRecords() {
                                             >
                                                 {isImported ? "Yes" : "No"}
                                             </Badge>
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                        </>); } },
+{ id: 'purchase_imported', accessorKey: 'purchase_imported', header: "Purchase Imported", enableSorting: true, enableHiding: true, meta: { label: "Purchase Imported", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
+                                const isImported = Number(item.is_imported) === 1;
+                                const isAdjusted = Number(item.is_adjusted) === 1;
+                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
+                                const hasBirName =
+                                    item.vendor_type === "individual"
+                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
+                                        : Boolean(item.company_name || item.supplier_name);
+
+                                 return (<>
                                             {formatCurrency(item.purchase_imported)}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                        </>); } },
+{ id: 'display_purchase_local_amount', accessorKey: 'display_purchase_local_amount', header: "Purchase Local", enableSorting: true, enableHiding: true, meta: { label: "Purchase Local", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
+                                const isImported = Number(item.is_imported) === 1;
+                                const isAdjusted = Number(item.is_adjusted) === 1;
+                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
+                                const hasBirName =
+                                    item.vendor_type === "individual"
+                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
+                                        : Boolean(item.company_name || item.supplier_name);
+
+                                 return (<>
                                             {formatCurrency(item.display_purchase_local_amount)}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                        </>); } },
+{ id: 'display_services_amount', accessorKey: 'display_services_amount', header: "Services", enableSorting: true, enableHiding: true, meta: { label: "Services", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
+                                const isImported = Number(item.is_imported) === 1;
+                                const isAdjusted = Number(item.is_adjusted) === 1;
+                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
+                                const hasBirName =
+                                    item.vendor_type === "individual"
+                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
+                                        : Boolean(item.company_name || item.supplier_name);
+
+                                 return (<>
                                             {formatCurrency(item.display_services_amount)}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                        </>); } },
+{ id: 'display_others_amount', accessorKey: 'display_others_amount', header: "Others", enableSorting: true, enableHiding: true, meta: { label: "Others", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
+                                const isImported = Number(item.is_imported) === 1;
+                                const isAdjusted = Number(item.is_adjusted) === 1;
+                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
+                                const hasBirName =
+                                    item.vendor_type === "individual"
+                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
+                                        : Boolean(item.company_name || item.supplier_name);
+
+                                 return (<>
                                             {formatCurrency(item.display_others_amount)}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-right font-mono text-xs font-bold text-slate-900">
+                                        </>); } },
+{ id: 'display_calculated_total', accessorKey: 'display_calculated_total', header: "Total", enableSorting: true, enableHiding: true, meta: { label: "Total", cellClassName: "whitespace-nowrap text-right font-mono text-xs font-bold text-slate-900", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
+                                const isImported = Number(item.is_imported) === 1;
+                                const isAdjusted = Number(item.is_adjusted) === 1;
+                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
+                                const hasBirName =
+                                    item.vendor_type === "individual"
+                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
+                                        : Boolean(item.company_name || item.supplier_name);
+
+                                 return (<>
                                             {formatCurrency(item.display_calculated_total)}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-right">
+                                        </>); } },
+{ id: 'actions', accessorKey: 'actions', header: "Actions", enableSorting: false, enableHiding: false, meta: { label: "Actions", cellClassName: "whitespace-nowrap text-right", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
+                                const isImported = Number(item.is_imported) === 1;
+                                const isAdjusted = Number(item.is_adjusted) === 1;
+                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
+                                const hasBirName =
+                                    item.vendor_type === "individual"
+                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
+                                        : Boolean(item.company_name || item.supplier_name);
+
+                                 return (<>
                                             <div className="flex justify-end gap-2">
                                                 <Button
                                                     type="button"
@@ -301,19 +347,7 @@ function PurchaseRecords() {
                                                     </Button>
                                                 )}
                                             </div>
-                                        </TableCell>
-                                    </TableRow>
-                                );
-                            })
-                        ) : (
-                            <TableRow>
-                                <TableCell colSpan={9} className="h-32 text-center text-slate-500">
-                                    No records found.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
+                                        </>); } }]} />
             </RecordTableShell>
 
             <BirVendorDialog

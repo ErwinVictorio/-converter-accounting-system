@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use App\Support\DataTableQuery;
 use Maatwebsite\Excel\Facades\Excel;
 
 class ImportationController extends Controller
@@ -36,7 +37,8 @@ class ImportationController extends Controller
             ->unique()
             ->values();
 
-        $entries = ImportationEntry::query()
+        $tableOptions = DataTableQuery::options($request, ['sequence_number', 'tax_month', 'import_entry_no', 'supplier', 'country', 'total_landed_cost', 'dutiable_value', 'charges', 'exempt', 'taxable_goods', 'vat_rate', 'vat_payable', 'or_number', 'payment_date'], 15);
+        $entries = DataTableQuery::query(ImportationEntry::query()
             ->when($normalizedMonth, function ($query, string $month) {
                 $query->whereDate('tax_month', $month);
             })
@@ -71,9 +73,7 @@ class ImportationController extends Controller
             ->orderBy('supplier')
             ->orderByDesc('tax_month')
             ->orderBy('sequence_number')
-            ->orderBy('id')
-            ->paginate(15)
-            ->withQueryString();
+            ->orderBy('id'), $request, $tableOptions);
 
         $months = ImportationEntry::query()
             ->orderByDesc('tax_month')
@@ -90,6 +90,7 @@ class ImportationController extends Controller
             'entries' => $entries,
             'months' => $months,
             'filters' => [
+                ...$tableOptions,
                 'tax_month' => $taxMonth ? Carbon::parse($normalizedMonth)->format('Y-m') : '',
                 'search' => $search,
             ],

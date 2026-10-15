@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use App\Support\DataTableQuery;
 
 /**
  * Settings > Manage Companies: the withholding agent companies the Expanded WTAX
@@ -47,7 +48,8 @@ class WithholdingCompanyController extends Controller
         // and LIKE '%%' would match every row.
         $searchDigits = preg_replace('/\D/', '', $search);
 
-        $companies = WithholdingCompany::query()
+        $tableOptions = DataTableQuery::options($request, ['registered_name', 'tin', 'rdo_code', 'address1', 'is_active'], 10);
+        $companies = DataTableQuery::query(WithholdingCompany::query()
             ->when($search !== '', function ($query) use ($search, $searchDigits) {
                 $query->where(function ($scoped) use ($search, $searchDigits) {
                     $scoped->where('registered_name', 'LIKE', "%{$search}%")
@@ -62,9 +64,7 @@ class WithholdingCompanyController extends Controller
                 $this->applyAddressStatusFilter($query, $addressStatus);
             })
             ->orderBy('registered_name')
-            ->orderBy('branch_code')
-            ->paginate(10)
-            ->withQueryString()
+            ->orderBy('branch_code'), $request, $tableOptions)
             ->through(fn (WithholdingCompany $company) => [
                 'id' => $company->id,
                 'tin' => $company->tin,
@@ -84,6 +84,7 @@ class WithholdingCompanyController extends Controller
         return Inertia::render('WithholdingCompanies', [
             'companies' => $companies,
             'filters' => [
+                ...$tableOptions,
                 'search' => $search,
                 'address_status' => $addressStatus,
             ],

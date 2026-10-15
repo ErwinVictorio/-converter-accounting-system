@@ -1,3 +1,4 @@
+import { currentTableQuery } from '@/lib/dataTable';
 import { useEffect, useState } from "react";
 import { router } from "@inertiajs/react";
 import { X } from "lucide-react";
@@ -21,11 +22,7 @@ export default function RecordPeriodFilter({
         setPeriod(value);
         router.get(
             url,
-            {
-                ...params,
-                ...(value ? { [queryKey]: value } : {}),
-                ...(search ? { search } : {}),
-            },
+            currentTableQuery({ ...params, [queryKey]: value, search }),
             { preserveState: true, preserveScroll: true, replace: true }
         );
     };

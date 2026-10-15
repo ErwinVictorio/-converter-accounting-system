@@ -1,3 +1,5 @@
+import { currentTableQuery } from '@/lib/dataTable';
+import { InertiaDataTable } from '@/Components/DataTable';
 import React, { useEffect, useState } from "react";
 import { router, useForm, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -43,15 +45,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/Components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/Components/ui/table";
-import DataTablePagination from "@/Layouts/Pagination";
 import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 
 const containerVariants = {
@@ -133,7 +126,7 @@ function WithholdingCompanies() {
 
     router.get(
       "/withholding-companies",
-      { search, address_status: addressStatus },
+      currentTableQuery({ search, address_status: addressStatus }),
       { preserveState: true, preserveScroll: true, replace: true }
     );
   };
@@ -144,7 +137,7 @@ function WithholdingCompanies() {
 
     router.get(
       "/withholding-companies",
-      {},
+      currentTableQuery({search: '', address_status: 'all'}),
       { preserveState: true, preserveScroll: true, replace: true }
     );
   };
@@ -432,38 +425,8 @@ function WithholdingCompanies() {
             </form>
           </div>
 
-          <CardContent className="p-0 overflow-x-auto">
-            <Table className="min-w-[900px]">
-              <TableHeader className="bg-slate-50/70">
-                <TableRow>
-                  <TableHead className="font-semibold text-slate-700 pl-6">
-                    Registered Name
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700">
-                    TIN / Branch
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700">
-                    RDO
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700">
-                    Address
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700">
-                    Status
-                  </TableHead>
-                  <TableHead className="text-right pr-6 font-semibold text-slate-700">
-                    Actions
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.length > 0 ? (
-                  rows.map((company) => (
-                    <TableRow
-                      key={company.id}
-                      className="hover:bg-slate-50/50 transition-colors"
-                    >
-                      <TableCell className="pl-6 py-4 min-w-[220px]">
+          <CardContent className="p-0">
+            <InertiaDataTable paginator={companies} tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[{ id: 'registered_name', accessorKey: 'registered_name', header: "Registered Name", enableSorting: true, enableHiding: false, meta: { label: "Registered Name", cellClassName: "pl-6 py-4 min-w-[220px]", headerClassName: "" }, cell: ({ row }) => { const company = row.original;  return (<>
                         <div className="font-medium text-slate-900">
                           {company.registered_name}
                         </div>
@@ -472,8 +435,8 @@ function WithholdingCompanies() {
                             {company.trade_name}
                           </div>
                         )}
-                      </TableCell>
-                      <TableCell className="text-slate-700 whitespace-nowrap">
+                      </>); } },
+{ id: 'tin', accessorKey: 'tin', header: "TIN / Branch", enableSorting: true, enableHiding: true, meta: { label: "TIN / Branch", cellClassName: "text-slate-700 whitespace-nowrap", headerClassName: "" }, cell: ({ row }) => { const company = row.original;  return (<>
                         <span className="font-mono">
                           {company.tin}-{company.branch_code}
                         </span>
@@ -486,18 +449,18 @@ function WithholdingCompanies() {
                             locked
                           </span>
                         )}
-                      </TableCell>
-                      <TableCell className="text-slate-600 whitespace-nowrap">
+                      </>); } },
+{ id: 'rdo_code', accessorKey: 'rdo_code', header: "RDO", enableSorting: true, enableHiding: true, meta: { label: "RDO", cellClassName: "text-slate-600 whitespace-nowrap", headerClassName: "" }, cell: ({ row }) => { const company = row.original;  return (<>
                         {company.rdo_code || (
                           <span className="text-slate-400">—</span>
                         )}
-                      </TableCell>
-                      <TableCell className="text-slate-600 min-w-[220px]">
+                      </>); } },
+{ id: 'address1', accessorKey: 'address1', header: "Address", enableSorting: true, enableHiding: true, meta: { label: "Address", cellClassName: "text-slate-600 min-w-[220px]", headerClassName: "" }, cell: ({ row }) => { const company = row.original;  return (<>
                         {[company.address1, company.address2]
                           .filter(Boolean)
                           .join(", ") || <span className="text-slate-400">—</span>}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
+                      </>); } },
+{ id: 'is_active', accessorKey: 'is_active', header: "Status", enableSorting: true, enableHiding: true, meta: { label: "Status", cellClassName: "whitespace-nowrap", headerClassName: "" }, cell: ({ row }) => { const company = row.original;  return (<>
                         {company.is_active ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
                             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -509,8 +472,8 @@ function WithholdingCompanies() {
                             Inactive
                           </span>
                         )}
-                      </TableCell>
-                      <TableCell className="text-right pr-6 py-4 whitespace-nowrap">
+                      </>); } },
+{ id: 'actions', accessorKey: 'actions', header: "Actions", enableSorting: false, enableHiding: false, meta: { label: "Actions", cellClassName: "text-right pr-6 py-4 whitespace-nowrap", headerClassName: "text-right" }, cell: ({ row }) => { const company = row.original;  return (<>
                         <Button
                           type="button"
                           variant="outline"
@@ -572,25 +535,10 @@ function WithholdingCompanies() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center">
-                      <Building className="mx-auto mb-2 h-8 w-8 text-slate-300" />
-                      <p className="text-sm text-slate-400">
-                        No companies yet. Add the company you file Expanded WTAX
-                        for above.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                      </>); } }]} />
           </CardContent>
 
-          {companies?.links && <DataTablePagination links={companies.links} />}
+
         </Card>
       </motion.div>
 

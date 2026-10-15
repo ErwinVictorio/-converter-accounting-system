@@ -38,7 +38,7 @@ export default function RecordTableShell({
 
             {/* overflow-x-auto keeps a wide table inside the card instead of
                 stretching the page. */}
-            <CardContent className="overflow-x-auto p-0">{children}</CardContent>
+            <CardContent className="min-w-0 p-0">{children}</CardContent>
 
             <DataTablePagination links={links} />
         </Card>

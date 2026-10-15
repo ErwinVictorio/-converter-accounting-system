@@ -1,3 +1,4 @@
+import { InertiaDataTable } from '@/Components/DataTable';
 import { useEffect, useState } from "react";
 import { usePage } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -6,14 +7,6 @@ import { Eye } from "lucide-react";
 import MainLayout from "@/Layouts/MainLayout";
 import { Badge } from "@/Components/ui/badge";
 import { Button } from "@/Components/ui/button";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/Components/ui/table";
 import RecordSearchInput from "@/Components/Records/RecordSearchInput";
 import RecordPeriodFilter from "@/Components/Records/RecordPeriodFilter";
 import RecordTableShell from "@/Components/Records/RecordTableShell";
@@ -34,7 +27,6 @@ function SalesRecords() {
             <RecordTableShell
                 title="Sales VAT Records"
                 description="Uploaded sales rows, grouped per customer. Upload new files under Import Data."
-                links={salesVatInputs?.links}
                 actions={
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                         <RecordSearchInput
@@ -52,59 +44,39 @@ function SalesRecords() {
                     </div>
                 }
             >
-                <Table className="min-w-[1100px]">
-                    <TableHeader>
-                        <TableRow className="bg-slate-50 hover:bg-slate-50">
-                            <TableHead className="font-semibold text-slate-700">Customer Name</TableHead>
-                            <TableHead className="font-semibold text-slate-700">TIN Number</TableHead>
-                            <TableHead className="font-semibold text-slate-700">Type</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">SI Rows</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">CM Rows</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Exempt</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Zero Rated</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Taxable Net of VAT</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Output VAT</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Gross Taxable</TableHead>
-                            <TableHead className="text-right font-semibold text-slate-700">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {salesVatInputs?.data?.length > 0 ? (
-                            salesVatInputs.data.map((item) => (
-                                <TableRow key={item.id} className="transition-colors hover:bg-slate-50/60">
-                                    <TableCell className="whitespace-nowrap font-medium text-slate-900">
+                <InertiaDataTable paginator={salesVatInputs} tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[{ id: 'customer_name', accessorKey: 'customer_name', header: "Customer Name", enableSorting: true, enableHiding: false, meta: { label: "Customer Name", cellClassName: "whitespace-nowrap font-medium text-slate-900", headerClassName: "" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         {item.customer_name}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap font-mono text-xs text-slate-600">
+                                    </>); } },
+{ id: 'customer_tin', accessorKey: 'customer_tin', header: "TIN Number", enableSorting: true, enableHiding: true, meta: { label: "TIN Number", cellClassName: "whitespace-nowrap font-mono text-xs text-slate-600", headerClassName: "" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         {item.customer_tin || "No TIN"}
-                                    </TableCell>
-                                    <TableCell>
+                                    </>); } },
+{ id: 'customer_type', accessorKey: 'customer_type', header: "Type", enableSorting: true, enableHiding: true, meta: { label: "Type", cellClassName: "", headerClassName: "" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">
                                             {item.customer_type === "individual" ? "Individual" : "Company"}
                                         </Badge>
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                    </>); } },
+{ id: 'si_count', accessorKey: 'si_count', header: "SI Rows", enableSorting: true, enableHiding: true, meta: { label: "SI Rows", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         {item.si_count || 0}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                    </>); } },
+{ id: 'cm_count', accessorKey: 'cm_count', header: "CM Rows", enableSorting: true, enableHiding: true, meta: { label: "CM Rows", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         {item.cm_count || 0}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                    </>); } },
+{ id: 'exempt_sales', accessorKey: 'exempt_sales', header: "Exempt", enableSorting: true, enableHiding: true, meta: { label: "Exempt", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         {formatCurrency(item.exempt_sales)}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                    </>); } },
+{ id: 'zero_rated_sales', accessorKey: 'zero_rated_sales', header: "Zero Rated", enableSorting: true, enableHiding: true, meta: { label: "Zero Rated", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         {formatCurrency(item.zero_rated_sales)}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                    </>); } },
+{ id: 'taxable_net_of_vat', accessorKey: 'taxable_net_of_vat', header: "Taxable Net of VAT", enableSorting: true, enableHiding: true, meta: { label: "Taxable Net of VAT", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         {formatCurrency(item.taxable_net_of_vat)}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                    </>); } },
+{ id: 'output_vat', accessorKey: 'output_vat', header: "Output VAT", enableSorting: true, enableHiding: true, meta: { label: "Output VAT", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         {formatCurrency(item.output_vat)}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap text-right font-mono text-xs text-slate-700">
+                                    </>); } },
+{ id: 'gross_amount', accessorKey: 'gross_amount', header: "Gross Taxable", enableSorting: true, enableHiding: true, meta: { label: "Gross Taxable", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         {formatCurrency(item.gross_amount)}
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap text-right">
+                                    </>); } },
+{ id: 'actions', accessorKey: 'actions', header: "Actions", enableSorting: false, enableHiding: false, meta: { label: "Actions", cellClassName: "whitespace-nowrap text-right", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original;  return (<>
                                         <Button
                                             type="button"
                                             variant="outline"
@@ -115,18 +87,7 @@ function SalesRecords() {
                                             <Eye className="h-3.5 w-3.5" />
                                             View Info
                                         </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))
-                        ) : (
-                            <TableRow>
-                                <TableCell colSpan={11} className="h-32 text-center text-slate-500">
-                                    No sales records found.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
+                                    </>); } }]} />
             </RecordTableShell>
             <ViewInfoDialog
                 open={Boolean(selectedInfoRecord)}
