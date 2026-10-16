@@ -52,12 +52,13 @@ function TableFooter({
   );
 }
 
-function TableRow({
+const TableRow = React.forwardRef(function TableRow({
   className,
   ...props
-}) {
+}, ref) {
   return (
     <tr
+      ref={ref}
       data-slot="table-row"
       className={cn(
         "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
@@ -65,7 +66,7 @@ function TableRow({
       )}
       {...props} />
   );
-}
+})
 
 function TableHead({
   className,
