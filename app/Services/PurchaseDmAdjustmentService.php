@@ -19,13 +19,13 @@ class PurchaseDmAdjustmentService
     public function query(array $scope): Builder
     {
         return VatInput::query()->forFilingCompany(['tin' => $scope['filing_company_tin'], 'branch_code' => $scope['filing_company_branch_code']])
-            ->whereBetween('date_uploaded', [$scope['reporting_month'].'-01', date('Y-m-t', strtotime($scope['reporting_month'].'-01'))])
+            ->whereBetween('date_uploaded', [$scope['reporting_month'] . '-01', date('Y-m-t', strtotime($scope['reporting_month'] . '-01'))])
             ->excludingImportationMirrors()->withCount(['outgoingPurchaseAdjustments', 'incomingPurchaseAdjustments'])->orderBy('id');
     }
 
     public function snapshot(Collection $records): string
     {
-        return hash('sha256', $records->map(fn ($r) => $r->getAttributes())->toJson());
+        return hash('sha256', $records->map(fn($r) => $r->getAttributes())->toJson());
     }
 
     public function identity(array $scope, array $item): string
@@ -40,11 +40,11 @@ class PurchaseDmAdjustmentService
 
     private function match(array $item, Collection $records, string $type, array $brokerTins): array
     {
-        $matches = $records->filter(fn ($r) => ExpandedWtaxDmAdjustmentService::name($r->supplier_name) === ExpandedWtaxDmAdjustmentService::name($item['supplier']));
+        $matches = $records->filter(fn($r) => ExpandedWtaxDmAdjustmentService::name($r->supplier_name) === ExpandedWtaxDmAdjustmentService::name($item['supplier']));
         if ($matches->isEmpty()) {
             return ['no_matching_record', 'No Purchase supplier matches this company, branch and month.', collect()];
         }
-        $identities = $matches->map(fn ($r) => preg_replace('/\D/', '', (string) $r->tin_number))->unique();
+        $identities = $matches->map(fn($r) => preg_replace('/\D/', '', (string) $r->tin_number))->unique();
         if ($identities->count() !== 1) {
             return ['ambiguous_identity', 'Supplier name matches multiple tax identities.', collect()];
         }
@@ -52,36 +52,28 @@ class PurchaseDmAdjustmentService
             return ['invalid_tin', 'The matched supplier has a missing or invalid TIN.', collect()];
         }
         // Different raw names collapsing to one normalized name require human review.
-        if ($matches->pluck('supplier_name')->map(fn ($n) => strtoupper(trim($n)))->unique()->count() !== 1) {
+        if ($matches->pluck('supplier_name')->map(fn($n) => strtoupper(trim($n)))->unique()->count() !== 1) {
             return ['ambiguous_identity', 'Multiple stored supplier names normalize to the same name.', collect()];
         }
-        if ($matches->contains(fn ($r) => $r->is_adjusted || $r->is_broker || in_array(substr(preg_replace('/\D/', '', (string) $r->tin_number), 0, 9), $brokerTins, true)
+        if ($matches->contains(fn($r) => $r->is_adjusted || $r->is_broker || in_array(substr(preg_replace('/\D/', '', (string) $r->tin_number), 0, 9), $brokerTins, true)
             || $r->outgoing_purchase_adjustments_count || $r->incoming_purchase_adjustments_count)) {
             return ['unsupported_record', 'Broker, transferred or adjusted records are not eligible for Purchase DM.', collect()];
         }
         if ($matches->pluck('is_imported')->unique()->count() !== 1 || ($type === 'imported' && ! $matches->first()->is_imported)) {
             return ['ambiguous_group', 'Purchase classification does not identify one compatible original group.', collect()];
         }
-        $signature = $matches->map(fn ($r) => json_encode([$r->vendor_type, $r->company_name, $r->last_name, $r->first_name, $r->middle_name, $r->address1, $r->address2]))->unique();
+        $signature = $matches->map(fn($r) => json_encode([$r->vendor_type, $r->company_name, $r->last_name, $r->first_name, $r->middle_name, $r->address1, $r->address2]))->unique();
         if ($signature->count() !== 1) {
             return ['ambiguous_identity', 'Stored supplier identity details conflict across original rows.', collect()];
         }
         foreach ($matches as $r) {
             if ($r->uses_vat_bucket_amounts !== true || Money::cents($r->vat_rate) !== 1200) {
-                return ['unsupported_record', 'Only preserved VAT-bucket records at 12% are supported.', collect()];
+                return ['unsupported_record', 'This record needs saved VAT amounts at 12%.', collect()];
             }
             foreach (self::BASES as $base) {
-                if ($r->{$base.'_vat_amount'} === null) {
-                    return ['unsupported_record', 'Raw VAT amounts are missing; inferred VAT cannot be deducted safely.', collect()];
+                if ($r->{$base . '_vat_amount'} === null) {
+                    return ['unsupported_record', 'Original VAT amounts are missing. Review the Purchase upload.', collect()];
                 }
-            }
-            $c = fn ($f) => Money::cents($r->{$f} ?? 0);
-            if ($c('capital_goods') !== $c('purchase_imported') || $c('other_than_capital_goods') !== $c('purchase_local') + $c('others')
-                || $c('taxable_net_of_vat') !== $c('capital_goods') + $c('other_than_capital_goods') + $c('services')
-                || $c('total') !== $c('taxable_net_of_vat') + $c('exempt') + $c('zero_rated')
-                || $c('total_purchases') !== $c('total') + $c('input_vat')
-                || $c('input_vat') !== array_sum(array_map(fn ($base) => $c($base.'_vat_amount'), self::BASES))) {
-                return ['inconsistent_amounts', 'Stored totals do not reconcile with the original VAT buckets. Review the original upload.', collect()];
             }
         }
 
@@ -90,9 +82,9 @@ class PurchaseDmAdjustmentService
 
     public function review(array $scope, array $parsed, Collection $records, bool $available = true): array
     {
-        $keys = array_map(fn ($item) => $this->identity($scope, $item), $parsed['items']);
+        $keys = array_map(fn($item) => $this->identity($scope, $item), $parsed['items']);
         $applied = $available ? DB::table('purchase_dm_references')->whereIn('identity', $keys)->get()->keyBy('identity') : collect();
-        $brokerTins = Brokers::query()->pluck('tin_number')->map(fn ($tin) => substr(preg_replace('/\D/', '', (string) $tin), 0, 9))->all();
+        $brokerTins = Brokers::query()->pluck('tin_number')->map(fn($tin) => substr(preg_replace('/\D/', '', (string) $tin), 0, 9))->all();
         $entries = [];
         $groups = [];
         foreach ($parsed['items'] as $item) {
@@ -109,8 +101,14 @@ class PurchaseDmAdjustmentService
                 [$status, $reason, $matched] = $this->match($item, $records, $scope['purchase_type'], $brokerTins);
             }
             $targetKey = $matched->isNotEmpty() ? implode(',', $matched->pluck('id')->all()) : null;
-            $entries[] = $item + ['key' => $key, 'payload_hash' => $hash, 'status' => $status, 'reason' => $reason, 'target_key' => $targetKey,
-                'amount' => $item['credit_cents'] === null ? null : Money::money($item['credit_cents'])];
+            $entries[] = $item + [
+                'key' => $key,
+                'payload_hash' => $hash,
+                'status' => $status,
+                'reason' => $reason,
+                'target_key' => $targetKey,
+                'amount' => $item['credit_cents'] === null ? null : Money::money($item['credit_cents'])
+            ];
             if ($status === 'ready') {
                 $groups[$targetKey] ??= ['records' => $matched, 'credit' => 0, 'supplier' => $matched->first()->supplier_name];
                 $groups[$targetKey]['credit'] += $item['credit_cents'];
@@ -121,7 +119,7 @@ class PurchaseDmAdjustmentService
         $warnings = [];
         $blocked = [];
         $base = self::BASES[$scope['purchase_type']];
-        $raw = $base.'_vat_amount';
+        $raw = $base . '_vat_amount';
         foreach ($groups as $key => $group) {
             $deduction = $group['credit'];
             $remaining = $deduction;
@@ -162,10 +160,10 @@ class PurchaseDmAdjustmentService
                     $remaining -= $take;
                 }
                 if (Money::cents($copy->{$raw}) < 0 || Money::cents($copy->{$base}) < 0 || Money::cents($copy->input_vat) < 0) {
-                    $groupWarnings[] = $group['supplier'].': deduction leaves a negative VAT or taxable-base balance. Confirm only after reviewing the remaining amounts.';
+                    $groupWarnings[] = $group['supplier'] . ': The remaining balance will be negative. Please confirm to continue.';
                 }
                 foreach (app(BirPurchaseRowValidator::class)->validate($copy->toBirPurchaseRow(), 0) as $warning) {
-                    $groupWarnings[] = $group['supplier'].': '.preg_replace('/^Row 0: /', '', $warning);
+                    $groupWarnings[] = $group['supplier'] . ': ' . preg_replace('/^Row 0: /', '', $warning);
                 }
                 $copies->push($copy);
             }
@@ -177,12 +175,12 @@ class PurchaseDmAdjustmentService
             $fields = ['vat' => $raw, 'base' => $base, 'input_vat' => 'input_vat', 'gross' => 'total_purchases'];
             $metrics = [];
             foreach ($fields as $label => $field) {
-                $before = $group['records']->sum(fn ($r) => Money::cents($r->{$field}));
-                $after = $copies->sum(fn ($r) => Money::cents($r->{$field}));
+                $before = $group['records']->sum(fn($r) => Money::cents($r->{$field}));
+                $after = $copies->sum(fn($r) => Money::cents($r->{$field}));
                 $metrics[$label] = ['before' => Money::money($before), 'deduction' => Money::money($before - $after), 'after' => Money::money($after)];
             }
             // Existing presenter computes each stored Purchase row's displayed Total.
-            $display = fn ($rs) => $rs->sum(fn ($r) => Money::cents(app(PurchaseAmountPresenter::class)->forRecord($r)['display_calculated_total']));
+            $display = fn($rs) => $rs->sum(fn($r) => Money::cents(app(PurchaseAmountPresenter::class)->forRecord($r)['display_calculated_total']));
             $metrics['visible_total'] = ['before' => Money::money($display($group['records'])), 'deduction' => Money::money($display($group['records']) - $display($copies)), 'after' => Money::money($display($copies))];
             $targets[] = ['key' => (string) $key, 'supplier' => $group['supplier'], 'source_count' => $copies->count(), 'metrics' => $metrics];
             array_push($changes, ...$groupChanges);
@@ -196,14 +194,23 @@ class PurchaseDmAdjustmentService
         }
         unset($entry);
         $summary = [];
-        foreach (['file' => $entries, 'eligible' => array_filter($entries, fn ($e) => $e['status'] === 'ready'), 'skipped' => array_filter($entries, fn ($e) => $e['status'] !== 'ready')] as $label => $items) {
-            $summary[$label.'_count'] = count($items);
-            $summary[$label.'_total'] = Money::money(array_sum(array_column($items, 'credit_cents')));
-            $summary[$label.'_unknown_count'] = count(array_filter($items, fn ($e) => $e['credit_cents'] === null));
+        foreach (['file' => $entries, 'eligible' => array_filter($entries, fn($e) => $e['status'] === 'ready'), 'skipped' => array_filter($entries, fn($e) => $e['status'] !== 'ready')] as $label => $items) {
+            $summary[$label . '_count'] = count($items);
+            $summary[$label . '_total'] = Money::money(array_sum(array_column($items, 'credit_cents')));
+            $summary[$label . '_unknown_count'] = count(array_filter($items, fn($e) => $e['credit_cents'] === null));
         }
 
-        return ['review_version' => self::VERSION, 'entries' => $entries, 'targets' => $targets, 'changes' => $changes, 'warnings' => array_values(array_unique($warnings)), 'summary' => $summary,
-            'excluded' => $parsed['excluded'], 'excluded_count' => $parsed['excluded_count'], 'total_deduction' => $summary['eligible_total'],
-            'fingerprint' => hash('sha256', json_encode([$entries, $changes, $warnings]))];
+        return [
+            'review_version' => self::VERSION,
+            'entries' => $entries,
+            'targets' => $targets,
+            'changes' => $changes,
+            'warnings' => array_values(array_unique($warnings)),
+            'summary' => $summary,
+            'excluded' => $parsed['excluded'],
+            'excluded_count' => $parsed['excluded_count'],
+            'total_deduction' => $summary['eligible_total'],
+            'fingerprint' => hash('sha256', json_encode([$entries, $changes, $warnings]))
+        ];
     }
 }

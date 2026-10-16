@@ -103,7 +103,7 @@ For each compatible supplier/type group:
 
 Reduce the related capital_goods or other_than_capital_goods category by B for Imported or Local/Others respectively. For Services, services already IS the affected category: do not subtract B twice. Exempt, zero-rated, unrelated buckets, identities, and source period remain unchanged.
 
-These delta formulas target verified VAT-bucket semantics from the importer. Validate existing field consistency first and skip inconsistent records; do not silently repair unrelated historical discrepancies. Preserve existing source rounding offsets instead of recomputing old imported bases from scratch.
+These delta formulas target verified VAT-bucket semantics from the importer. Do not require internal totals to equal recomputed bucket totals for DM eligibility. Subtract the agreed deltas from stored fields and preserve existing offsets; do not silently repair unrelated historical discrepancies. Preserve existing source rounding offsets instead of recomputing old imported bases from scratch.
 
 Apply cents allocation in stable record-ID order, using positive available selected-bucket balances first; the final source absorbs any excess as in Expanded. Derive cumulative rounded base deductions so allocations sum to B exactly. Save per-source before/after values. Never allocate across incompatible rates or identities.
 
@@ -221,3 +221,7 @@ Supported boundaries:
 ### Purchase Type dropdown correction
 
 The dropdown portal initially used z-index 50, below the dialog overlay/content at 100/101. Set the Purchase DM dropdown content to z-index 102 with an opaque background. The earlier programmatic-click browser check did not detect this layering issue. Follow-up browser verification used actual pointer coordinates and hit testing: all four types selected successfully on desktop and mobile. Frontend production build passed after the fix.
+
+### Simplified matching and UI descriptions
+
+Removed the strict internal-total equality gate at the user's request. Company/branch/month/supplier matching, supported VAT data, duplicate checks, and negative-balance acknowledgment remain. UI descriptions now use shorter labels and instructions. Added a regression test proving existing total offsets survive the deduction and duplicate protection still applies. Focused DM suite: 20 tests, 149 assertions passed.

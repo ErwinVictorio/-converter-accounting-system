@@ -152,7 +152,7 @@ class PurchaseDmUploadTest extends TestCase
         $this->postJson('/purchase-dm/review', $this->payload())->assertJsonPath('entries.0.status', 'ambiguous_identity');
         $other->delete();
         $r->update(['total' => 1]);
-        $this->postJson('/purchase-dm/review', $this->payload())->assertJsonPath('entries.0.status', 'inconsistent_amounts');
+        $this->postJson('/purchase-dm/review', $this->payload())->assertJsonPath('entries.0.status', 'ready');
     }
 
     public function test_negative_balances_require_acknowledgment_and_preserve_cents(): void
@@ -359,6 +359,19 @@ class PurchaseDmUploadTest extends TestCase
         $this->assertDatabaseCount('purchase_dm_references', 1);
         $this->assertSame(2, DB::table('purchase_dm_sources')->whereNull('retired_at')->count());
         $this->assertNotNull($two->fresh());
+    }
+
+    public function test_existing_total_offsets_do_not_block_dm_or_get_silently_repaired(): void
+    {
+        $record = $this->record(['total' => '100000.01', 'total_purchases' => '112000.02']);
+        $review = $this->postJson('/purchase-dm/review', $this->payload())->assertOk()->assertJsonPath('summary.eligible_count', 1);
+        $this->apply($review->json('token'))->assertOk();
+        $record->refresh();
+        $this->assertSame('10800.00', $record->purchase_local_vat_amount);
+        $this->assertSame('90000.00', $record->purchase_local);
+        $this->assertSame('90000.01', $record->total);
+        $this->assertSame('100800.02', $record->total_purchases);
+        $this->postJson('/purchase-dm/review', $this->payload())->assertJsonPath('entries.0.status', 'already_applied');
     }
 
     public function test_supplied_workbook_has_only_four_dm_credit_deductions(): void

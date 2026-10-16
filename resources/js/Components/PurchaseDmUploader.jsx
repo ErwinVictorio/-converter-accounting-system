@@ -13,7 +13,7 @@ const PURCHASE_TYPES = [
     ["others", "VAT INPUT TAX - OTHERS"],
 ];
 const money = (value) => value == null ? "Unknown" : `PHP ${Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const metricLabels = { vat: "Selected VAT bucket", base: "Selected taxable base", input_vat: "Input VAT", visible_total: "Purchase visible Total", gross: "Gross total purchases" };
+const metricLabels = { vat: "Purchase VAT", base: "Taxable amount", input_vat: "Input VAT", visible_total: "Purchase Total", gross: "Total with VAT" };
 const statusLabels = { ready: "Ready", already_applied: "Already applied", no_matching_record: "No matching record", non_dm: "Non-DM skipped", invalid_dm: "Invalid DM", unsupported_record: "Unsupported record", ambiguous_identity: "Ambiguous identity", invalid_tin: "Invalid TIN", ambiguous_group: "Ambiguous group", inconsistent_amounts: "Inconsistent amounts", conflicting_reference: "Conflicting reference", amount_out_of_range: "Amount out of range" };
 
 // Parent keys by company/branch/month, unmounting stale selections on scope changes.
@@ -79,9 +79,9 @@ export default function PurchaseDmUploader({ scope, companyName, disabled = fals
     return <section className="space-y-4 rounded-xl border border-emerald-200 bg-white p-6" aria-labelledby="purchase-dm-title">
         <div className="space-y-2">
             <h2 id="purchase-dm-title" className="text-lg font-semibold">(DM) Purchase Uploader</h2>
-            <p className="text-sm text-slate-600">Upload ACCOUNT DETAILS to review Purchase DM deductions. Select the company and reporting month above.</p>
-            <p className="text-sm text-slate-600">Only DM Credit amounts are deducted. All non-DM transactions are skipped. The related taxable base and totals are also reduced.</p>
-            <p className="text-xs text-slate-500">A normal Purchase re-upload restores the uploaded original amounts and resets DM references for replaced records. Review and apply the DM file again afterward.</p>
+            <p className="text-sm text-slate-600">Select a company and month, then upload your DM file.</p>
+            <p className="text-sm text-slate-600">Only DM Credit amounts will be deducted. Other rows are skipped.</p>
+            <p className="text-xs text-slate-500">Re-uploaded Purchase records need their DM deductions applied again.</p>
         </div>
         {!scopeReady && <p role="status" className="text-sm text-amber-800">Select a filing company, branch, and reporting month above to choose a DM file.</p>}
         <input ref={input} type="file" accept=".xlsx,.xls" className="hidden" disabled={unavailable} aria-label="Choose Purchase DM workbook"
@@ -105,7 +105,7 @@ export default function PurchaseDmUploader({ scope, companyName, disabled = fals
             <DialogContent className={`flex max-h-[90vh] w-[calc(100%-2rem)] min-w-0 flex-col overflow-hidden ${review ? "sm:max-w-5xl" : "sm:max-w-lg"}`}>
                 <DialogHeader>
                     <DialogTitle>{review ? "Review Purchase DM Adjustment" : "Upload Purchase DM"}</DialogTitle>
-                    <DialogDescription>{review ? "Preview only. No deductions have been saved." : "Select the Purchase Type to review the DM file before saving."}</DialogDescription>
+                    <DialogDescription>{review ? "Review the amounts before confirming." : "Choose a Purchase type to continue."}</DialogDescription>
                 </DialogHeader>
                 <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto pr-1">
                     <dl className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
@@ -119,12 +119,12 @@ export default function PurchaseDmUploader({ scope, companyName, disabled = fals
                             <SelectTrigger id="purchase-dm-type" className="h-auto min-h-10 w-full whitespace-normal text-left" aria-describedby="purchase-dm-type-help"><SelectValue placeholder="Select Purchase Type" /></SelectTrigger>
                             <SelectContent className="z-[102] max-w-[calc(100vw-3rem)] bg-white text-slate-950">{PURCHASE_TYPES.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                         </Select>
-                        <p id="purchase-dm-type-help" className="text-sm text-slate-600">DM Credit reduces the selected VAT bucket. Taxable-base deduction = Credit ÷ 12%. Non-DM rows are skipped.</p>
+                        <p id="purchase-dm-type-help" className="text-sm text-slate-600">Credit will be deducted from the selected Purchase type. Related totals update automatically.</p>
                     </div>
                     {errors.map((error, i) => <p role="alert" key={i} className="text-sm text-red-700">{error}</p>)}
                     {review && <>
                         {!review.apply_available && <p role="alert" className="text-sm text-amber-800">Saving is unavailable. Purchase DM database setup must be completed.</p>}
-                        <div className="grid gap-3 sm:grid-cols-3">{[["file", "DM Credit in file"], ["eligible", "Eligible deduction"], ["skipped", "Skipped DM Credit"]].map(([key, label]) => <div key={key} className="rounded-lg border p-3 text-sm"><p>{label}</p><p className="font-semibold">{money(review.summary[`${key}_total`])}</p><p>{review.summary[`${key}_count`]} entries</p>{review.summary[`${key}_unknown_count`] > 0 && <p className="text-amber-800">Plus {review.summary[`${key}_unknown_count`]} unreadable amounts (not included in sum).</p>}</div>)}</div>
+                        <div className="grid gap-3 sm:grid-cols-3">{[["file", "DM Credit in file"], ["eligible", "To deduct"], ["skipped", "Skipped amount"]].map(([key, label]) => <div key={key} className="rounded-lg border p-3 text-sm"><p>{label}</p><p className="font-semibold">{money(review.summary[`${key}_total`])}</p><p>{review.summary[`${key}_count`]} entries</p>{review.summary[`${key}_unknown_count`] > 0 && <p className="text-amber-800">Plus {review.summary[`${key}_unknown_count`]} unreadable amounts (not included in sum).</p>}</div>)}</div>
                         <div className="space-y-3">{review.targets.map((target) => <div key={target.key} className="rounded-lg border p-3">
                             <h3 className="mb-2 font-semibold">{target.supplier} <span className="text-xs font-normal">({target.source_count} original records)</span></h3>
                             <DataTable mode="client" data={Object.entries(target.metrics).map(([key, values]) => ({ key, ...values }))} getRowId={(row) => row.key} showToolbar={false} showPagination={false} tableClassName="min-w-[580px]" columns={[
@@ -133,7 +133,7 @@ export default function PurchaseDmUploader({ scope, companyName, disabled = fals
                             ]} />
                             <details className="mt-2 text-sm"><summary>View eligible DM references</summary>{review.entries.filter((e) => e.status === "ready" && e.target_key === target.key).map((e) => <p key={e.key}>Row {e.row} · {e.date} · {e.reference} · {money(e.amount)}</p>)}</details>
                         </div>)}</div>
-                        {purchaseType === "imported" && <p className="text-sm text-slate-600">Purchase visible Total includes Local, Services and Others only. Imported deductions update the Imported base and related stored totals.</p>}
+                        {purchaseType === "imported" && <p className="text-sm text-slate-600">Imported deductions update Imported amounts. Purchase Total shows Local, Services and Others only.</p>}
                         <div className="flex flex-wrap gap-2" aria-label="DM entry filters">{[["all", "All DM"], ["ready", "Ready"], ["already_applied", "Already applied"], ["needs_review", "Needs review"], ["non_dm", `Non-DM skipped (${review.excluded_count})`]].map(([value, label]) => <Button key={value} type="button" size="sm" variant={filter === value ? "default" : "outline"} onClick={() => setFilter(value)}>{label}</Button>)}</div>
                         <DataTable mode="client" data={visibleEntries} getRowId={(row) => String(row.row)} showToolbar={false} showPagination={false} tableClassName="min-w-[800px]" emptyState={{ title: "No entries match this filter." }} columns={[
                             { id: "row", header: "Row / Date", cell: ({ row }) => `${row.original.row} / ${row.original.date || "—"}` },
@@ -142,9 +142,9 @@ export default function PurchaseDmUploader({ scope, companyName, disabled = fals
                             { id: "credit", header: "DM Credit", cell: ({ row }) => row.original.status === "non_dm" ? "Not deducted" : money(row.original.amount) },
                             { id: "status", header: "Status / Reason", cell: ({ row }) => <div><p className="font-medium">{statusLabels[row.original.status]}</p><p className="text-xs text-slate-600">{row.original.reason}</p></div> },
                         ]} />
-                        {review.warnings.length > 0 && <div role="alert" className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><p className="font-semibold">Review adjustment warnings</p>{review.warnings.map((warning, i) => <p key={i}>{warning}</p>)}<label className="flex gap-2"><input type="checkbox" checked={ackWarnings} disabled={busy} onChange={(e) => setAckWarnings(e.target.checked)} />I reviewed and accept these remaining balances and validation warnings.</label></div>}
-                        {!!review.summary.skipped_count && !!review.summary.eligible_count && <label className="flex gap-2 text-sm"><input type="checkbox" checked={ackSkipped} disabled={busy} onChange={(e) => setAckSkipped(e.target.checked)} />Apply eligible DM only. Skipped DM entries will not be saved as deductions.</label>}
-                        {!review.summary.eligible_count && <p role="status" className="text-sm font-medium">No eligible DM entries to apply. Review the reasons and upload again after corrections.</p>}
+                        {review.warnings.length > 0 && <div role="alert" className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><p className="font-semibold">Review adjustment warnings</p>{review.warnings.map((warning, i) => <p key={i}>{warning}</p>)}<label className="flex gap-2"><input type="checkbox" checked={ackWarnings} disabled={busy} onChange={(e) => setAckWarnings(e.target.checked)} />I understand and want to continue.</label></div>}
+                        {!!review.summary.skipped_count && !!review.summary.eligible_count && <label className="flex gap-2 text-sm"><input type="checkbox" checked={ackSkipped} disabled={busy} onChange={(e) => setAckSkipped(e.target.checked)} />Apply ready DM entries only. Skip the rest.</label>}
+                        {!review.summary.eligible_count && <p role="status" className="text-sm font-medium">No DM entries are ready. Check the reasons above.</p>}
                     </>}
                 </div>
                 <DialogFooter className="flex-wrap gap-2">
