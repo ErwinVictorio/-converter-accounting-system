@@ -115,7 +115,7 @@ export default function WithholdingTaxRateSummary({ rates = [], total = "0.00" }
                 <h2 className="text-sm font-semibold text-slate-600">
                     Total Tax Withheld
                 </h2>
-                <p className="mt-2 break-all text-2xl font-extrabold tracking-tight tabular-nums text-[#0344a4]">
+                <p className="mt-2 break-all text-4xl font-bold tracking-tight tabular-nums text-[#0344a4]">
                     {peso(total)}
                 </p>
                 <p className="mt-2 text-xs text-slate-500">
