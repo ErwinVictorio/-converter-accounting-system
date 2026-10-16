@@ -640,6 +640,9 @@ class VatInputController extends Controller
         }
 
         DB::transaction(function () use ($vatInput, $validated, $amounts, $newTotal, $vatAmounts, $usesVatInputs) {
+            $dmGuard = app(\App\Services\PurchaseDmReferenceResetService::class);
+            $dmGuard->lockRecordScope($vatInput);
+            $dmGuard->guardMutation($vatInput->id);
             $sourceRecord = VatInput::query()->lockForUpdate()->findOrFail($vatInput->id);
 
             if (! $this->isBrokerRecord($sourceRecord)) {
@@ -684,6 +687,10 @@ class VatInputController extends Controller
             $targetRecord = $this->transferTargetQuery($sourceRecord, $tinDigits, $isImported)
                 ->lockForUpdate()
                 ->first();
+
+            if ($targetRecord) {
+                $dmGuard->guardMutation($targetRecord->id);
+            }
 
             $adjustedPayload = [
                 'supplier_name' => strtoupper(trim($supplierName)),
@@ -858,6 +865,9 @@ class VatInputController extends Controller
 
         try {
             DB::transaction(function () use ($vatInput, $validator) {
+                $dmGuard = app(\App\Services\PurchaseDmReferenceResetService::class);
+                $dmGuard->lockRecordScope($vatInput);
+                $dmGuard->guardMutation($vatInput->id);
                 $target = VatInput::query()->lockForUpdate()->findOrFail($vatInput->id);
                 $this->guardAdjustedDeleteTarget($target, true);
 
@@ -1197,25 +1207,31 @@ class VatInputController extends Controller
         [$address1, $address2] = $this->splitAddress((string) ($validated['address1'] ?? ''));
         $address2 = $address2 ?: $this->birText((string) ($validated['address2'] ?? ''));
 
-        $vatInput->update([
-            'supplier_name' => $this->birText($supplierName),
-            'tin_number' => $this->formatTin($validated['tin_number']),
-            'vendor_type' => $validated['vendor_type'],
-            'company_name' => $validated['vendor_type'] === 'company'
-                ? $this->birText((string) $validated['company_name'])
-                : null,
-            'last_name' => $validated['vendor_type'] === 'individual'
-                ? $this->birText((string) $validated['last_name'])
-                : null,
-            'first_name' => $validated['vendor_type'] === 'individual'
-                ? $this->birText((string) $validated['first_name'])
-                : null,
-            'middle_name' => $validated['vendor_type'] === 'individual'
-                ? $this->birText((string) $validated['middle_name'])
-                : null,
-            'address1' => $address1 ?: null,
-            'address2' => $address2 ?: null,
-        ]);
+        DB::transaction(function () use ($vatInput, $validated, $supplierName, $address1, $address2) {
+            $dmGuard = app(\App\Services\PurchaseDmReferenceResetService::class);
+            $dmGuard->lockRecordScope($vatInput);
+            $dmGuard->guardMutation($vatInput->id);
+            $vatInput = VatInput::query()->lockForUpdate()->findOrFail($vatInput->id);
+            $vatInput->update([
+                'supplier_name' => $this->birText($supplierName),
+                'tin_number' => $this->formatTin($validated['tin_number']),
+                'vendor_type' => $validated['vendor_type'],
+                'company_name' => $validated['vendor_type'] === 'company'
+                    ? $this->birText((string) $validated['company_name'])
+                    : null,
+                'last_name' => $validated['vendor_type'] === 'individual'
+                    ? $this->birText((string) $validated['last_name'])
+                    : null,
+                'first_name' => $validated['vendor_type'] === 'individual'
+                    ? $this->birText((string) $validated['first_name'])
+                    : null,
+                'middle_name' => $validated['vendor_type'] === 'individual'
+                    ? $this->birText((string) $validated['middle_name'])
+                    : null,
+                'address1' => $address1 ?: null,
+                'address2' => $address2 ?: null,
+            ]);
+        });
 
         return back()->with('success', 'BIR vendor information updated.');
     }

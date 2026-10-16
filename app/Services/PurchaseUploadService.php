@@ -41,18 +41,19 @@ class PurchaseUploadService
         $import = new VatInputImport($reportingPeriod, $company);
 
         DB::transaction(function () use ($reportingPeriod, $file, $import, $company) {
-            $identity = $company['tin'].'|'.$company['branch_code'].'|'.$reportingPeriod;
-            DB::table('purchase_upload_locks')->insertOrIgnore(['identity' => $identity]);
-            DB::table('purchase_upload_locks')->where('identity', $identity)->lockForUpdate()->first();
-            VatInput::query()
+            $scope = ['filing_company_tin' => $company['tin'], 'filing_company_branch_code' => $company['branch_code'], 'reporting_month' => substr($reportingPeriod, 0, 7)];
+            $reset = app(PurchaseDmReferenceResetService::class);
+            $reset->lock($scope);
+            $replaced = VatInput::query()
                 ->forFilingCompany($company)
                 ->whereDate('date_uploaded', $reportingPeriod)
                 ->where('is_adjusted', false)
                 ->whereNotIn('id', ImportationEntry::query()
                     ->whereNotNull('vat_input_id')
-                    ->select('vat_input_id'))
-                ->delete();
+                    ->select('vat_input_id'));
 
+            $reset->reset($scope, (clone $replaced)->pluck('id')->all());
+            $replaced->delete();
             Excel::import($import, $file);
 
             if ($import->importedRows() === 0 && $import->skippedExcludedSupplierRows() > 0) {

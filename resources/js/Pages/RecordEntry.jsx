@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowRight, Copy, Loader2 } from "lucide-react";
 import PurchaseCompanySelect from "@/Components/PurchaseCompanySelect";
 import ExcelUploadPanel from "@/Components/ExcelUploadPanel";
 import ExpandedDmUploader from "@/Components/ExpandedDmUploader";
+import PurchaseDmUploader from "@/Components/PurchaseDmUploader";
 import MainLayout from "@/Layouts/MainLayout";
 import { Button } from "@/Components/ui/button";
 import { Input } from "@/Components/ui/input";
@@ -656,6 +657,17 @@ function RecordEntry() {
           </form>
         </CardContent>
       </Card>
+
+      {data.record_type === "purchase" && <PurchaseDmUploader
+        key={`${data.filing_company_tin}|${data.filing_company_branch_code}|${data.reporting_month}`}
+        scope={{
+          filing_company_tin: data.filing_company_tin,
+          filing_company_branch_code: data.filing_company_branch_code,
+          reporting_month: data.reporting_month,
+        }}
+        companyName={purchaseCompanies.find((company) => company.tin === data.filing_company_tin && company.branch_code === data.filing_company_branch_code)?.name}
+        disabled={processing}
+      />}
 
       {isExpandedMode && <ExpandedDmUploader scope={{
         reporting_month: data.reporting_month,

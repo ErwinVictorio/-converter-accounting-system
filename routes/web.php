@@ -35,6 +35,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/vat-import', [VatInputController::class, 'import']);
     Route::post('/expanded-dm/review', [ExpandedWtaxDmUploadController::class, 'review']);
     Route::post('/expanded-dm/apply', [ExpandedWtaxDmUploadController::class, 'apply']);
+    Route::post('/purchase-dm/review', [\App\Http\Controllers\PurchaseDmUploadController::class, 'review']);
+    Route::post('/purchase-dm/apply', [\App\Http\Controllers\PurchaseDmUploadController::class, 'apply']);
     Route::get('/pending-purchase-uploads/{pendingPurchaseUpload}', [PendingPurchaseUploadController::class, 'show'])
         ->name('pending-purchase-uploads.show');
     Route::post('/pending-purchase-uploads/{pendingPurchaseUpload}/refresh', [PendingPurchaseUploadController::class, 'refresh'])
