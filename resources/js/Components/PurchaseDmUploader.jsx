@@ -117,7 +117,7 @@ export default function PurchaseDmUploader({ scope, companyName, disabled = fals
                         <label htmlFor="purchase-dm-type" className="text-sm font-medium">Select Purchase Type <span aria-hidden="true">*</span></label>
                         <Select value={purchaseType} required disabled={busy || !!review} onValueChange={setPurchaseType}>
                             <SelectTrigger id="purchase-dm-type" className="h-auto min-h-10 w-full whitespace-normal text-left" aria-describedby="purchase-dm-type-help"><SelectValue placeholder="Select Purchase Type" /></SelectTrigger>
-                            <SelectContent className="max-w-[calc(100vw-3rem)]">{PURCHASE_TYPES.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+                            <SelectContent className="z-[102] max-w-[calc(100vw-3rem)] bg-white text-slate-950">{PURCHASE_TYPES.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                         </Select>
                         <p id="purchase-dm-type-help" className="text-sm text-slate-600">DM Credit reduces the selected VAT bucket. Taxable-base deduction = Credit ÷ 12%. Non-DM rows are skipped.</p>
                     </div>

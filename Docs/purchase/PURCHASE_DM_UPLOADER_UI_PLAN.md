@@ -217,3 +217,7 @@ Supported boundaries:
 - A normal replacement covering only part of an active multi-source application is rejected instead of releasing references for amounts still applied to untouched sources.
 - Raw per-source before/after audit is retained in purchase_dm_sources and application details. A standalone DM Undo/history-management screen is outside this delivery.
 - Existing local historical rows without a filing company remain unassigned; matching will not claim them automatically.
+
+### Purchase Type dropdown correction
+
+The dropdown portal initially used z-index 50, below the dialog overlay/content at 100/101. Set the Purchase DM dropdown content to z-index 102 with an opaque background. The earlier programmatic-click browser check did not detect this layering issue. Follow-up browser verification used actual pointer coordinates and hit testing: all four types selected successfully on desktop and mobile. Frontend production build passed after the fix.
