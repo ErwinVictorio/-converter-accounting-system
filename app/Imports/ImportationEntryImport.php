@@ -322,16 +322,31 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
         }
 
         try {
+            $dateText = trim((string) $value);
+
+            // Some upload workbooks store payment dates as displayed text (DD.MM.YY),
+            // while Excel-native date cells are numeric serial values.
+            if (preg_match('/^\d{1,2}\.\d{1,2}\.\d{2,4}$/', $dateText)) {
+                $yearLength = strlen(substr($dateText, strrpos($dateText, '.') + 1));
+                $date = Carbon::createFromFormat($yearLength === 2 ? '!d.m.y' : '!d.m.Y', $dateText);
+                $dateErrors = Carbon::getLastErrors();
+
+                if ($date === false || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))) {
+                    throw new RuntimeException('Invalid date format.');
+                }
+
+                return $date->toDateString();
+            }
+
             $date = is_numeric($value)
                 ? Carbon::instance(ExcelDate::excelToDateTimeObject((float) $value))
-                : Carbon::parse((string) $value);
+                : Carbon::parse($dateText);
 
             return $date->toDateString();
         } catch (Throwable) {
             throw new RuntimeException("{$column} is blank or unreadable.");
         }
     }
-
     /**
      * @param  array<int, mixed>  $row
      */

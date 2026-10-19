@@ -188,6 +188,24 @@ class ImportationUploadTest extends TestCase
         $this->assertSame('PACIFIC PARTS LTD.', $entries[1]->vatInput->supplier_name);
     }
 
+    public function test_upload_reads_dotted_vat_payment_date_and_writes_it_to_importation_dat(): void
+    {
+        $this->upload($this->csv([
+            $this->row([11 => '01.05.26']),
+        ]))->assertSessionHas('success');
+
+        $entry = ImportationEntry::firstOrFail();
+        $this->assertSame('2026-05-01', $entry->payment_date->toDateString());
+
+        $download = $this->get('/download-datfile?period=2026-07-31&record_type=importation');
+        $lines = explode("\r
+", trim($this->datFromPackage($download, '008791976I072026.DAT')));
+        $detail = str_getcsv($lines[1]);
+
+        // Field 14 is Date of VAT Payment; field 16 is the separate return period.
+        $this->assertSame('05/01/2026', $detail[13]);
+        $this->assertSame('07/31/2026', $detail[15]);
+    }
     public function test_duplicate_rows_with_missing_assessment_date_still_fail_without_replacing_month(): void
     {
         $this->upload($this->csv([
