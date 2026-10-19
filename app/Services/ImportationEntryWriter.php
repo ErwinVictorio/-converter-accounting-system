@@ -66,9 +66,9 @@ class ImportationEntryWriter
     /**
      * @param  array<string, mixed>  $data
      */
-    public function create(array $data): ImportationEntry
+    public function create(array $data, bool $allowExistingDuplicate = false): ImportationEntry
     {
-        $payload = $this->payload($this->validate($data));
+        $payload = $this->payload($this->validate($data, null, $allowExistingDuplicate));
         $payload['sequence_number'] = $this->nextSequenceNumber($payload['tax_month']);
 
         $entry = ImportationEntry::create($payload);

@@ -63,7 +63,6 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
         $this->prepared = [];
         $this->imported = 0;
         $errors = [];
-        $seen = [];
 
         foreach ($rows as $index => $row) {
             if ($index <= $this->headingRow || $this->isBlankRow($row)) {
@@ -74,16 +73,6 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
 
             try {
                 $data = $this->prepareRow($row);
-                $key = $this->duplicateKey($data);
-
-                if (isset($seen[$key])) {
-                    throw new RuntimeException(
-                        "Import Entry No. {$data['import_entry_no']} is repeated for the same tax month "
-                        ."on rows {$seen[$key]} and {$worksheetRow}."
-                    );
-                }
-
-                $seen[$key] = $worksheetRow;
                 $this->entries->validate($data, null, true);
                 $this->prepared[] = $data;
             } catch (Throwable $th) {
@@ -105,7 +94,7 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
     public function savePreparedRows(): void
     {
         foreach ($this->prepared as $data) {
-            $this->entries->create($data);
+            $this->entries->create($data, true);
             $this->imported++;
         }
     }
@@ -341,17 +330,6 @@ class ImportationEntryImport implements ToArray, WithCalculatedFormulas
         } catch (Throwable) {
             throw new RuntimeException("{$column} is blank or unreadable.");
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function duplicateKey(array $data): string
-    {
-        $taxMonth = Carbon::parse($data['tax_month'])->startOfMonth()->toDateString();
-        $entryNo = $this->entries->birText((string) $data['import_entry_no']);
-
-        return $taxMonth.'|'.$entryNo;
     }
 
     /**

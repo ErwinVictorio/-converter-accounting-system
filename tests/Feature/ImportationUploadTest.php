@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VatInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\DatPackageAssertions;
 use Tests\TestCase;
@@ -86,6 +87,42 @@ class ImportationUploadTest extends TestCase
         ]);
     }
 
+    public function test_migration_refuses_to_restore_unique_index_when_duplicates_exist(): void
+    {
+        $row = [
+            'sequence_number' => 1,
+            'tax_month' => '2026-07-01',
+            'import_entry_no' => 'C-12345',
+            'assessment_date' => '2026-07-08',
+            'supplier' => 'DUPLICATE SUPPLIER',
+            'importation_date' => '2026-07-05',
+            'country' => 'CHINA',
+            'dutiable_value' => 200000,
+            'charges' => 50000,
+            'exempt' => 0,
+            'taxable_goods' => 250000,
+            'vat_rate' => 12,
+            'vat_payable' => 30000,
+            'or_number' => 'OR-2026-00125',
+            'payment_date' => '2026-07-10',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        DB::table('importation_entries')->insert([$row, array_merge($row, ['sequence_number' => 2])]);
+        $migration = require base_path(
+            'database/migrations/2026_10_19_000000_allow_duplicate_importation_entry_numbers.php'
+        );
+
+        try {
+            $migration->down();
+            $this->fail('Expected rollback to refuse recreating the unique index.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('duplicate entries exist', $exception->getMessage());
+        }
+
+        $this->assertSame(2, ImportationEntry::count());
+    }
     public function test_user_can_download_the_importation_upload_template(): void
     {
         $response = $this->get('/importation/template');
@@ -132,22 +169,43 @@ class ImportationUploadTest extends TestCase
         $this->assertEqualsWithDelta(32400.00, (float) $third->vat_payable, 0.001);
     }
 
-    public function test_upload_rejects_duplicate_entries_inside_the_file(): void
+    public function test_upload_accepts_duplicate_entries_inside_the_file_and_creates_separate_mirrors(): void
     {
         $response = $this->upload($this->csv([
             $this->row(),
-            $this->row([2 => 'Pacific Parts Ltd.']),
+            $this->row([1 => 'c-12345', 2 => 'Pacific Parts Ltd.']),
+        ]));
+
+        $response->assertSessionHas('success');
+
+        $entries = ImportationEntry::with('vatInput')->orderBy('sequence_number')->get();
+        $this->assertCount(2, $entries);
+        $this->assertSame(['C-12345', 'C-12345'], $entries->pluck('import_entry_no')->all());
+        $this->assertSame([1, 2], $entries->pluck('sequence_number')->all());
+        $this->assertCount(2, $entries->pluck('vat_input_id')->unique());
+        $this->assertSame(2, VatInput::count());
+        $this->assertSame('ABC GLOBAL TRADING CO.', $entries[0]->vatInput->supplier_name);
+        $this->assertSame('PACIFIC PARTS LTD.', $entries[1]->vatInput->supplier_name);
+    }
+
+    public function test_duplicate_rows_with_missing_assessment_date_still_fail_without_replacing_month(): void
+    {
+        $this->upload($this->csv([
+            $this->row([2 => 'Existing Supplier']),
+        ]))->assertSessionHas('success');
+
+        $response = $this->upload($this->csv([
+            $this->row([2 => 'Replacement Supplier']),
+            $this->row([1 => 'c-12345', 2 => 'Invalid Duplicate', 3 => '']),
         ]));
 
         $response->assertSessionMissing('success');
         $response->assertSessionHas('error');
-
-        $this->assertStringContainsString('Row 3:', session('error'));
-        $this->assertStringContainsString('is repeated for the same tax month', session('error'));
-        $this->assertSame(0, ImportationEntry::count());
-        $this->assertSame(0, VatInput::count());
+        $this->assertStringContainsString('Row 3: Assessment / Release Date is required.', session('error'));
+        $this->assertSame(1, ImportationEntry::count());
+        $this->assertSame(1, VatInput::count());
+        $this->assertDatabaseHas('importation_entries', ['supplier' => 'EXISTING SUPPLIER']);
     }
-
     public function test_upload_replaces_existing_month_entries_and_their_synced_rows(): void
     {
         $this->upload($this->csv([
