@@ -196,27 +196,6 @@ function PurchaseRecords() {
                                  return (<>
                                             {item.tin_number || "—"}
                                         </>); } },
-{ id: 'is_imported', accessorKey: 'is_imported', header: "Imported", enableSorting: true, enableHiding: true, meta: { label: "Imported", cellClassName: "", headerClassName: "" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
-                                const isImported = Number(item.is_imported) === 1;
-                                const isAdjusted = Number(item.is_adjusted) === 1;
-                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
-                                const hasBirName =
-                                    item.vendor_type === "individual"
-                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
-                                        : Boolean(item.company_name || item.supplier_name);
-
-                                 return (<>
-                                            <Badge
-                                                variant={isImported ? "default" : "secondary"}
-                                                className={
-                                                    isImported
-                                                        ? "border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100"
-                                                        : "bg-slate-100 text-slate-700 hover:bg-slate-100"
-                                                }
-                                            >
-                                                {isImported ? "Yes" : "No"}
-                                            </Badge>
-                                        </>); } },
 { id: 'display_purchase_local_amount', accessorKey: 'display_purchase_local_amount', header: "Purchase Local", enableSorting: true, enableHiding: true, meta: { label: "Purchase Local", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
                                 const isImported = Number(item.is_imported) === 1;
                                 const isAdjusted = Number(item.is_adjusted) === 1;
