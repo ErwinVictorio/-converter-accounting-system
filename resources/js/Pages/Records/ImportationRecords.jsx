@@ -135,7 +135,7 @@ function ImportationRecords() {
                     </div>
                 }
             >
-                <InertiaDataTable paginator={entries} tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[{ id: 'sequence_number', accessorKey: 'sequence_number', header: "#", enableSorting: true, enableHiding: false, meta: { label: "#", cellClassName: "py-3 pl-6 text-slate-500", headerClassName: "" }, cell: ({ row }) => { const entry = row.original;  return (<>{entry.sequence_number}</>); } },
+                <InertiaDataTable paginator={entries} tableClassName="min-w-[800px]" emptyState={{ title: 'No records found.' }} columns={[
 { id: 'tax_month', accessorKey: 'tax_month', header: "Tax Month", enableSorting: true, enableHiding: true, meta: { label: "Tax Month", cellClassName: "whitespace-nowrap text-slate-700", headerClassName: "" }, cell: ({ row }) => { const entry = row.original;  return (<>
                                         {(entry.tax_month || "").slice(0, 7)}
                                     </>); } },

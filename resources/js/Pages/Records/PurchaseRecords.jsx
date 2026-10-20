@@ -217,18 +217,6 @@ function PurchaseRecords() {
                                                 {isImported ? "Yes" : "No"}
                                             </Badge>
                                         </>); } },
-{ id: 'purchase_imported', accessorKey: 'purchase_imported', header: "Purchase Imported", enableSorting: true, enableHiding: true, meta: { label: "Purchase Imported", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
-                                const isImported = Number(item.is_imported) === 1;
-                                const isAdjusted = Number(item.is_adjusted) === 1;
-                                const hasBirTin = BIR_TIN.test(String(item.tin_number || ""));
-                                const hasBirName =
-                                    item.vendor_type === "individual"
-                                        ? Boolean(item.last_name && item.first_name && item.middle_name)
-                                        : Boolean(item.company_name || item.supplier_name);
-
-                                 return (<>
-                                            {formatCurrency(item.purchase_imported)}
-                                        </>); } },
 { id: 'display_purchase_local_amount', accessorKey: 'display_purchase_local_amount', header: "Purchase Local", enableSorting: true, enableHiding: true, meta: { label: "Purchase Local", cellClassName: "whitespace-nowrap text-right font-mono text-xs text-slate-700", headerClassName: "text-right" }, cell: ({ row }) => { const item = row.original; const isBroker = Number(item.is_broker) === 1;
                                 const isImported = Number(item.is_imported) === 1;
                                 const isAdjusted = Number(item.is_adjusted) === 1;
