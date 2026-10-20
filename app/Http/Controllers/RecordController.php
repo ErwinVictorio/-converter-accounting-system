@@ -62,13 +62,13 @@ class RecordController extends Controller
          * two are the same expression, and this page is covered by tests.
          */
         $companyKey = (string) $request->input('company', '');
-        $companyQuery = VatInput::query();
+        $companyQuery = VatInput::query()->excludingImportationMirrors();
         if ($companyKey === 'unassigned') {
-            $companyQuery->whereNull('filing_company_tin')->excludingImportationMirrors();
+            $companyQuery->whereNull('filing_company_tin');
         } elseif ($companyKey !== '') {
             [$tin, $branch] = array_pad(explode('|', $companyKey, 2), 2, null);
             $company = app(PurchaseCompanyDirectory::class)->resolve($tin, $branch, true);
-            $companyQuery->forFilingCompany($company)->excludingImportationMirrors();
+            $companyQuery->forFilingCompany($company);
         }
         $tableOptions = DataTableQuery::options($request, ['supplier_name', 'tin_number', 'is_imported', 'purchase_imported', 'display_purchase_local_amount', 'display_services_amount', 'display_others_amount', 'display_calculated_total']);
         $purchaseQuery = (clone $companyQuery)

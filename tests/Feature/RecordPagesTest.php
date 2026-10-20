@@ -8,6 +8,8 @@ use App\Models\ImportationEntry;
 use App\Models\SalesVatInput;
 use App\Models\User;
 use App\Models\VatInput;
+use App\Models\WithholdingCompany;
+use App\Services\ImportationEntryWriter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
@@ -212,6 +214,55 @@ class RecordPagesTest extends TestCase
                 ->missing('salesVatInputs')
                 ->missing('expandedWtaxEntries')
         );
+    }
+
+    public function test_purchase_records_excludes_importation_mirrors_in_all_company_views(): void
+    {
+        $local = $this->purchase(['filing_company_tin' => null, 'filing_company_branch_code' => null]);
+        $imported = $this->purchase([
+            'supplier_name' => 'GENUINE IMPORTED PURCHASE',
+            'company_name' => 'GENUINE IMPORTED PURCHASE',
+            'tin_number' => '222-333-444-0000',
+            'is_imported' => true,
+            'purchase_imported' => 25000,
+            'purchase_local' => 0,
+            'filing_company_tin' => null,
+            'filing_company_branch_code' => null,
+        ]);
+        $entry = app(ImportationEntryWriter::class)->create([
+            'tax_month' => '2026-04-01',
+            'import_entry_no' => 'IE-RECORD-PAGE-1',
+            'assessment_date' => '2026-04-10',
+            'supplier' => 'IMPORTATION MIRROR SUPPLIER',
+            'importation_date' => '2026-04-05',
+            'country' => 'CHINA',
+            'total_landed_cost' => 151200,
+            'dutiable_value' => 150000,
+            'exempt' => 0,
+            'vat_rate' => 12,
+            'or_number' => 'OR-RECORD-PAGE-1',
+            'payment_date' => '2026-04-12',
+        ]);
+        $mirror = VatInput::findOrFail($entry->vat_input_id);
+
+        foreach (['', '?company=unassigned'] as $query) {
+            $this->get('/records/purchases'.$query)->assertOk()->assertInertia(
+                fn ($page) => $page->where('vatInputs.total', 2)
+                    ->has('vatInputs.data', 2)
+                    ->where('vatInputs.data.0.id', fn ($id) => in_array($id, [$local->id, $imported->id], true))
+                    ->where('vatInputs.data.1.id', fn ($id) => in_array($id, [$local->id, $imported->id], true))
+            );
+        }
+
+        $this->get('/records/purchases?company=008791976%7C0000')->assertOk()->assertInertia(
+            fn ($page) => $page->where('vatInputs.total', 0)->has('vatInputs.data', 0)
+        );
+
+        $this->get('/records/importations')->assertOk()->assertInertia(
+            fn ($page) => $page->where('entries.total', 1)
+                ->where('entries.data.0.id', $entry->id)
+        );
+        $this->assertDatabaseHas('vat_inputs', ['id' => $mirror->id, 'is_imported' => true]);
     }
 
     public function test_import_data_carries_the_upload_form_only(): void
