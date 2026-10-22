@@ -1,3 +1,6 @@
+import RecordsSummarySection from "@/Components/Records/RecordsSummarySection";
+import { formatPeso } from "@/Components/Records/format";
+import { Coins } from "lucide-react";
 import { InertiaDataTable } from '@/Components/DataTable';
 import { useEffect, useState } from "react";
 import { usePage } from "@inertiajs/react";
@@ -14,7 +17,7 @@ import ViewInfoDialog from "@/Components/Records/ViewInfoDialog";
 import { formatCurrency } from "@/Components/Records/format";
 
 function SalesRecords() {
-    const { flash, salesVatInputs, months = [], filters = {} } = usePage().props;
+    const { salesSummary, flash, salesVatInputs, months = [], filters = {} } = usePage().props;
     const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
 
     useEffect(() => {
@@ -24,6 +27,18 @@ function SalesRecords() {
 
     return (
         <section className="w-full max-w-full space-y-6 overflow-hidden">
+            <RecordsSummarySection title="Sales Summary"
+                description="Amounts based on current filters."
+                empty={salesSummary.record_count === 0}
+                metrics={[
+                    { key: "exempt_sales_total", title: "Exempt Sales", value: formatPeso(salesSummary.exempt_sales_total), icon: Coins, tone: "blue" },
+                    { key: "zero_rated_sales_total", title: "Zero-Rated Sales", value: formatPeso(salesSummary.zero_rated_sales_total), icon: Coins, tone: "emerald" },
+                    { key: "taxable_net_of_vat_total", title: "Taxable Net of VAT", value: formatPeso(salesSummary.taxable_net_of_vat_total), icon: Coins, tone: "amber" },
+                    { key: "output_vat_total", title: "Output VAT", value: formatPeso(salesSummary.output_vat_total), icon: Coins, tone: "rose" },
+                ]}
+                total={{ title: "Total Gross Amount", value: formatPeso(salesSummary.gross_amount_total), description: "Across all filtered records." }}
+                footer=""
+            />
             <RecordTableShell
                 title="Sales VAT Records"
                 description="Uploaded sales rows, grouped per customer. Upload new files under Import Data."

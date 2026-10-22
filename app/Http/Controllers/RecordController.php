@@ -10,6 +10,7 @@ use App\Services\BIR\BirExpandedWtaxRowValidator;
 use App\Services\BIR\PurchaseCompanyDirectory;
 use App\Services\BIR\SalesSiCmConsolidator;
 use App\Services\PurchaseAmountPresenter;
+use App\Services\RecordSummaryService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -96,9 +97,15 @@ class RecordController extends Controller
         if (str_starts_with($tableOptions['sort'] ?? '', 'display_')) {
             // Historical rows have different display rules; sort the presenter's
             // actual values instead of guessing a SQL formula from stored amounts.
-            $vatInputs = DataTableQuery::collection($purchaseQuery->get()->each($present), $request, $tableOptions,
+            $presentedRows = $purchaseQuery->get()->each($present);
+            $purchaseSummary = app(RecordSummaryService::class)->purchases($presentedRows);
+            $vatInputs = DataTableQuery::collection($presentedRows, $request, $tableOptions,
                 ['display_purchase_local_amount', 'display_services_amount', 'display_others_amount', 'display_calculated_total']);
         } else {
+            $purchaseSummary = app(RecordSummaryService::class)->purchases(
+                (clone $purchaseQuery)->reorder()->lazyById(500)
+                    ->map(fn (VatInput $record) => $amountPresenter->forRecord($record))
+            );
             $vatInputs = DataTableQuery::query($purchaseQuery, $request, $tableOptions);
             $vatInputs->getCollection()->each($present);
         }
@@ -154,6 +161,7 @@ class RecordController extends Controller
 
         return Inertia::render('Records/PurchaseRecords', [
             'vatInputs' => $vatInputs,
+            'purchaseSummary' => $purchaseSummary,
             'companyFilter' => $companyKey,
             'months' => $this->availableMonths(clone $companyQuery, 'date_uploaded'),
             'purchaseCompanies' => app(PurchaseCompanyDirectory::class)->companies(true),
@@ -198,6 +206,7 @@ class RecordController extends Controller
 
         return Inertia::render('Records/SalesRecords', [
             'salesVatInputs' => $salesVatInputs,
+            'salesSummary' => app(RecordSummaryService::class)->sales($salesRows),
             'months' => $this->availableMonths(SalesVatInput::query(), 'reporting_period'),
             'filters' => [
                 ...$tableOptions,

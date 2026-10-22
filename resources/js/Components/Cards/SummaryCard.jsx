@@ -11,8 +11,34 @@ function SummaryCard({
     description,
     trend, 
     trendValue, 
-    variant = "default" 
+    appearance = "default", tone = "blue", className, variant = "default"
 }) {
+    if (appearance === "recordMetric" || appearance === "recordTotal") {
+        const tones = {
+            blue: "bg-blue-50 text-[#0344a4]",
+            emerald: "bg-emerald-50 text-emerald-600",
+            amber: "bg-amber-50 text-amber-600",
+            rose: "bg-rose-50 text-rose-600",
+            neutral: "bg-slate-100 text-slate-500",
+        };
+        const highlighted = appearance === "recordTotal";
+        return (
+            <Card className={cn("min-w-0 rounded-xl border shadow-none", highlighted
+                ? "flex flex-col justify-center border-blue-100 bg-blue-50/40 p-4 shadow-sm sm:p-6"
+                : "flex flex-row items-start gap-3 border-slate-100 bg-slate-50/60 p-4", className)}>
+                {!highlighted && (image || Icon) && <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", tones[tone] || tones.neutral)}>
+                    {image ? <img src={image} alt="" className="h-4 w-4" /> : <Icon aria-hidden="true" className="h-4 w-4" />}
+                </span>}
+                <div className={cn("min-w-0", !highlighted && "flex-1")}>
+                    <p className={highlighted ? "text-sm font-semibold text-slate-600" : "text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500"}>{title}</p>
+                    <p title={String(value ?? "0")} className={cn("tabular-nums tracking-tight", highlighted
+                        ? "mt-2 break-all text-4xl font-bold text-[#0344a4]"
+                        : "mt-1 truncate text-lg font-extrabold text-slate-900 sm:text-xl")}>{value ?? "0"}</p>
+                    {description && <p className="mt-2 text-xs text-slate-500">{description}</p>}
+                </div>
+            </Card>
+        );
+    }
     return (
         <Card className="group p-6 relative overflow-hidden transition-all duration-500 hover:shadow-2xl hover:-translate-y-1.5 border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
             

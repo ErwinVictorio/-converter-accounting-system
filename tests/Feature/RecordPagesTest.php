@@ -33,6 +33,88 @@ class RecordPagesTest extends TestCase
         $this->actingAs(User::factory()->create());
     }
 
+    public function test_purchase_summary_uses_presented_amounts_across_pages_and_filters(): void
+    {
+        for ($i = 0; $i < 16; $i++) {
+            $this->purchase(['uses_vat_bucket_amounts' => false, 'purchase_local' => 1.01]);
+        }
+        $this->purchase(['uses_vat_bucket_amounts' => true, 'purchase_local_vat_amount' => 12,
+            'services_vat_amount' => 6, 'others_vat_amount' => 0]);
+        $this->purchase(['purchase_local' => 100, 'services' => 50]); // legacy inferred VAT
+        $this->purchase(['uses_vat_bucket_amounts' => false, 'purchase_local' => -1.01]);
+        $this->purchase(['date_uploaded' => '2026-05-01', 'purchase_local' => 999]);
+        $mirror = $this->purchase(['purchase_local' => 999999]);
+        $this->importation(['vat_input_id' => $mirror->id]);
+
+        foreach (['page=1', 'page=2', 'sort=display_calculated_total&direction=desc&per_page=10'] as $controls) {
+            $this->get('/records/purchases?period=2026-04&'.$controls)->assertInertia(fn ($page) => $page
+                ->where('purchaseSummary.record_count', 19)
+                ->where('purchaseSummary.purchase_local_total', '39.15')
+                ->where('purchaseSummary.services_total', '12.00')
+                ->where('purchaseSummary.others_total', '0.00')
+                ->where('purchaseSummary.total_purchase_amount', '315.15'));
+        }
+        $this->get('/records/purchases?search=NO-MATCH')->assertInertia(fn ($page) => $page
+            ->where('purchaseSummary.record_count', 0)->where('purchaseSummary.total_purchase_amount', '0.00'));
+        $this->get('/records/purchases?company=unassigned')->assertInertia(fn ($page) => $page
+            ->where('purchaseSummary.record_count', 0));
+    }
+
+    public function test_sales_summary_preserves_consolidation_credit_memos_and_document_search(): void
+    {
+        $this->sale(['document_no' => 'SI-SUMMARY', 'document_type' => 'SI', 'net_amount' => 112, 'gross_amount' => 112]);
+        $this->sale(['document_no' => 'CM-SUMMARY', 'document_type' => 'CM', 'net_amount' => -56, 'gross_amount' => -56]);
+        $this->sale(['customer_name' => 'ZERO CUSTOMER', 'document_no' => 'SI-ZERO', 's_zero_rated' => true,
+            'net_amount' => 25, 'gross_amount' => 25]);
+        $this->sale(['reporting_period' => '2026-05-31']);
+        $this->get('/records/sales?period=2026-04')->assertInertia(fn ($page) => $page
+            ->where('salesSummary.record_count', 2)
+            ->where('salesSummary.taxable_net_of_vat_total', '50.00')
+            ->where('salesSummary.output_vat_total', '6.00')
+            ->where('salesSummary.zero_rated_sales_total', '25.00')
+            ->where('salesSummary.gross_amount_total', '81.00'));
+        $this->get('/records/sales?search=SI-SUMMARY')->assertInertia(fn ($page) => $page
+            ->where('salesSummary.record_count', 1)->where('salesSummary.gross_amount_total', '112.00'));
+        $this->get('/records/sales?search=NO-MATCH')->assertInertia(fn ($page) => $page
+            ->where('salesSummary.record_count', 0)->where('salesSummary.output_vat_total', '0.00'));
+    }
+
+    public function test_importation_summary_includes_duplicate_entries_across_pages_and_matches_filters(): void
+    {
+        for ($i = 1; $i <= 16; $i++) {
+            $this->importation(['sequence_number' => $i, 'vat_payable' => 1.01]);
+        }
+        $this->importation(['tax_month' => '2026-05-01', 'vat_payable' => 999]);
+        foreach (['page=1', 'page=2', 'sort=vat_payable&direction=desc&per_page=10'] as $controls) {
+            $this->get('/records/importations?tax_month=2026-04&'.$controls)->assertInertia(fn ($page) => $page
+                ->where('importationSummary.record_count', 16)
+                ->where('importationSummary.vat_payable_total', '16.16')
+                ->where('importationSummary.total_landed_cost', '24192000.00')
+                ->where('importationSummary.dutiable_value_total', '24000000.00')
+                ->where('importationSummary.charges_total', '192000.00'));
+        }
+        $this->get('/records/importations?tax_month=2026-04&search=1,512,000')->assertInertia(fn ($page) => $page
+            ->where('importationSummary.record_count', 16)->where('importationSummary.vat_payable_total', '16.16'));
+        $this->get('/records/importations?search=NO-MATCH')->assertInertia(fn ($page) => $page
+            ->where('importationSummary.record_count', 0)->where('importationSummary.vat_payable_total', '0.00'));
+    }
+    public function test_sales_summary_is_stable_across_pages_and_preserves_zero_net_records(): void
+    {
+        for ($i = 1; $i <= 16; $i++) {
+            $this->sale(['customer_name' => 'Customer '.$i, 'net_amount' => 112, 'gross_amount' => 112]);
+        }
+        foreach (['page=1', 'page=2', 'sort=gross_amount&direction=desc&per_page=10'] as $controls) {
+            $this->get('/records/sales?'.$controls)->assertInertia(fn ($page) => $page
+                ->where('salesSummary.record_count', 16)
+                ->where('salesSummary.taxable_net_of_vat_total', '1600.00')
+                ->where('salesSummary.output_vat_total', '192.00')
+                ->where('salesSummary.gross_amount_total', '1792.00'));
+        }
+        $this->sale(['customer_name' => 'Zero Net', 'document_type' => 'SI', 'net_amount' => 112, 'gross_amount' => 112]);
+        $this->sale(['customer_name' => 'Zero Net', 'document_type' => 'CM', 'net_amount' => 112, 'gross_amount' => 112]);
+        $this->get('/records/sales?search=Zero%20Net')->assertInertia(fn ($page) => $page
+            ->where('salesSummary.record_count', 1)->where('salesSummary.gross_amount_total', '0.00'));
+    }
     private function purchase(array $overrides = []): VatInput
     {
         return VatInput::create(array_merge([

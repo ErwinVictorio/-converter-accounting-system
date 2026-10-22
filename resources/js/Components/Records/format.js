@@ -37,3 +37,9 @@ export const formatTinInput = (value) => {
 
     return parts.join("-");
 };
+
+// Shared signed currency presentation; aggregation belongs to the server.
+export const formatPeso = (amount) => {
+    const value = Number(amount) || 0;
+    return `${value < 0 ? "-" : ""}\u20b1${formatCurrency(Math.abs(value))}`;
+};

@@ -6,6 +6,7 @@ use App\Imports\ImportationEntryImport;
 use App\Models\ImportationEntry;
 use App\Models\VatInput;
 use App\Services\ImportationEntryWriter;
+use App\Services\RecordSummaryService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +39,7 @@ class ImportationController extends Controller
             ->values();
 
         $tableOptions = DataTableQuery::options($request, ['sequence_number', 'tax_month', 'import_entry_no', 'supplier', 'country', 'total_landed_cost', 'dutiable_value', 'charges', 'exempt', 'taxable_goods', 'vat_rate', 'vat_payable', 'or_number', 'payment_date'], 15);
-        $entries = DataTableQuery::query(ImportationEntry::query()
+        $entriesQuery = ImportationEntry::query()
             ->when($normalizedMonth, function ($query, string $month) {
                 $query->whereDate('tax_month', $month);
             })
@@ -73,7 +74,9 @@ class ImportationController extends Controller
             ->orderBy('supplier')
             ->orderByDesc('tax_month')
             ->orderBy('sequence_number')
-            ->orderBy('id'), $request, $tableOptions);
+            ->orderBy('id');
+        $importationSummary = app(RecordSummaryService::class)->importations($entriesQuery);
+        $entries = DataTableQuery::query(clone $entriesQuery, $request, $tableOptions);
 
         $months = ImportationEntry::query()
             ->orderByDesc('tax_month')
@@ -88,6 +91,7 @@ class ImportationController extends Controller
 
         return Inertia::render('Records/ImportationRecords', [
             'entries' => $entries,
+            'importationSummary' => $importationSummary,
             'months' => $months,
             'filters' => [
                 ...$tableOptions,

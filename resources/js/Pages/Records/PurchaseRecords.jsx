@@ -1,3 +1,6 @@
+import RecordsSummarySection from "@/Components/Records/RecordsSummarySection";
+import { formatPeso } from "@/Components/Records/format";
+import { Coins } from "lucide-react";
 import { currentTableQuery } from '@/lib/dataTable';
 import { InertiaDataTable } from '@/Components/DataTable';
 import { useEffect, useState } from "react";
@@ -44,7 +47,7 @@ const allocationRow = (amounts = {}) => ({
 });
 
 function PurchaseRecords() {
-    const { flash, vatInputs, months = [], filters = {}, purchaseCompanies = [], companyFilter = "" } = usePage().props;
+    const { purchaseSummary, flash, vatInputs, months = [], filters = {}, purchaseCompanies = [], companyFilter = "" } = usePage().props;
     const [selectedBirRecord, setSelectedBirRecord] = useState(null);
     const [selectedInfoRecord, setSelectedInfoRecord] = useState(null);
     const [deleteRecord, setDeleteRecord] = useState(null);
@@ -138,6 +141,17 @@ function PurchaseRecords() {
 
     return (
         <section className="w-full max-w-full space-y-6 overflow-hidden">
+            <RecordsSummarySection title="Purchase Summary"
+                description="Amounts based on current filters."
+                empty={purchaseSummary.record_count === 0}
+                metrics={[
+                    { key: "purchase_local_total", title: "Purchase Local", value: formatPeso(purchaseSummary.purchase_local_total), icon: Coins, tone: "blue" },
+                    { key: "services_total", title: "Services", value: formatPeso(purchaseSummary.services_total), icon: Coins, tone: "emerald" },
+                    { key: "others_total", title: "Others", value: formatPeso(purchaseSummary.others_total), icon: Coins, tone: "amber" },
+                ]}
+                total={{ title: "Total Purchase Amount", value: formatPeso(purchaseSummary.total_purchase_amount), description: "Across all filtered records." }}
+                footer="Amounts follow the table's existing display rules. The total is calculated separately per record."
+            />
             <RecordTableShell
                 title="Purchase Records"
                 description="Purchase records. Unassigned historical rows are excluded from company DAT downloads until ownership is reviewed."

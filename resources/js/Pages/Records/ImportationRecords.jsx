@@ -1,3 +1,6 @@
+import RecordsSummarySection from "@/Components/Records/RecordsSummarySection";
+import { formatPeso } from "@/Components/Records/format";
+import { Coins } from "lucide-react";
 import { InertiaDataTable } from '@/Components/DataTable';
 import { useEffect, useState } from "react";
 import { router, usePage } from "@inertiajs/react";
@@ -35,7 +38,7 @@ import { importationSchema } from "@/lib/FormSchema";
  * saving from this page returns to this page.
  */
 function ImportationRecords() {
-    const { flash, entries, months = [], filters = {} } = usePage().props;
+    const { importationSummary, flash, entries, months = [], filters = {} } = usePage().props;
     const rows = entries?.data || [];
     const [isUpdating, setIsUpdating] = useState(false);
     const [editingEntry, setEditingEntry] = useState(null);
@@ -114,6 +117,19 @@ function ImportationRecords() {
 
     return (
         <section className="w-full max-w-full space-y-6 overflow-hidden">
+            <RecordsSummarySection title="Importation Summary"
+                description="Amounts based on current filters."
+                empty={importationSummary.record_count === 0}
+                metrics={[
+                    { key: "total_landed_cost", title: "Total Landed Cost", value: formatPeso(importationSummary.total_landed_cost), icon: Coins, tone: "blue" },
+                    { key: "dutiable_value_total", title: "Dutiable Value", value: formatPeso(importationSummary.dutiable_value_total), icon: Coins, tone: "emerald" },
+                    { key: "charges_total", title: "Charges", value: formatPeso(importationSummary.charges_total), icon: Coins, tone: "amber" },
+                    { key: "exempt_total", title: "Exempt Amount", value: formatPeso(importationSummary.exempt_total), icon: Coins, tone: "rose" },
+                    { key: "taxable_goods_total", title: "Taxable Goods", value: formatPeso(importationSummary.taxable_goods_total), icon: Coins, tone: "neutral" },
+                ]}
+                total={{ title: "Total VAT Payable", value: formatPeso(importationSummary.vat_payable_total), description: "Across all filtered records." }}
+                footer=""
+            />
             <RecordTableShell
                 title="Importation Records"
                 description="Manually keyed importations. Add a new one under Data & Transactions > Importation."
