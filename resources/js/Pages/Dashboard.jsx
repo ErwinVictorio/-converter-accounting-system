@@ -795,12 +795,12 @@ export default function Dashboard({
                 <h2 className="text-xs font-bold uppercase tracking-[0.1em] text-slate-700">
                   Recent Importation Entries
                 </h2>
-                <Link
+                {/* <Link
                   href={`/importation?tax_month=${selectedMonth}`}
                   className="text-xs font-semibold text-[#0344a4] transition-colors duration-200 hover:text-[#023384]"
                 >
                   View All
-                </Link>
+                </Link> */}
               </div>
 
               {/* Ang table lang ang pinapayagang mag-scroll pahalang, hindi ang page. */}
